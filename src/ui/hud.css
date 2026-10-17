@@ -1,0 +1,70 @@
+/* ==================================================================================================
+   Top right: world clock + round compass minimap
+   ================================================================================================== */
+
+.clock {
+  display: flex;
+  align-items: center;
+  gap: calc(6px * var(--ms, 1));
+  margin-top: calc(10px * var(--ms, 1));
+  padding: calc(3px * var(--ms, 1)) calc(10px * var(--ms, 1)) calc(3px * var(--ms, 1)) calc(5px * var(--ms, 1));
+  border-radius: calc(8px * var(--ms, 1));
+  background: linear-gradient(90deg, rgba(8, 10, 14, 0.15), rgba(8, 10, 14, 0.5) 30%, rgba(8, 10, 14, 0.5));
+  pointer-events: none;
+}
+.ck-icon {
+  width: calc(32px * var(--ms, 1));
+  height: calc(32px * var(--ms, 1));
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.7));
+}
+.ck-svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ck-rays {
+  stroke: #ffc83a;
+}
+.ck-moon {
+  display: none;
+}
+.clock[data-period='night'] .ck-moon {
+  display: inline;
+}
+.clock[data-period='night'] .ck-sun {
+  display: none;
+}
+.clock[data-period='dawn'] .ck-sun,
+.clock[data-period='dusk'] .ck-sun {
+  filter: saturate(1.4) hue-rotate(-14deg);
+}
+.ck-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+.ck-time {
+  font: 700 calc(20px * var(--ms, 1)) / 1.05 var(--font-ui, sans-serif);
+  color: #fff;
+  letter-spacing: 0.5px;
+  font-variant-numeric: tabular-nums;
+  text-shadow:
+    0 1px 0 #000,
+    0 0 4px rgba(0, 0, 0, 0.8);
+}
+.ck-name {
+  margin-top: calc(2px * var(--ms, 1));
+  font: 700 calc(10.5px * var(--ms, 1)) / 1 var(--font-ui, sans-serif);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #f4ecd8;
+  text-shadow: 0 1px 0 #000;
+}
+.clock[data-period='night'] .ck-name {
+  color: #b8c8ff;
+}
+.clock[data-period='dawn'] .ck-name,
+.clock[data-period='dusk'] .ck-name {
+  color: #ffc48a;
+}

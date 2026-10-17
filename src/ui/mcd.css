@@ -1,0 +1,112 @@
+/* ==================================================================================================
+   MCD theme (v3.1): dungeon-crawler look modelled on the feel of Minecraft Dungeons — blocky pixel
+   headings, bevelled dark slots with cream key badges, a faceted heart gauge, a hexagonal soul gauge,
+   dark-teal translucent panels with thin light borders. Original artwork: no logos or game assets.
+   Loaded after style.css and classSelect.css, so it overrides both.
+   ================================================================================================== */
+:root {
+  /* Press Start 2P (crisp, full Cyrillic) for short caps headings, numbers and key badges; Russo One / Rubik
+     stay for anything longer so Russian text remains readable */
+  --font-px: 'Press Start 2P', 'Russo One', monospace;
+  --font-hud: 'Russo One', 'Rubik', system-ui, sans-serif;
+  /* teal-dark translucent panels */
+  --mc-panel: rgba(13, 36, 42, 0.9);
+  --mc-panel2: rgba(22, 54, 61, 0.92);
+  --mc-panel-hi: rgba(36, 78, 86, 0.95);
+  --mc-cell: rgba(7, 20, 24, 0.82);
+  --mc-line: rgba(176, 222, 226, 0.32);
+  --mc-line-hi: rgba(214, 240, 242, 0.7);
+  --mc-text: #eaf3f3;
+  --mc-dim: #9dbcc0;
+  --mc-gold: #ffd84a;
+  --mc-key: #ece6d2;
+  --mc-key-dk: #b4ab92;
+  --mc-xp: #9a6cff;
+  --mc-bevel-hi: #a7adb5;
+  --mc-bevel: #6d737b;
+  --mc-bevel-dk: #3c4047;
+}
+
+/* ------------------------------------------------------------------ shared bits */
+.hud .key {
+  font: 400 10px/1 var(--font-px);
+  color: #1d1a12;
+  background: var(--mc-key);
+  border-radius: 2px;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 -2px 0 var(--mc-key-dk);
+  text-transform: uppercase;
+}
+
+/* banner */
+.banner-main {
+  font-family: var(--font-px) !important;
+  font-size: clamp(18px, 3vw, 34px) !important;
+  line-height: 1.45;
+  text-shadow:
+    3px 3px 0 #000,
+    -2px -2px 0 #000,
+    2px -2px 0 #000,
+    -2px 2px 0 #000 !important;
+}
+.banner-sub {
+  font-family: var(--font-hud) !important;
+  letter-spacing: 0.5px;
+}
+
+/* ------------------------------------------------------------------ toasts */
+.toast {
+  font: 400 15px var(--font-hud);
+  letter-spacing: 0.3px;
+  background: rgba(12, 32, 38, 0.92);
+  border: 1px solid var(--mc-line);
+  border-radius: 0;
+  box-shadow: 0 0 0 1px #050607;
+  padding: 8px 16px 8px 30px;
+  position: relative;
+  text-shadow: 1px 1px 0 #000;
+}
+.toast::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 50%;
+  width: 8px;
+  height: 8px;
+  margin-top: -4px;
+  transform: rotate(45deg);
+  background: var(--tc, #fff);
+  box-shadow: 0 0 0 1px #000;
+}
+
+/* ==================================================================================================
+   Panels: modals, menus, pause, settings — dark-teal translucent cards
+   ================================================================================================== */
+.modal-back {
+  background: radial-gradient(ellipse at center, rgba(6, 20, 24, 0.55), rgba(3, 8, 10, 0.82));
+}
+
+/* cards and lists */
+.settings {
+  border-radius: 0;
+  background: var(--mc-panel);
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line);
+}
+
+/* ------------------------------------------------------------------ settings */
+.tab {
+  border-radius: 0;
+  font-family: var(--font-hud);
+  background: rgba(22, 54, 61, 0.92);
+  color: #c4dde0;
+  box-shadow:
+    0 0 0 1px #050607,
+    inset 0 0 0 1px var(--mc-line);
+}
+.tab.sel {
+  background: #eaf3f3;
+  color: #0c2226;
+}
