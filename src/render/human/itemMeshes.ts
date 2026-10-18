@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { SPR_BOW, SPR_BOW_DRAWN, SPR_SPEAR, SPR_STAFF1H, SPR_STAFF2H, SPR_SWORD, SPR_SWORD2H, SPR_XBOW, SPR_XBOW_EMPTY, shieldFace, type Sprite } from './sprites';
+import { SPR_BOW_LIMBS, SPR_SPEAR, SPR_STAFF1H, SPR_STAFF2H, SPR_SWORD, SPR_SWORD2H, SPR_XBOW, SPR_XBOW_EMPTY, shieldFace, type Sprite } from './sprites';
 import type { WeaponKind } from '../../rpg/items';
 import { PX } from './skinAtlas';
 
@@ -72,14 +72,28 @@ function meshOf(geo: THREE.BufferGeometry): THREE.Mesh {
 
 /**
  * Held weapon model. The returned group has the grip at its origin with the business end along
- * +Y and the flat side facing ±X (so it can be laid into a hand). Bows and crossbows carry two
- * states each (bow: rest/drawn, crossbow: loaded/empty) switched with `setState`.
+ * +Y and the flat side facing ±X (so it can be laid into a hand). The crossbow carries two
+ * states (loaded/empty) switched with `setState`; the bow has a geometric string and a nocked
+ * arrow driven by `setDraw`.
  */
 export interface WeaponModel {
   root: THREE.Group;
-  setState(k: 'rest' | 'drawn' | 'loaded' | 'empty'): void;
+  setState(k: 'loaded' | 'empty'): void;
+  /**
+   * Bow only: `nock` is the string's nock point in the weapon's local space (null = straight
+   * string at rest), `arrow` shows the nocked arrow, `flex` 0..1 bends the limbs a little.
+   */
+  setDraw(nock: THREE.Vector3 | null, arrow: boolean, flex: number): void;
   dispose(): void;
 }
+
+/** Bow string anchors in the bow's local space (grip at the origin, forward +Z, up +Y). */
+export const BOW_TIP_TOP = new THREE.Vector3(0, 9 * ITEM_PX, -4.6 * ITEM_PX);
+export const BOW_TIP_BOTTOM = new THREE.Vector3(0, -8 * ITEM_PX, -4.6 * ITEM_PX);
+/** Where the arrow shaft rests: on top of the bow hand, on the archer's side of the limb. */
+export const BOW_ARROW_REST = new THREE.Vector3(0.6 * ITEM_PX, 2.8 * ITEM_PX, 0);
+const ARROW_NOCK = 0.3; // distance from the arrow model's origin back to its nock
+let stringMat: THREE.MeshLambertMaterial | null = null;
 
 export function weaponModel(kind: WeaponKind): WeaponModel {
   const root = new THREE.Group();
@@ -91,6 +105,7 @@ export function weaponModel(kind: WeaponKind): WeaponModel {
     return m;
   };
   let setState: WeaponModel['setState'] = () => {};
+  let setDraw: WeaponModel['setDraw'] = () => {};
   const d = DIAG[kind];
   if (d) {
     // diagonal sprite: turn the bottom-left → top-right diagonal onto +Y, flat side to ±X
@@ -98,15 +113,59 @@ export function weaponModel(kind: WeaponKind): WeaponModel {
     m.rotation.order = 'YZX';
     m.rotation.set(0, Math.PI / 2, Math.PI / 4);
   } else if (kind === 'bow') {
-    // vertical bow: grip at the middle of the limb; forward (the arrow tip) is -X in the sprite
-    const rest = add(extrudeSprite(SPR_BOW, 6, 10));
-    const drawn = add(extrudeSprite(SPR_BOW_DRAWN, 6, 10));
-    for (const m of [rest, drawn]) m.rotation.set(0, Math.PI / 2, 0);
-    drawn.visible = false;
-    setState = (k) => {
-      rest.visible = k !== 'drawn';
-      drawn.visible = k === 'drawn';
+    // vertical bow, limbs only: grip at the middle; forward (the arrow tip) is -X in the sprite
+    const limbs = add(extrudeSprite(SPR_BOW_LIMBS, 6, 10));
+    limbs.rotation.set(0, Math.PI / 2, 0);
+    // the string: two thin pixel boxes from the limb tips to the nock point
+    const segGeo = new THREE.BoxGeometry(1, 1, 1);
+    geos.push(segGeo);
+    const smat = (stringMat ??= new THREE.MeshLambertMaterial({ color: 0xf0ece0 }));
+    const segs = [0, 1].map(() => {
+      const m = new THREE.Mesh(segGeo, smat);
+      m.castShadow = true;
+      root.add(m);
+      return m;
+    });
+    // the nocked arrow (the same model as the flying projectile, +Z forward)
+    const arrowGeo = arrowModel(false);
+    geos.push(arrowGeo);
+    const arrow = meshOf(arrowGeo);
+    arrow.visible = false;
+    root.add(arrow);
+    const top = new THREE.Vector3();
+    const bot = new THREE.Vector3();
+    const rest = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    const Z = new THREE.Vector3(0, 0, 1);
+    const Y = new THREE.Vector3(0, 1, 0);
+    const T = 0.55 * ITEM_PX;
+    const seg = (m: THREE.Mesh, a: THREE.Vector3, b: THREE.Vector3) => {
+      dir.subVectors(b, a);
+      const len = dir.length();
+      m.position.addVectors(a, b).multiplyScalar(0.5);
+      m.quaternion.setFromUnitVectors(Y, dir.multiplyScalar(1 / (len || 1)));
+      m.scale.set(T, len + T, T);
     };
+    setDraw = (nock, showArrow, flex) => {
+      // flexing limbs: the tips come back and in a little
+      const f = Math.max(0, Math.min(1, flex));
+      limbs.scale.set(1, 1 - 0.05 * f, 1 + 0.25 * f);
+      top.copy(BOW_TIP_TOP).multiply(limbs.scale);
+      bot.copy(BOW_TIP_BOTTOM).multiply(limbs.scale);
+      rest.lerpVectors(top, bot, 0.5);
+      rest.y = BOW_ARROW_REST.y;
+      // the string never sits in front of its straight line (the hand can only pull it back)
+      const n = nock && nock.z < rest.z ? nock : rest;
+      seg(segs[0], top, n);
+      seg(segs[1], n, bot);
+      arrow.visible = showArrow;
+      if (showArrow) {
+        dir.subVectors(BOW_ARROW_REST, n).normalize();
+        arrow.quaternion.setFromUnitVectors(Z, dir);
+        arrow.position.copy(n).addScaledVector(dir, ARROW_NOCK);
+      }
+    };
+    setDraw(null, false, 0);
   } else if (kind === 'crossbow') {
     const loaded = add(extrudeSprite(SPR_XBOW, 12, 11, ITEM_PX, 3));
     const empty = add(extrudeSprite(SPR_XBOW_EMPTY, 12, 11, ITEM_PX, 3));
@@ -120,6 +179,7 @@ export function weaponModel(kind: WeaponKind): WeaponModel {
   return {
     root,
     setState,
+    setDraw,
     dispose: () => geos.forEach((g) => g.dispose()),
   };
 }

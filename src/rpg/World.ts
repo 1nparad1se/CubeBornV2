@@ -220,9 +220,11 @@ export class World {
   private spawnProjectile(w: WeaponStats, dmg: number, fx: number, fz: number) {
     const p = this.player;
     const kind = w.proj ?? 'arrow';
-    const y = p.y + 1.25;
-    const sx = p.x + fx * 0.5;
-    const sz = p.z + fz * 0.5;
+    // arrows leave from the drawn bow (grip at chin height, an arm's length ahead)
+    const bow = kind === 'arrow';
+    const y = p.y + (bow ? 1.3 : 1.25);
+    const sx = p.x + fx * (bow ? 0.62 : 0.5);
+    const sz = p.z + fz * (bow ? 0.62 : 0.5);
     const tgt = this.target && Math.hypot(this.target.x - p.x, this.target.z - p.z) <= w.range + 1 ? this.target : null;
     let dx = fx;
     let dz = fz;

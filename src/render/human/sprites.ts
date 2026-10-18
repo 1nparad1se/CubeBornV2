@@ -121,30 +121,24 @@ export const SPR_STAFF2H = outline(
   K,
 );
 
-/** Hunting bow, vertical (grip in the middle), string on the right; `drawn` pulls the string with an arrow. */
-function bowSprite(drawn: boolean): Sprite {
+/**
+ * Hunting bow, vertical (grip in the middle), limbs bowing to the left (forward). With `string`
+ * the straight string is baked in (inventory icon); the held model draws its string as geometry.
+ */
+function bowSprite(string: boolean): Sprite {
   const n = 20;
   const px: string[] = new Array(n * n).fill('');
   const set = (x: number, y: number, c: string) => {
     if (x >= 0 && y >= 0 && x < n && y < n) px[y * n + x] = c;
   };
   const mid = (n - 1) / 2;
-  const pull = drawn ? 4 : 0;
   for (let y = 1; y < n - 1; y++) {
     const d = (y - mid) / (mid - 0.5);
     // limb: an arc bowing to the left
     const lx = Math.round(5 + d * d * 5);
     set(lx, y, Math.abs(d) < 0.18 ? '#3a2a20' : WOOD.mid);
     set(lx + 1, y, Math.abs(d) < 0.18 ? '#5a4030' : WOOD.lo);
-    // string: from tip to tip, pulled back at the nock when drawn
-    const sx = Math.round(11 + pull * (1 - Math.abs(d)));
-    set(sx, y, '#f0ece0');
-  }
-  if (drawn) {
-    // the arrow lies across the bow, pointing left (forward)
-    for (let x = 1; x <= 14; x++) set(x, Math.round(mid), x <= 2 ? IRON.mid : x >= 13 ? '#e04040' : WOOD.hi);
-    set(1, Math.round(mid) - 1, IRON.lo);
-    set(1, Math.round(mid) + 1, IRON.lo);
+    if (string) set(11, y, '#f0ece0');
   }
   return outline({ n, px }, K);
 }
@@ -178,8 +172,8 @@ function crossbowSprite(loaded: boolean): Sprite {
   return outline({ n, px }, K);
 }
 
-export const SPR_BOW = bowSprite(false);
-export const SPR_BOW_DRAWN = bowSprite(true);
+export const SPR_BOW = bowSprite(true);
+export const SPR_BOW_LIMBS = bowSprite(false);
 export const SPR_XBOW = crossbowSprite(true);
 export const SPR_XBOW_EMPTY = crossbowSprite(false);
 
