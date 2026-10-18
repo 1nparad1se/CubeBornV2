@@ -27,9 +27,9 @@ const _g = new THREE.Vector3();
 const _h = new THREE.Vector3();
 const _a = new THREE.Vector3();
 const _n = new THREE.Vector3();
-const _Y = new THREE.Vector3(0, 1, 0);
 const _q = new THREE.Quaternion();
 const _m = new THREE.Matrix4();
+const BOW_LEVEL_SCALE = 1.35;
 
 type Part = 'head' | 'torso' | 'armR' | 'armL' | 'legR' | 'legL';
 
@@ -148,8 +148,9 @@ export class HumanModel {
     r.position.set(0, 0, 0);
     r.rotation.set(0, 0, 0);
     if (k === 'bow') {
-      // held in the left hand; the pose sets its tilt (carried at the side, upright when shooting)
-      this.holderL.add(r);
+      // held level across the front of the body (limbs left and right); the pose places it
+      // and points the left hand at its grip every frame
+      this.body.add(r);
       return;
     }
     if (k === 'crossbow') {
@@ -231,10 +232,7 @@ export class HumanModel {
     // holding stance per weapon
     const two = k === 'sword2h' || k === 'spear' || k === 'staff2h' || k === 'crossbow';
     if (k) armR = armR * 0.5 - 0.3;
-    if (k === 'bow') {
-      armL = armL * 0.5 - 0.35;
-      armR = -sw * 0.4 * mv;
-    }
+    if (k === 'bow') armR = -sw * 0.4 * mv;
     if (two && k !== 'staff2h') {
       armR = -0.55 + armR * 0.2;
       armL = -0.55 + armL * 0.2;
@@ -260,11 +258,13 @@ export class HumanModel {
     P.armL.rotation.x = armL;
     P.head.rotation.x = 0;
     if (this.weapon && k === 'crossbow') this.weapon.setState('loaded');
-    if (this.weapon && k === 'bow') {
-      // carried at the side: upright, tilted a little forward, beside the arm and the leg
-      this.weapon.root.rotation.set(0.35, 0, 0);
-      this.weapon.root.position.set(2.3 * PX, 0, 0);
-      if (!p.attack) this.weapon.setDraw(null, false, 0);
+    if (this.weapon && k === 'bow' && !p.attack) {
+      // carried level in front of the belly, limbs left and right, gripped by the left hand
+      const bob = Math.abs(Math.cos(p.walk)) * 0.5 * mv;
+      const grip = _g.set(1, 15.5 + bob, 6.5);
+      this.aimArm(P.armL, _sL.set(6, 22, 0), grip, 1);
+      this.placeBow(grip, 0);
+      this.weapon.setDraw(null, false, 0);
     }
     if (p.attack) this.attackPose(p.attack.t, p.attack.hitAt);
   }
@@ -281,10 +281,21 @@ export class HumanModel {
     arm.quaternion.slerp(_q, w);
   }
 
+  /** Lays the bow level (limbs along body ±X, arrow forward +Z) with its grip at `grip` (pixels). */
+  private placeBow(grip: THREE.Vector3, tilt: number) {
+    const r = this.weapon!.root;
+    r.position.copy(grip).multiplyScalar(PX);
+    // bow up (+Y) → body -X, forward stays +Z; `tilt` lifts the front a little
+    r.rotation.set(-tilt, 0, Math.PI / 2, 'XYZ');
+    // held level it is drawn a size up so the limbs reach well past the shoulders
+    r.scale.setScalar(BOW_LEVEL_SCALE);
+  }
+
   /**
-   * The bow shot: archer stance (left shoulder toward the target, bow arm straight out), the
-   * right hand nocks and draws the string to the chin, releases at the hit moment, flicks back
-   * and recovers. Targets are in the facing frame (+Z = toward the target), pixels.
+   * The bow shot, held like a crossbow of the old sagas: square to the target, the bow level
+   * across the front of the chest (limbs out like wings), the left hand on the grip, the right
+   * hand drawing the string straight back to the sternum; release at the hit moment, recover.
+   * Body frame = facing frame (+Z toward the target), pixels.
    */
   private bowPose(t: number, hitAt: number) {
     const P = this.parts;
@@ -292,38 +303,32 @@ export class HumanModel {
     const wu = Math.min(1, t / Math.max(0.01, hitAt));
     const ft = t <= hitAt ? 0 : Math.min(1, (t - hitAt) / Math.max(0.01, 1 - hitAt));
     const drawing = t <= hitAt;
-    // stance weight: raise and turn during the first quarter, hold, recover after the release
+    // raise during the first quarter, hold, lower after the release
     const s = drawing ? ease(wu / 0.25) : 1 - ease((ft - 0.3) / 0.7);
     const draw = drawing ? ease((wu - 0.25) / 0.75) : 0;
     const flick = drawing ? 0 : ease(ft / 0.25);
-    const yaw = -(0.3 * s + 0.4 * (drawing ? draw : s));
-    this.body.rotation.y = yaw;
-    P.head.rotation.y = -yaw;
-    P.legL.rotation.x += -0.22 * s;
-    P.legR.rotation.x += 0.18 * s;
-    // facing frame → body frame
-    const toBody = (v: THREE.Vector3) => v.applyAxisAngle(_Y, -yaw);
-    const shL = _sL.set(6, 22, 0);
-    const shR = _sR.set(-6, 22, 0);
-    const grip = toBody(_g.set(0.3, 21, 12.5));
-    this.aimArm(P.armL, shL, grip, s);
-    // the bow hand sits a little below the arrow line (the shaft rests on top of the fist);
-    // the right hand: from the string at rest, back to the chin, then a small flick back
-    const hand = _h.set(0, 23, 9.5).lerp(_a.set(-1, 23, 6), draw);
-    if (!drawing) hand.set(-1 - 2.5 * flick, 23 + 0.6 * flick, 6 - 3 * flick);
-    this.aimArm(P.armR, shR, toBody(hand), s);
-    // the bow turns upright into the grip
+    P.legL.rotation.x += -0.12 * s;
+    P.legR.rotation.x += 0.1 * s;
+    P.head.rotation.x = 0.08 * s;
+    // the grip: from the carry (belly) up to shoulder height, an arm's length ahead
+    const grip = _g.set(1, 15.5, 6.5).lerp(_a.set(1, 20, 9.5), s);
+    this.aimArm(P.armL, _sL.set(6, 22, 0), grip, 1);
+    this.placeBow(grip, 0);
     const r = this.weapon?.root;
-    if (r) {
-      r.rotation.set(0.35 + (Math.PI / 2 - 0.35) * s, 0, 0);
-      r.position.set(2.3 * PX * (1 - s), 0, 0.5 * PX * s);
-      // the nock follows the right hand's actual position
-      this.root.updateMatrixWorld(true);
-      const nock = this.holderR.getWorldPosition(_n);
-      r.worldToLocal(nock);
-      const nocked = drawing && wu > 0.12;
-      this.weapon!.setDraw(nocked ? nock : null, nocked, draw);
-    }
+    if (!r) return;
+    // the nock in the bow's space: on the arrow line, pulled straight back by `draw`
+    this.root.updateMatrixWorld(true);
+    const nocked = drawing && wu > 0.12;
+    const back = 4.8 + 2.7 * draw; // pixels behind the grip (string at rest ≈ 4.7)
+    const nockBody = _n.set(grip.x - 0.5, grip.y + 0.9, grip.z - back);
+    // the right hand pinches the nock (after the release it flicks back and out)
+    const hand = _h.copy(nockBody);
+    if (!drawing) hand.set(grip.x - 2 - 3 * flick, grip.y + 0.5, grip.z - 4.6 - 2.5 * flick);
+    const wR = drawing ? Math.min(1, wu / 0.15) : s;
+    this.aimArm(P.armR, _sR.set(-6, 22, 0), hand, wR);
+    const nock = this.body.localToWorld(nockBody.multiplyScalar(PX));
+    r.worldToLocal(nock);
+    this.weapon!.setDraw(nocked ? nock : null, nocked, draw);
   }
 
   /** Basic attack motion of the held weapon (t = progress 0..1 of one attack). */
