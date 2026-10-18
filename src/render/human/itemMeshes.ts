@@ -4,7 +4,9 @@ import type { WeaponKind } from '../../rpg/items';
 import { PX } from './skinAtlas';
 
 /** World size of one item pixel (held items are drawn finer than the body, like Minecraft). */
-const ITEM_PX = 0.035;
+const ITEM_PX = 0.048;
+/** The bow is drawn larger still so it reads as a full-size longbow next to the hero. */
+const BOW_PX = 0.064;
 
 const col = new THREE.Color();
 
@@ -88,10 +90,10 @@ export interface WeaponModel {
 }
 
 /** Bow string anchors in the bow's local space (grip at the origin, forward +Z, up +Y). */
-export const BOW_TIP_TOP = new THREE.Vector3(0, 9 * ITEM_PX, -4.6 * ITEM_PX);
-export const BOW_TIP_BOTTOM = new THREE.Vector3(0, -8 * ITEM_PX, -4.6 * ITEM_PX);
+export const BOW_TIP_TOP = new THREE.Vector3(0, 9 * BOW_PX, -4.6 * BOW_PX);
+export const BOW_TIP_BOTTOM = new THREE.Vector3(0, -8 * BOW_PX, -4.6 * BOW_PX);
 /** Where the arrow shaft rests: on top of the bow hand, on the archer's side of the limb. */
-export const BOW_ARROW_REST = new THREE.Vector3(0.6 * ITEM_PX, 2.8 * ITEM_PX, 0);
+export const BOW_ARROW_REST = new THREE.Vector3(0.6 * BOW_PX, 2.8 * BOW_PX, 0);
 const ARROW_NOCK = 0.3; // distance from the arrow model's origin back to its nock
 let stringMat: THREE.MeshLambertMaterial | null = null;
 
@@ -114,7 +116,7 @@ export function weaponModel(kind: WeaponKind): WeaponModel {
     m.rotation.set(0, Math.PI / 2, Math.PI / 4);
   } else if (kind === 'bow') {
     // vertical bow, limbs only: grip at the middle; forward (the arrow tip) is -X in the sprite
-    const limbs = add(extrudeSprite(SPR_BOW_LIMBS, 6, 10));
+    const limbs = add(extrudeSprite(SPR_BOW_LIMBS, 6, 10, BOW_PX));
     limbs.rotation.set(0, Math.PI / 2, 0);
     // the string: two thin pixel boxes from the limb tips to the nock point
     const segGeo = new THREE.BoxGeometry(1, 1, 1);
