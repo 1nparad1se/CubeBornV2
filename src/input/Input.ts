@@ -21,6 +21,7 @@ export class Input {
     return this.swapMouse && (b === 0 || b === 2) ? 2 - b : b;
   }
   onInventory: (() => void) | null = null;
+  onMap: (() => void) | null = null;
   onJump: (() => void) | null = null;
   /** Fired when the player first moves (used by the controls hint). */
   onFirstMove: (() => void) | null = null;
@@ -65,6 +66,7 @@ export class Input {
         }
       }
       if (this.is('inventory', e.code)) this.onInventory?.();
+      else if (this.is('map', e.code)) this.onMap?.();
       this.keys.add(e.code);
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));

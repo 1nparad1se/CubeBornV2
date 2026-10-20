@@ -1,9 +1,10 @@
 import * as THREE from 'three';
 import type { MapDef } from '../data/types';
 import { CELL, type Terrain } from '../game/Terrain';
-import { hash2 } from '../core/Rng';
-import { ATLAS_VARIANTS, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
+import { hash2, noise2 } from '../core/Rng';
+import { ATLAS_VARIANTS, BUSH_TOP, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_BUSH, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { DITHER } from './dither';
+import { bushSpots } from './flora';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
 
@@ -52,13 +53,29 @@ interface FoliageRule {
 }
 
 const FLOWERS: SpriteW = [[SPRITE.poppy, 3], [SPRITE.dandelion, 3], [SPRITE.cornflower, 2], [SPRITE.bluet, 3], [SPRITE.tulip, 1.5], [SPRITE.daisy, 2.5], [SPRITE.allium, 1]];
-const MEADOW: SpriteW = [[SPRITE.grass, 52], [SPRITE.tallGrass, 20], [SPRITE.fern, 7], ...FLOWERS];
+const MEADOW: SpriteW = [[SPRITE.grass, 40], [SPRITE.tallGrass, 16], [SPRITE.shortGrass, 9], [SPRITE.thickGrass, 6], [SPRITE.seedGrass, 4], [SPRITE.fern, 5], [SPRITE.sedge, 3], ...FLOWERS];
 const TUFTS: SpriteW = [[SPRITE.grass, 70], [SPRITE.tallGrass, 20], [SPRITE.fern, 10]];
+/** Meadow grounds (rpg/testMap meadowTile): each grows its own mix and density of grass. */
+const MEADOW_GROUNDS: Record<string, FoliageRule> = {
+  grass: { density: 1.7, sprites: MEADOW },
+  grass2: { density: 1.6, sprites: [[SPRITE.grass, 38], [SPRITE.shortGrass, 16], [SPRITE.tallGrass, 12], [SPRITE.seedGrass, 6], [SPRITE.thickGrass, 4], ...FLOWERS] },
+  grass_lush: { density: 2.3, sprites: [[SPRITE.grass, 28], [SPRITE.tallGrass, 24], [SPRITE.thickGrass, 16], [SPRITE.fern, 10], [SPRITE.sedge, 9], [SPRITE.seedGrass, 4], [SPRITE.cornflower, 1], [SPRITE.allium, 1]] },
+  grass_sun: { density: 1.45, sprites: [[SPRITE.shortGrass, 30], [SPRITE.grass, 28], [SPRITE.seedGrass, 10], [SPRITE.tallGrass, 6], ...FLOWERS, ...FLOWERS] },
+  grass_dry: { density: 1.05, sprites: [[SPRITE.dryGrass, 30], [SPRITE.shortGrass, 28], [SPRITE.grass, 14], [SPRITE.seedGrass, 12], [SPRITE.dandelion, 2], [SPRITE.deadBush, 1]] },
+  grass_clover: { density: 1.6, sprites: [[SPRITE.clover, 40], [SPRITE.shortGrass, 24], [SPRITE.grass, 18], [SPRITE.bluet, 3], [SPRITE.daisy, 4]] },
+};
+/** Height multiplier per sprite (tall stems a little taller, tufts lower). */
+const SPRITE_SIZE: Record<number, number> = { [SPRITE.shortGrass]: 0.8, [SPRITE.clover]: 0.75, [SPRITE.seedGrass]: 1.18, [SPRITE.sedge]: 1.08, [SPRITE.thickGrass]: 1.05 };
+/** Recent hero positions remembered for the grass (it springs back as they fade). */
+const TRAIL = 8;
+/** Seconds a trampled spot takes to spring back. */
+const TRAIL_FADE = 1.6;
 
 /** Which foliage grows on a tile, per map generator. */
 function foliageRule(gen: string, tile: string): FoliageRule | null {
   const grassy = /grass/.test(tile);
   if (gen === 'meadow') {
+    if (MEADOW_GROUNDS[tile]) return MEADOW_GROUNDS[tile];
     if (grassy) return { density: 1.7, sprites: MEADOW };
     // river banks: shorter, sparser grass thinning toward the water
     if (/bank/.test(tile)) return { density: 0.7, sprites: TUFTS };
@@ -102,8 +119,21 @@ export class WorldRenderer {
     /** World position of the terrain's cell (0, 0) (streamed windows; 0 on fixed maps). */
     uOrigin: { value: new THREE.Vector2(0, 0) },
   };
-  /** uFocus in window-local coordinates (foliage is built local). */
-  private readonly localU = { ...this.uniforms, uFocus: { value: new THREE.Vector3(0, 0, 9999) } };
+  /**
+   * Foliage motion: the wind (direction x, z, strength 0..1) and the hero's trail in window-local
+   * coordinates (x, z, push strength 0..1; the newest point is where the hero stands).
+   */
+  private readonly flora = {
+    uWind: { value: new THREE.Vector4(0.8, 0.6, 0.4, 0) },
+    uTrail: { value: Array.from({ length: TRAIL }, () => new THREE.Vector4(0, 0, 0, 0)) },
+  };
+  /** Current wind (world direction and strength 0..1), for anything else that sways. */
+  readonly wind = { x: 0.8, z: 0.6, strength: 0.4 };
+  /** Trail bookkeeping: next slot to reuse (0 is the hero itself), life 1..0 and push of each point. */
+  private trailNext = 1;
+  private trailLife = new Float32Array(TRAIL);
+  private trailK = new Float32Array(TRAIL);
+  private trailLast: [number, number] = [-99, -99];
   /** The terrain window origin: the group is offset by it, culling works in local cells. */
   readonly ox: number;
   readonly oz: number;
@@ -251,7 +281,8 @@ export class WorldRenderer {
       infoData[i * 4] = tileAnim(nm);
       infoData[i * 4 + 1] = w.kind;
       infoData[i * 4 + 2] = w.depth;
-      infoData[i * 4 + 3] = 255;
+      // meadow grounds (one family) blend smoothly into each other
+      infoData[i * 4 + 3] = /grass|moss/.test(nm) ? 255 : 0;
     });
     const info = new THREE.DataTexture(infoData, tileCount, 1, THREE.RGBAFormat);
     info.magFilter = info.minFilter = THREE.NearestFilter;
@@ -302,6 +333,7 @@ vec3 atlasAt(float tile, float row, vec2 l) {
 }
 vec3 infoOf(float tile) { return floor(texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.5)).rgb * 255.0 + 0.5); }
 float animOf(float tile) { return infoOf(tile).r; }
+bool grassOf(float tile) { return texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.5)).a > 0.5; }
 float tileOf(vec4 c) { return floor(c.r * 255.0 + 0.5); }
 bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         )
@@ -429,8 +461,17 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     vec4 nz = cellAt(cell + vec2(0.0, local.y < 0.5 ? -1.0 : 1.0));
     float tx = tileOf(nx);
     float tz = tileOf(nz);
-    if (tx != tile && nx.b < 0.05 && abs(nx.a - cd.a) < 0.01 && ex < W && h21(clump + 3.1) < 0.55 * (1.0 - ex / W)) ut = tx;
-    else if (tz != tile && nz.b < 0.05 && abs(nz.a - cd.a) < 0.01 && ez < W && h21(clump + 7.3) < 0.55 * (1.0 - ez / W)) ut = tz;
+    // two meadow grounds meet in a wide colour blend (stepped per texture pixel, a little noisy)
+    // instead of a ragged seam; other neighbours keep the ragged pixel border
+    bool gMe = grassOf(tile);
+    vec2 lq = fract(pxc);
+    float qx = min(lq.x, 1.0 - lq.x);
+    float qz = min(lq.y, 1.0 - lq.y);
+    float jit = (h21(clump + 13.7) - 0.5) * 0.16;
+    float wx = (gMe && tx != tile && nx.b < 0.05 && abs(nx.a - cd.a) < 0.01 && grassOf(tx)) ? clamp(0.5 * (1.0 - qx / 0.5) + jit, 0.0, 0.5) : 0.0;
+    float wz = (gMe && tz != tile && nz.b < 0.05 && abs(nz.a - cd.a) < 0.01 && grassOf(tz)) ? clamp(0.5 * (1.0 - qz / 0.5) + jit, 0.0, 0.5) : 0.0;
+    if (wx == 0.0 && tx != tile && nx.b < 0.05 && abs(nx.a - cd.a) < 0.01 && ex < W && !(gMe && grassOf(tx)) && h21(clump + 3.1) < 0.55 * (1.0 - ex / W)) ut = tx;
+    else if (wz == 0.0 && tz != tile && nz.b < 0.05 && abs(nz.a - cd.a) < 0.01 && ez < W && !(gMe && grassOf(tz)) && h21(clump + 7.3) < 0.55 * (1.0 - ez / W)) ut = tz;
     float bh = h21(blk * 1.37 + ut);
     float v = floor(bh * ${ATLAS_VARIANTS.toFixed(1)});
     if (h21(blk + 5.0) > 0.5) l.x = 1.0 - l.x;
@@ -440,6 +481,8 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       l = fract(l + vec2(floor(uTime * sp) / 16.0, floor(uTime * sp * 0.5) / 16.0));
     }
     col = atlasAt(ut, v, l);
+    if (wx > 0.0) col = mix(col, atlasAt(tx, floor(h21(blk * 1.37 + tx) * ${ATLAS_VARIANTS.toFixed(1)}), l), wx);
+    if (wz > 0.0) col = mix(col, atlasAt(tz, floor(h21(blk * 1.37 + tz) * ${ATLAS_VARIANTS.toFixed(1)}), l), wz);
     // slopes: worn earth where the ground tilts, bare stone where it is steep (pixel-dithered)
     float tilt = 1.0 - normalize(vN).y;
     float dith = h21(clump + 23.0);
@@ -636,37 +679,73 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       for (let i = 0; i < nor.count; i++) nor.setXYZ(i, 0, 1, 0);
       return g;
     };
-    const p1 = plane(Math.PI / 4);
-    const p2 = plane(-Math.PI / 4);
-    const cross = new THREE.BufferGeometry();
-    cross.setAttribute('position', new THREE.Float32BufferAttribute([...p1.attributes.position.array, ...p2.attributes.position.array], 3));
-    cross.setAttribute('normal', new THREE.Float32BufferAttribute([...p1.attributes.normal.array, ...p2.attributes.normal.array], 3));
-    cross.setAttribute('uv', new THREE.Float32BufferAttribute([...p1.attributes.uv.array, ...p2.attributes.uv.array], 2));
-    const i1 = Array.from(p1.index!.array);
-    cross.setIndex([...i1, ...i1.map((i) => i + 4)]);
-    p1.dispose();
-    p2.dispose();
+    /**
+     * Crossed planes merged into one geometry: two for grass; three for the rounder bushes plus
+     * a level crown on top so they read as full shrubs from the high camera (aTop marks it).
+     */
+    const crossed = (angles: number[], crown = 0) => {
+      const ps = angles.map(plane);
+      if (crown) {
+        const c = new THREE.PlaneGeometry(0.82, 0.82);
+        c.rotateX(-Math.PI / 2);
+        c.translate(0, crown, 0);
+        ps.push(c);
+      }
+      const g = new THREE.BufferGeometry();
+      for (const [name, k] of [['position', 3], ['normal', 3], ['uv', 2]] as [string, number][])
+        g.setAttribute(name, new THREE.Float32BufferAttribute(ps.flatMap((p) => Array.from(p.attributes[name].array)), k));
+      g.setAttribute('aTop', new THREE.Float32BufferAttribute(ps.flatMap((_, k) => [0, 0, 0, 0].map(() => (crown && k === ps.length - 1 ? 1 : 0))), 1));
+      const i1 = Array.from(ps[0].index!.array);
+      g.setIndex(ps.flatMap((_, k) => i1.map((i) => i + k * 4)));
+      ps.forEach((p) => p.dispose());
+      return g;
+    };
+    const cross = crossed([Math.PI / 4, -Math.PI / 4]);
+    const tri = crossed([0, Math.PI / 3, -Math.PI / 3], 0.6);
     const tex = makeFoliageAtlas();
     const u = this.uniforms;
     const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = u.uTime;
-      sh.uniforms.uFocus = this.localU.uFocus;
+      sh.uniforms.uWind = this.flora.uWind;
+      sh.uniforms.uTrail = this.flora.uTrail;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform vec3 uFocus;\nattribute float aSprite;\nvarying float vSpr;\nvarying float vH;')
+        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform vec4 uWind;\nuniform vec4 uTrail[${TRAIL}];\nattribute float aSprite;\nattribute float aBend;\nattribute float aTop;\nvarying float vSpr;\nvarying float vH;`)
         .replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
-vSpr = aSprite;
-vH = uv.y;
+// a bush crown (aTop) shows the bush's top-view sprite and is lit like the upper leaves
+vSpr = aSprite + aTop * ${BUSH_TOP.toFixed(1)};
+vH = mix(uv.y, 0.95, aTop);
 vec3 ip = instanceMatrix[3].xyz;
+mat3 fim = mat3(instanceMatrix);
+// the root stays put, the tips move most; bushes are stiffer than grass
+float bend = position.y * position.y * aBend;
 float ph = ip.x * 0.9 + ip.z * 0.6;
-float bend = uv.y;
-transformed.x += sin(uTime * 2.0 + ph) * 0.07 * bend;
-transformed.z += cos(uTime * 1.6 + ph) * 0.05 * bend;
-vec2 away = ip.xz - uFocus.xz;
-float near = 1.0 - smoothstep(0.3, 1.1, length(away));
-transformed.xz += normalize(away + 0.0001) * near * 0.3 * bend;`,
+vec2 wd = uWind.xy;
+vec2 side = vec2(-wd.y, wd.x);
+float ws = uWind.z;
+// gusts roll across the meadow along the wind: a slow lean that comes and goes in waves,
+// plus a quick flutter that grows with the wind
+float wave = sin(dot(ip.xz, wd) * 0.42 - uTime * (1.1 + ws * 1.5) + sin(dot(ip.xz, side) * 0.19) * 1.6);
+float gust = 0.5 + 0.5 * wave;
+vec2 off = wd * ws * (0.05 + 0.2 * gust * gust);
+off += wd * sin(uTime * (1.6 + ws * 2.4) + ph) * (0.012 + 0.045 * ws);
+off += side * cos(uTime * (1.2 + ws * 1.8) + ph * 1.3) * (0.008 + 0.026 * ws);
+// the hero and the spots it just left push the blades aside; they spring back as those fade
+vec2 push = vec2(0.0);
+for (int i = 0; i < ${TRAIL}; i++) {
+  vec2 rel = ip.xz - uTrail[i].xy;
+  float d = length(rel);
+  push += rel / max(d, 0.06) * (1.0 - smoothstep(0.2, 0.95, d)) * uTrail[i].z;
+}
+float pl = length(push);
+if (pl > 1.0) push /= pl;
+off += push * 0.4;
+// leaning blades also dip, so they bend rather than stretch
+vec3 wo = vec3(off.x, -min(pl, 1.0) * 0.16 - dot(off, off) * 0.9, off.y) * bend;
+// world-space offset into the instance's own rotated and scaled frame
+transformed += transpose(fim) * wo / dot(fim[0], fim[0]);`,
         );
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vSpr;\nvarying float vH;')
@@ -679,12 +758,20 @@ diffuseColor *= sampledDiffuseColor;
 diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         );
     };
-    this.disposables.push(cross, tex, mat);
+    this.disposables.push(cross, tri, tex, mat);
     type F = { x: number; y: number; z: number; s: number; sp: number; c: number; a: number };
     const DC = 32;
     const per = Math.ceil(n / DC);
     const buckets: F[][] = Array.from({ length: per * per }, () => []);
     const col = new THREE.Color();
+    // bushes: one rule shared with the maps (flora.ts), tinted a deeper green than the grass
+    if (map.generator === 'meadow')
+      for (const b of bushSpots(t)) {
+        const r = (k: number) => hash2(Math.floor(b.x * 7), Math.floor(b.z * 7), k);
+        const leaf = col.setHex(0x4f8a34).multiplyScalar(0.92 + r(1) * 0.2).getHex();
+        const bi = Math.floor(b.z / DC) * per + Math.floor(b.x / DC);
+        buckets[bi].push({ x: b.x, y: t.groundY(b.x, b.z) - 0.04, z: b.z, s: b.s, sp: b.sprite, c: leaf, a: r(2) });
+      }
     const scan = (put: (f: F) => void, x0: number, z0: number) => {
     for (let z = z0; z < Math.min(n, z0 + DC); z++)
       for (let x = x0; x < Math.min(n, x0 + DC); x++) {
@@ -706,10 +793,12 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         for (let k = 0; k < count; k++) {
           const r = (a: number) => hash2(x * 3 + k, z * 5 + k * 7, a);
           const sp = pickSprite(rule.sprites, r(1));
-          const tint = SPRITE_COLORED.has(sp) ? 0xffffff : rule.tint ?? col.setHex(base).multiplyScalar(1.12 + r(2) * 0.22).getHex();
+          // a little colour drift across the meadow so neighbouring tufts are not identical
+          const drift = 1.08 + r(2) * 0.2 + (noise2(x / 6, z / 6, 97) - 0.5) * 0.14;
+          const tint = SPRITE_COLORED.has(sp) ? 0xffffff : rule.tint ?? col.setHex(base).multiplyScalar(drift).getHex();
           const fx = x + 0.12 + r(3) * 0.76;
           const fz = z + 0.12 + r(4) * 0.76;
-          put({ x: fx, y: t.groundY(fx, fz) - 0.03, z: fz, s: 0.6 * (0.8 + r(5) * 0.5), sp, c: tint, a: r(6) });
+          put({ x: fx, y: t.groundY(fx, fz) - 0.03, z: fz, s: 0.6 * (0.8 + r(5) * 0.5) * (SPRITE_SIZE[sp] ?? 1), sp, c: tint, a: r(6) });
         }
         // a fringe of tall grass along cliff rims, hanging over the edge
         if (e && rule.sprites.some(([sp]) => sp === SPRITE.grass) && q > 0.5) {
@@ -735,24 +824,31 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
     const m4 = new THREE.Matrix4();
     const rot = new THREE.Matrix4();
     buckets.forEach((decorList, bi) => this.defer(((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC, () => {
-      const list = decorList.slice();
-      scan((f) => list.push(f), (bi % per) * DC, Math.floor(bi / per) * DC);
-      if (!list.length) return;
-      const geo = cross.clone();
-      const mesh = new THREE.InstancedMesh(geo, mat, list.length);
-      const spr = new Float32Array(list.length);
-      list.forEach((f, i) => {
-        rot.makeRotationY(f.a * Math.PI);
-        m4.makeScale(f.s, f.s, f.s).premultiply(rot);
-        m4.setPosition(f.x, f.y, f.z);
-        mesh.setMatrixAt(i, m4);
-        mesh.setColorAt(i, col.setHex(f.c));
-        spr[i] = f.sp;
-      });
-      geo.setAttribute('aSprite', new THREE.InstancedBufferAttribute(spr, 1));
-      mesh.receiveShadow = true;
-      mesh.computeBoundingSphere();
-      this.place(mesh, ((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC);
+      const all = decorList.slice();
+      scan((f) => all.push(f), (bi % per) * DC, Math.floor(bi / per) * DC);
+      // grass on two crossed planes, bushes on three (one instanced draw each)
+      for (const bush of [false, true]) {
+        const list = all.filter((f) => SPRITE_BUSH.has(f.sp) === bush);
+        if (!list.length) continue;
+        const geo = (bush ? tri : cross).clone();
+        const mesh = new THREE.InstancedMesh(geo, mat, list.length);
+        const spr = new Float32Array(list.length);
+        const stiff = new Float32Array(list.length);
+        list.forEach((f, i) => {
+          rot.makeRotationY(f.a * Math.PI);
+          m4.makeScale(f.s, f.s, f.s).premultiply(rot);
+          m4.setPosition(f.x, f.y, f.z);
+          mesh.setMatrixAt(i, m4);
+          mesh.setColorAt(i, col.setHex(f.c));
+          spr[i] = f.sp;
+          stiff[i] = bush ? 0.45 : 1;
+        });
+        geo.setAttribute('aSprite', new THREE.InstancedBufferAttribute(spr, 1));
+        geo.setAttribute('aBend', new THREE.InstancedBufferAttribute(stiff, 1));
+        mesh.receiveShadow = true;
+        mesh.computeBoundingSphere();
+        this.place(mesh, ((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC);
+      }
     }));
   }
 
@@ -799,10 +895,53 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
   }
 
   update(time: number, surge: number) {
-    const f = this.uniforms.uFocus.value;
-    this.localU.uFocus.value.set(f.x - this.ox, f.y, f.z - this.oz);
     this.uniforms.uTime.value = time;
     this.uniforms.uSurge.value = surge;
+    this.updateWind(time);
+  }
+
+  /**
+   * The wind drifts on its own: calm spells and stronger gusty ones (slow noise over time) from a
+   * direction that wanders around the prevailing one. The grass shader turns it into sway.
+   */
+  private updateWind(time: number) {
+    const calm = noise2(time * 0.03, 0.5, 71) * 0.7 + noise2(time * 0.11, 4.5, 72) * 0.3;
+    const strength = 0.12 + 0.88 * Math.pow(Math.min(1, Math.max(0, (calm - 0.18) / 0.64)), 1.4);
+    const ang = 0.65 + (noise2(time * 0.015, 9.5, 73) - 0.5) * 1.4;
+    const w = this.wind;
+    w.x = Math.cos(ang);
+    w.z = Math.sin(ang);
+    w.strength = strength;
+    this.flora.uWind.value.set(w.x, w.z, strength, 0);
+  }
+
+  /**
+   * Feeds the hero to the grass: the spot where it stands pushes the blades aside, and the last
+   * few spots it left keep them bent while they fade (TRAIL_FADE), so the grass springs back
+   * smoothly behind it. `lift` is the height of the feet above the ground (a jump clears it).
+   */
+  trackHero(x: number, z: number, lift: number, dt: number) {
+    const tr = this.flora.uTrail.value;
+    const life = this.trailLife;
+    const lx = x - this.ox;
+    const lz = z - this.oz;
+    // feet well above the grass (a jump) do not touch it
+    const k = 1 - Math.min(1, Math.max(0, (lift - 0.2) / 0.7));
+    for (let i = 1; i < TRAIL; i++) {
+      life[i] = Math.max(0, life[i] - dt / TRAIL_FADE);
+      // ease out: the blades straighten slowly at first, then settle
+      tr[i].z = life[i] * life[i] * (3 - 2 * life[i]) * this.trailK[i];
+    }
+    // leave a trail point every ~0.35 blocks walked (the oldest one is reused)
+    if (Math.hypot(lx - this.trailLast[0], lz - this.trailLast[1]) > 0.35) {
+      const i = this.trailNext;
+      tr[i].set(lx, lz, k, 0);
+      life[i] = 1;
+      this.trailK[i] = k;
+      this.trailLast = [lx, lz];
+      this.trailNext = i + 1 >= TRAIL ? 1 : i + 1;
+    }
+    tr[0].set(lx, lz, k, 0);
   }
 
   dispose() {

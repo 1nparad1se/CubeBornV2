@@ -1,6 +1,7 @@
 /** Weapon and armor numbers make sense: trade-offs, not one weapon best at everything. Run: npx tsx tools/tests/weapons.ts */
 import { ITEMS, ITEM_BY_ID, baseDps, ARMOR_SETS } from '../../src/rpg/items';
 import { computeStats, newGear, equipFromBag } from '../../src/rpg/equipment';
+import { WEAPON_TYPES } from '../../src/rpg/weapons';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -51,5 +52,13 @@ for (let i = 0; i < 5; i++) {
 const robed = computeStats('human', g);
 ok(robed.hitDamage > 12 && robed.interval < 0.7 && robed.physDef === 6, `apprentice set boosts the staff: ${robed.hitDamage.toFixed(1)} dmg every ${robed.interval.toFixed(3)} s, defense ${robed.physDef}`);
 ok(base.weapon === null && base.hitDamage === 4, 'bare hands without a weapon');
+// one weapon system: every weapon item names a registered type, and agrees with it
+for (const it of ITEMS.filter((i) => i.weapon)) {
+  const t = WEAPON_TYPES[it.weapon!.kind];
+  ok(!!t && t.shape === it.weapon!.shape && (t.hands === 2) === !!it.twoHanded, `${it.id}: matches its weapon type (${t?.family}, ${t?.style}, ${t?.hands} hand(s))`);
+}
+ok(WEAPON_TYPES.staff1h.style === 'magic' && WEAPON_TYPES.sword1h.style === 'melee' && WEAPON_TYPES.bow.style === 'ranged', 'staff casts magic, sword fights in melee, bow shoots from range');
+ok(WEAPON_TYPES.sword1h.hands === 1 && WEAPON_TYPES.sword2h.grip === 'two' && WEAPON_TYPES.bow.grip === 'bow', 'one-hand sword leaves a hand free, two-handed sword is held with both hands');
+ok(Object.values(WEAPON_TYPES).every((t) => t.grip !== 'two' || (t.leftHand && t.leftHand.min <= t.leftHand.pref && t.leftHand.pref <= t.leftHand.max)), 'two-hand grips say where the left hand goes');
 console.log(fails ? `${fails} weapon check(s) FAILED` : 'all weapon checks passed');
 process.exit(fails ? 1 : 0);

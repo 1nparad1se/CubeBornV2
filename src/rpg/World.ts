@@ -123,6 +123,16 @@ export class World {
     this.autoAttack = !!d && attack;
   }
 
+  /**
+   * Right click on a dummy: the first click selects it as the target, a click on the target
+   * already selected starts the automatic attack (the hero walks into reach and keeps hitting
+   * until the target is gone or the attack is cancelled by walking or clearing the target).
+   */
+  clickTarget(d: Dummy) {
+    if (this.target === d) this.autoAttack = true;
+    else this.select(d, false);
+  }
+
   dummyAt(x: number, z: number, slack = 0.35): Dummy | null {
     let best: Dummy | null = null;
     let bd = 1e9;
@@ -138,6 +148,8 @@ export class World {
 
   update(dt: number) {
     this.time += dt;
+    // a target that left the world (killed or removed) is dropped with its automatic attack
+    if (this.target && !this.dummies.includes(this.target)) this.select(null);
     this.dayNight.update();
     this.player.update(dt);
     this.updateProjectiles(dt);

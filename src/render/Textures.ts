@@ -209,6 +209,49 @@ const PATTERN: Record<string, (s: number) => Px> = {
   bone: (s) => (x, y) => (y % 5 === 0 ? 0.86 : 0.92 + H(x, y, s) * 0.1),
 };
 
+/**
+ * Summer meadow grounds: the grass pattern with its own detail per tile name (same family, so
+ * cliffs and blending treat them all as grass). Brightness only; colours come from the palette.
+ */
+const GRASS_VARIANT: Record<string, (s: number) => Px> = {
+  // lush: dense dark blades, deeper shade between them
+  grass_lush: (s) => (x, y) => {
+    const r = H(x, y, s);
+    let m = r < 0.18 ? 0.8 : r < 0.4 ? 0.9 : r < 0.86 ? 1 : 1.08;
+    if (H(x, y + 1, s + 2) > 0.82 && r > 0.45) m = 1.1;
+    return m * (0.95 + H(x >> 1, y >> 1, s + 1) * 0.08);
+  },
+  // sunlit: short bright grass, soft contrast
+  grass_sun: (s) => (x, y) => {
+    const r = H(x, y, s);
+    let m = r < 0.08 ? 0.86 : r < 0.3 ? 0.95 : r < 0.88 ? 1.02 : 1.12;
+    if (H(x, y + 1, s + 2) > 0.93) m = 1.14;
+    return m * (0.97 + H(x >> 2, y >> 1, s + 1) * 0.06);
+  },
+  // dry: sparse straw-light blades and a few specks of earth
+  grass_dry: (s) => (x, y) => {
+    const r = H(x, y, s);
+    let m = r < 0.06 ? 0.74 : r < 0.25 ? 0.92 : r < 0.9 ? 1 : 1.16;
+    if (H(x >> 1, y, s + 3) > 0.9) m = 1.2;
+    return m * (0.95 + H(x >> 1, y >> 1, s + 1) * 0.09);
+  },
+  // clover: little three-leaf clusters of lighter leaves over the plain grass
+  grass_clover: (s) => {
+    const base = PATTERN.grass(s);
+    return (x, y) => {
+      for (let k = 0; k < 4; k++) {
+        const cx = 2 + Math.floor(hash2(k, 0, s + 7) * 12);
+        const cy = 2 + Math.floor(hash2(k, 1, s + 7) * 12);
+        const dx = x - cx;
+        const dy = y - cy;
+        if (dx === 0 && dy === 0) return 0.86;
+        if ((Math.abs(dx) === 1 && dy === 0) || (dx === 0 && dy === -1)) return 1.2;
+      }
+      return base(x, y);
+    };
+  },
+};
+
 /** Families whose top layer hangs over the cliff face like a grass block side. */
 const OVERHANG = new Set<GroundFam>(['grass', 'snow', 'bog']);
 
@@ -259,7 +302,7 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
   tileNames.forEach((name, ti) => {
     const colors = tiles[name] ?? [0x777777];
     const fam = groundFamily(name);
-    const pat = PATTERN[fam];
+    const pat = (fam === 'grass' && GRASS_VARIANT[name]) || PATTERN[fam];
     const [kind, soil, stone] = soilOf(fam, blocks, tiles);
     const soilPat = SOIL_PATTERN[kind];
     const vc = new THREE.Color();
@@ -303,10 +346,18 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
 export const SPRITE = {
   grass: 0, tallGrass: 1, fern: 2, poppy: 3, dandelion: 4, cornflower: 5, bluet: 6, tulip: 7,
   deadBush: 8, allium: 9, mushroom: 10, dryGrass: 11, daisy: 12,
+  // meadow variety: short and thick tufts, broad sedge, seed-head grass, clover, and bushes
+  shortGrass: 13, thickGrass: 14, sedge: 15, seedGrass: 16, clover: 17, bush: 18, berryBush: 19, shrub: 20,
+  // the crowns of the three bushes seen from above (bush sprite + BUSH_TOP)
+  bushTop: 21, berryBushTop: 22, shrubTop: 23,
 } as const;
-export const SPRITE_COUNT = 13;
-/** Sprites drawn in their own colours (flowers); the rest take the instance tint. */
-export const SPRITE_COLORED = new Set<number>([3, 4, 5, 6, 7, 8, 9, 10, 12]);
+export const SPRITE_COUNT = 24;
+/** Sprites drawn in their own colours (flowers, berries); the rest take the instance tint. */
+export const SPRITE_COLORED = new Set<number>([3, 4, 5, 6, 7, 8, 9, 10, 12, 19, 22]);
+/** Bush sprites: three upright planes and a crown on top, larger and stiffer in the wind. */
+export const SPRITE_BUSH = new Set<number>([18, 19, 20]);
+/** Offset from a bush sprite to its crown (top view) sprite. */
+export const BUSH_TOP = 3;
 
 /** Crossed-quad foliage sprites: grass tufts, ferns and small flowers as 16px pixel art. */
 export function makeFoliageAtlas(): THREE.CanvasTexture {
@@ -389,6 +440,84 @@ export function makeFoliageAtlas(): THREE.CanvasTexture {
   for (let y = 12; y < 16; y++) px(SPRITE.mushroom, 8, y, 0xe8dcc0);
   for (let dx = -3; dx <= 3; dx++) px(SPRITE.mushroom, 8 + dx, 11, 0x9a6a44, Math.abs(dx) === 3 ? 0.8 : 1);
   for (let dx = -2; dx <= 2; dx++) px(SPRITE.mushroom, 8 + dx, 10, 0xb07a50);
+  // short tuft: a few low blades, gaps between them
+  blades(SPRITE.shortGrass, 6, 2, 5, 4);
+  // thick clump: many blades crowded toward the middle
+  for (let b = 0; b < 16; b++) {
+    const x0 = 3 + Math.floor(hash2(b, 0, 5) * 10);
+    const h = 5 + Math.floor(hash2(b, 1, 5) * 7) - Math.abs(x0 - 8) / 2;
+    const lean = hash2(b, 2, 5) < 0.5 ? -1 : 1;
+    for (let k = 0; k < h; k++) px(SPRITE.thickGrass, x0 + (k > h * 0.55 ? lean : 0), 15 - k, grey(0.55 + (k / h) * 0.45 + hash2(b, k, 6) * 0.06));
+  }
+  // sedge: broad two-pixel leaves arching out to both sides
+  for (const [x0, h, lean] of [[7, 13, 0], [5, 10, -1], [10, 11, 1], [3, 7, -1], [12, 8, 1]] as [number, number, number][])
+    for (let k = 0; k < h; k++) {
+      const x = x0 + Math.round(lean * (k / h) * (k / h) * 4);
+      const g = grey(0.58 + (k / h) * 0.36);
+      px(SPRITE.sedge, x, 15 - k, g);
+      if (k < h - 2) px(SPRITE.sedge, x + 1, 15 - k, g, 0.88);
+    }
+  // seed-head grass: thin tall stems topped with a pale spike
+  for (const [x0, h] of [[4, 13], [8, 15], [11, 12], [6, 9]] as [number, number][])
+    for (let k = 0; k < h; k++) {
+      const head = k >= h - 4;
+      px(SPRITE.seedGrass, x0 + (k > h * 0.7 ? 1 : 0), 15 - k, grey(head ? 1.0 + (k & 1) * 0.04 : 0.62 + (k / h) * 0.3));
+      if (head && k & 1) px(SPRITE.seedGrass, x0 + 2, 15 - k, grey(0.96));
+    }
+  // clover: low round three-leaf heads on short stems
+  for (const [cx, cy] of [[4, 11], [9, 9], [12, 12], [6, 13]] as [number, number][]) {
+    for (let y = cy + 1; y < 16; y++) px(SPRITE.clover, cx, y, grey(0.62));
+    for (const [dx, dy] of [[-1, 0], [1, 0], [0, -1], [-1, -1], [1, -1]]) px(SPRITE.clover, cx + dx, cy + dy, grey(dy ? 0.98 : 0.88));
+    px(SPRITE.clover, cx, cy, grey(0.74));
+  }
+  /** A leafy blob for the bushes: ragged round crown, darker inside and underneath. */
+  const crown = (s: number, cx: number, cy: number, rx: number, ry: number, seed: number, leaf?: (x: number, y: number) => number) => {
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        const d = ((x - cx) / rx) ** 2 + ((y - cy) / ry) ** 2;
+        if (d > 1 + (hash2(x, y, seed) - 0.5) * 0.5) continue;
+        const shadeK = 0.62 + (1 - (y - (cy - ry)) / (2 * ry)) * 0.3 + hash2(x, y, seed + 1) * 0.12;
+        const c = leaf ? leaf(x, y) : grey(Math.min(1, shadeK * (hash2(x >> 1, y >> 1, seed + 2) > 0.8 ? 1.12 : 1)));
+        px(s, x, y, c, leaf ? shadeK * 1.15 : 1);
+      }
+  };
+  crown(SPRITE.bush, 8, 9.5, 7, 6.2, 11);
+  for (const [x, y] of [[7, 15], [9, 15], [8, 14]] as [number, number][]) px(SPRITE.bush, x, y, 0x6a4a2a);
+  // berry bush: its own dark leaves with red berries
+  const LEAF = [0x3f7a2c, 0x4a8a34, 0x356a26];
+  crown(SPRITE.berryBush, 8, 9.5, 7, 6.2, 13, (x, y) => LEAF[Math.floor(hash2(x, y, 14) * 3)]);
+  for (let k = 0; k < 9; k++) {
+    const x = 2 + Math.floor(hash2(k, 0, 15) * 12);
+    const y = 5 + Math.floor(hash2(k, 1, 15) * 9);
+    px(SPRITE.berryBush, x, y, 0xd8303a);
+    px(SPRITE.berryBush, x, y - 1, 0xff7070);
+  }
+  // shrub: a tall twiggy bush, leaf clusters at the ends of its stems
+  for (const [x0, dx, h] of [[8, 0, 14], [8, -1, 11], [8, 1, 12], [7, -2, 8], [9, 2, 9]] as [number, number, number][])
+    for (let k = 0; k < h; k++) px(SPRITE.shrub, x0 + Math.round((k / h) * dx * 3), 15 - k, 0x5a4026, 0.85 + (k & 1) * 0.15);
+  for (const [cx, cy, r] of [[8, 3, 3], [4, 6, 2.6], [12, 5, 2.8], [6, 10, 2.2], [11, 9, 2.4]] as [number, number, number][]) crown(SPRITE.shrub, cx, cy, r, r * 0.9, 17 + cx);
+  // crowns from above: a round leafy disc (ragged rim), lighter toward its middle
+  const top = (s: number, r: number, seed: number, leaf?: (x: number, y: number) => number) => {
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) {
+        const d = Math.hypot(x - 7.5, y - 7.5) / r;
+        if (d > 1 + (hash2(x, y, seed) - 0.5) * 0.35) continue;
+        const k = 0.72 + (1 - d) * 0.25 + hash2(x, y, seed + 1) * 0.12;
+        if (leaf) px(s, x, y, leaf(x, y), k * 1.1);
+        else px(s, x, y, grey(Math.min(1, k * (hash2(x >> 1, y >> 1, seed + 2) > 0.8 ? 1.12 : 1))));
+      }
+  };
+  top(SPRITE.bushTop, 7.4, 21);
+  top(SPRITE.berryBushTop, 7.4, 23, (x, y) => LEAF[Math.floor(hash2(x, y, 24) * 3)]);
+  for (let k = 0; k < 8; k++) {
+    const x = 3 + Math.floor(hash2(k, 0, 25) * 10);
+    const y = 3 + Math.floor(hash2(k, 1, 25) * 10);
+    px(SPRITE.berryBushTop, x, y, 0xd8303a);
+  }
+  // the shrub's crown is a few separate leaf clusters
+  for (const [cx, cy, r] of [[5, 5, 3], [11, 6, 2.8], [8, 11, 3.2]] as [number, number, number][])
+    for (let y = 0; y < 16; y++)
+      for (let x = 0; x < 16; x++) if (Math.hypot(x - cx, y - cy) < r + (hash2(x, y, 26) - 0.5)) px(SPRITE.shrubTop, x, y, grey(0.76 + hash2(x, y, 27) * 0.2));
   ctx.putImageData(img, 0, 0);
   const tex = new THREE.CanvasTexture(canvas);
   tex.magFilter = THREE.NearestFilter;

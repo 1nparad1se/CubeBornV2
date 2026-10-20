@@ -56,17 +56,46 @@ const place = (w: World, x: number, z: number) => {
   place(w, 30, 70);
   w.player.requestJump();
   let apex = 0;
-  let mid = false;
-  run(w, 1.2, () => {
-    apex = Math.max(apex, w.player.y);
-    if (!mid && w.player.airborne && w.player.jumpV < 0) {
-      mid = true;
-      w.player.requestJump(); // mid-air press must not double jump
+  run(w, 1.2, () => (apex = Math.max(apex, w.player.y)));
+  ok(Math.abs(apex - JUMP.height) < 0.05, `jump from standing reaches ${apex.toFixed(2)} (≈ ${JUMP.height})`);
+  ok(w.jumps === 1 && !w.player.airborne && w.player.y === 0, 'one press: one jump, lands on the ground');
+  // double jump: a second press in the air jumps again from there, a third does nothing
+  run(w, 0.3);
+  w.player.requestJump();
+  let y2 = 0;
+  let second = -1;
+  let flip = false;
+  let presses = 1;
+  apex = 0;
+  run(w, 2.5, () => {
+    const p = w.player;
+    apex = Math.max(apex, p.y);
+    if (p.airJumpT >= 0) flip = true;
+    if (presses === 1 && p.airborne && p.jumpV < 0) {
+      presses++;
+      y2 = p.y;
+      p.requestJump();
+    } else if (presses === 2 && second < 0 && p.airJumps === 1) second = p.y;
+    else if (presses === 2 && p.airborne && p.jumpV < 0 && p.airJumps === 1) {
+      presses++;
+      p.requestJump(); // third press in the air
     }
   });
-  ok(Math.abs(apex - JUMP.height) < 0.05, `jump from standing reaches ${apex.toFixed(2)} (≈ ${JUMP.height})`);
-  run(w, 0.4);
-  ok(w.jumps === 1 && !w.player.airborne && w.player.y === 0, 'one jump, no double jump, lands on the ground');
+  ok(w.jumps === 3, `double jump counted once (${w.jumps - 1} jumps in the air sequence)`);
+  ok(Math.abs(apex - (y2 + JUMP.airHeight)) < 0.08, `second jump rises ${JUMP.airHeight} above where it was taken (${y2.toFixed(2)} → ${apex.toFixed(2)})`);
+  ok(flip, 'the second jump plays its somersault');
+  ok(presses === 3 && !w.player.airborne && w.player.y === 0 && w.player.airJumps === 0, 'third press in the air ignored; landing restores the double jump');
+  // after landing the double jump works again
+  run(w, 0.3);
+  w.player.requestJump();
+  let again = false;
+  run(w, 1.5, () => {
+    if (!again && w.player.airborne && w.player.jumpV < 0) {
+      again = true;
+      w.player.requestJump();
+    }
+  });
+  ok(w.jumps === 5, 'after landing: jump + double jump again');
   // running jump keeps the horizontal speed (not a dash: same speed as walking)
   place(w, 30, 70);
   w.ctl.moveX = 1;
@@ -116,6 +145,38 @@ const place = (w: World, x: number, z: number) => {
   ok(others.every((d) => d.total === 0), 'single target: the other dummies are untouched');
   run(w, 600);
   ok(c.total > 1000 && w.dummies.length === 3, `ten more minutes of hits: total ${c.total}, still standing`);
+}
+
+// ---------------------------------------------------------------- right-click targeting
+{
+  const w = make('sword_guard2h');
+  const c = w.dummies[2];
+  place(w, c.x - 6, c.z + 4);
+  w.clickTarget(c);
+  run(w, 1);
+  ok(w.target === c && !w.autoAttack && c.hits === 0 && Math.hypot(w.player.x - (c.x - 6), w.player.z - (c.z + 4)) < 0.01, 'first right click: target selected, no attack, no walking');
+  w.clickTarget(c);
+  run(w, 6);
+  ok(w.autoAttack && c.hits >= 2 && Math.hypot(w.player.x - c.x, w.player.z - c.z) < 2.6 + c.radius, `second right click: walks into reach and keeps attacking (${c.hits} hits)`);
+  const other = w.dummies[0];
+  w.clickTarget(other);
+  ok(w.target === other && !w.autoAttack, 'right click on another dummy only selects it');
+  w.select(c, true);
+  w.ctl.moveX = 1;
+  run(w, 0.3);
+  w.ctl.moveX = 0;
+  ok(!w.autoAttack, 'walking by hand cancels the automatic attack');
+  // every weapon type attacks from its own range
+  for (const id of ['staff_spark', 'sword_recruit', 'bow_hunter']) {
+    const v = make(id);
+    const d = v.dummies[2];
+    place(v, d.x, d.z + 25);
+    v.clickTarget(d);
+    v.clickTarget(d);
+    run(v, 9);
+    const dist = Math.hypot(v.player.x - d.x, v.player.z - d.z);
+    ok(d.hits >= 2 && dist <= v.stats.range + d.radius + 0.1 && dist > v.stats.range - 3, `${id}: auto attack from its range ${v.stats.range} (stands ${dist.toFixed(1)} away, ${d.hits} hits)`);
+  }
 }
 
 // ---------------------------------------------------------------- spear sweep hits the pair

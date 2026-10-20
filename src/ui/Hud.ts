@@ -7,6 +7,10 @@ import { t } from '../i18n';
 import { item } from '../rpg/items';
 import { RACE_BY_ID } from '../rpg/races';
 import { itemIcon } from './itemIcons';
+import { Minimap } from './Minimap';
+
+/** Cells of the skill bar (empty for now: active skills come later). */
+export const SKILL_SLOTS = 6;
 
 interface HudOptions {
   fps: boolean;
@@ -14,8 +18,9 @@ interface HudOptions {
 
 /**
  * Heads-up display of the training ground: the hero frame (name, race, level, health), the
- * target frame of the selected dummy (damage total, DPS), the world clock, the weapon panel with
- * the inventory button, banners and hints. Writes to the DOM only when a value changes.
+ * target frame of the selected dummy (damage total, DPS), the round compass minimap and the
+ * world clock, the skill bar, the weapon panel with the inventory button, banners and hints.
+ * Writes to the DOM only when a value changes.
  */
 export class Hud {
   readonly root: HTMLElement;
@@ -40,6 +45,9 @@ export class Hud {
   private weaponName = h('b');
   private weaponInfo = h('span');
   private cd = h('i');
+  readonly minimap = new Minimap();
+  /** The skill bar cells, left to right (keys 1..6). */
+  readonly skillSlots: HTMLElement[] = [];
   private last: Record<string, string | number> = {};
   private bannerT = 0;
   private fpsAcc = 0;
@@ -63,15 +71,20 @@ export class Hud {
       h('div.rh-tstats', this.tTotal, this.tDps, this.tHits),
       h('small', 'Манекен не атакует и не погибает'),
     );
-    const invBtn = h('button.rh-inv', { title: 'Инвентарь и снаряжение (I)', onclick: () => this.onInventory?.() }, h('i.rh-bag'), h('span', 'Инвентарь'), h('kbd', 'I'));
+    const invBtn = h('button.rh-inv', { title: 'Инвентарь и снаряжение (Tab / I)', onclick: () => this.onInventory?.() }, h('i.rh-bag'), h('span', 'Инвентарь'), h('kbd', 'Tab / I'));
+    for (let i = 0; i < SKILL_SLOTS; i++) this.skillSlots.push(h('div.rh-skill.empty', { title: 'Пустая ячейка навыка' }, h('kbd', String(i + 1))));
     this.root = h(
       'div.hud.rpg-hud',
       h('div.rh-tl', h('div.rh-hero', h('div.rh-hero-txt', this.heroName, this.heroSub), h('div.rh-hp', this.heroHp, this.heroHpText)), this.fps),
       h('div.rh-top', this.target),
-      h('div.rh-tr', this.clockBox),
+      h('div.rh-tr', this.minimap.root, this.clockBox),
       this.bannerBox,
       this.hint,
-      h('div.rh-bottom', h('div.rh-weapon', this.weaponIcon, h('div.rh-wtxt', this.weaponName, this.weaponInfo), h('div.rh-cd', this.cd)), invBtn),
+      h(
+        'div.rh-bottom',
+        h('div.rh-skills', this.skillSlots),
+        h('div.rh-bottom-row', h('div.rh-weapon', this.weaponIcon, h('div.rh-wtxt', this.weaponName, this.weaponInfo), h('div.rh-cd', this.cd)), invBtn),
+      ),
     );
     parent.appendChild(this.root);
   }
@@ -107,9 +120,9 @@ export class Hud {
     if (on) {
       clear(this.hint);
       this.hint.append(
-        h('div', h('kbd', 'WASD'), ' — ходьба, ', h('kbd', 'Пробел'), ' — прыжок, ', h('kbd', 'ЛКМ'), ' по земле — идти'),
-        h('div', h('kbd', 'ЛКМ'), ' по манекену — выбрать цель и атаковать, ', h('kbd', 'ПКМ'), ' / ', h('kbd', 'F'), ' — базовая атака'),
-        h('div', h('kbd', 'I'), ' — инвентарь и снаряжение, ', h('kbd', 'Esc'), ' — пауза'),
+        h('div', h('kbd', 'WASD'), ' — ходьба, ', h('kbd', 'Пробел'), ' — прыжок (ещё раз в воздухе — двойной)'),
+        h('div', h('kbd', 'ПКМ'), ' по манекену — выбрать цель, ', h('kbd', 'ПКМ'), ' по цели ещё раз — автоатака, ', h('kbd', 'F'), ' — атака'),
+        h('div', h('kbd', 'Tab'), ' / ', h('kbd', 'I'), ' — инвентарь, ', h('kbd', 'M'), ' — карта мира, ', h('kbd', 'Esc'), ' — пауза'),
       );
     }
   }
@@ -151,6 +164,7 @@ export class Hud {
     const p = w.player;
     const k = st.interval > 0 ? Math.max(0, Math.min(1, p.cooldown / st.interval)) : 0;
     this.cd.style.width = `${Math.round((1 - k) * 100)}%`;
+    this.minimap.draw(w);
     // world clock
     const dn = w.dayNight;
     const hm = dn.clock.hhmm;

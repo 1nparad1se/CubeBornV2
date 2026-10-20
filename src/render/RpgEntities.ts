@@ -4,6 +4,7 @@ import { HumanModel } from './human/HumanModel';
 import { DummyModel } from './human/DummyModel';
 import { arrowModel, itemMaterial } from './human/itemMeshes';
 import { RACE_BY_ID } from '../rpg/races';
+import { JUMP } from '../rpg/Player';
 
 /** Square pixel ring lying on the ground (target marker). */
 function ringGeo(r: number, w: number): THREE.BufferGeometry {
@@ -84,6 +85,7 @@ export class RpgEntities {
       vy: p.jumpV,
       attack: a ? { t: Math.min(1, a.t / a.dur), hitAt: a.hitAt } : null,
       time: w.time,
+      flip: p.airJumpT >= 0 ? p.airJumpT / JUMP.flipTime : 0,
     });
     // dummies wobble when hit
     w.dummies.forEach((dm, i) => this.dummies[i].wobble(dm.wobble, dm.wobX, dm.wobZ, w.time));

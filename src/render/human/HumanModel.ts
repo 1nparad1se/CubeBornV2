@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { item, type Slot, type WeaponKind } from '../../rpg/items';
+import { weaponType, type WeaponType } from '../../rpg/weapons';
 import { PX, SkinAtlas, type Paint } from './skinAtlas';
 import { SKINS, armorPaints, type BodySkin } from './skins';
 import { shieldModel, weaponModel, type WeaponModel } from './itemMeshes';
@@ -16,7 +17,59 @@ interface HumanPose {
   /** Basic attack in progress: progress 0..1 and the hit moment (fraction). */
   attack: { t: number; hitAt: number } | null;
   time: number;
+  /** Somersault of the double jump: progress 0..1 (0 = none). */
+  flip?: number;
 }
+
+/**
+ * A two-hand hold: the right hand's spot on the handle (`g`, body pixels), the weapon's direction
+ * as elevation `el` above the forward horizontal and yaw `yaw` toward the model's left (radians).
+ */
+interface Hold {
+  g: THREE.Vector3;
+  el: number;
+  yaw: number;
+}
+
+const ease = (x: number) => {
+  const c = Math.max(0, Math.min(1, x));
+  return c * c * (3 - 2 * c);
+};
+const DEG = Math.PI / 180;
+const hold = (x: number, y: number, z: number, el: number, yaw: number): Hold => ({ g: new THREE.Vector3(x, y, z), el: el * DEG, yaw: yaw * DEG });
+/** a + (b - a) * k for holds (into `out`). */
+function mixHold(out: Hold, a: Hold, b: Hold, k: number): Hold {
+  out.g.lerpVectors(a.g, b.g, k);
+  out.el = a.el + (b.el - a.el) * k;
+  out.yaw = a.yaw + (b.yaw - a.yaw) * k;
+  return out;
+}
+
+/** Shoulder pivots (body pixels) and the reach from a shoulder to the middle of the fist. */
+const SHOULDER_R = new THREE.Vector3(-6, 22, 0);
+const SHOULDER_L = new THREE.Vector3(6, 22, 0);
+const ARM_REACH = 9;
+/** Height of the body's middle (blocks): the double-jump somersault turns around it. */
+const FLIP_CENTER = 17 * PX;
+
+/**
+ * Two-hand holds per weapon (idle, run, and the attack's key poses). Pixels in the body frame:
+ * +Z forward, +X the model's left, y up from the feet. The left hand finds its own spot on the
+ * handle (WEAPON_TYPES leftHand range), so a hold only places the right hand and the direction.
+ */
+const HOLDS: Partial<Record<WeaponKind, Record<'idle' | 'run' | 'a' | 'b', Hold>>> = {
+  // guard stance, blade up and forward; the attack raises it over the head (a) and chops (b)
+  sword2h: { idle: hold(0.5, 16.5, 5.5, 58, -12), run: hold(0.5, 16, 6, 36, -24), a: hold(0.5, 26.5, 2.5, 140, -4), b: hold(0.5, 14, 8, -28, 0) },
+  // shaft level at the hip, head forward; drawn back (a), then thrust (b)
+  spear: { idle: hold(-1.5, 15, 4.5, 8, 6), run: hold(-1.5, 15.5, 4.5, 18, 8), a: hold(-2.5, 16, 1.5, 4, 4), b: hold(-0.5, 16.5, 8.5, 2, 0) },
+  // staff upright in front; raised high (a), then swept forward to send the orb (b)
+  staff2h: { idle: hold(-2.5, 14.5, 4.5, 78, 10), run: hold(-2, 15, 5, 55, 15), a: hold(-1, 24, 4, 95, 4), b: hold(0, 19, 8.5, 15, 0) },
+};
+const _hold = { g: new THREE.Vector3(), el: 0, yaw: 0 };
+const _hold2 = { g: new THREE.Vector3(), el: 0, yaw: 0 };
+const _d = new THREE.Vector3();
+const _x = new THREE.Vector3();
+const _z = new THREE.Vector3();
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -43,6 +96,8 @@ export class HumanModel {
   readonly root = new THREE.Group();
   /** Turns the body (facing); the root stays the world position. */
   readonly body = new THREE.Group();
+  /** Between root and body: turns the whole figure for the double-jump somersault. */
+  private tumble = new THREE.Group();
   private parts = {} as Record<Part, THREE.Group>;
   private atlas: SkinAtlas;
   private mat: THREE.MeshLambertMaterial;
@@ -52,6 +107,7 @@ export class HumanModel {
   private equipIds: Partial<Record<Slot, string | null>> = {};
   private weapon: WeaponModel | null = null;
   private weaponKind: WeaponKind | null = null;
+  private wtype: WeaponType | null = null;
   private shield: { root: THREE.Group; dispose(): void } | null = null;
   private holderR = new THREE.Group();
   private holderL = new THREE.Group();
@@ -61,7 +117,8 @@ export class HumanModel {
     const skin: BodySkin = SKINS[skinId] ?? SKINS.human;
     this.atlas = new SkinAtlas(128);
     this.mat = this.atlas.material();
-    this.root.add(this.body);
+    this.root.add(this.tumble);
+    this.tumble.add(this.body);
     const mk = (name: Part, pivot: [number, number, number]) => {
       const g = new THREE.Group();
       g.position.set(pivot[0] * PX, pivot[1] * PX, pivot[2] * PX);
@@ -111,10 +168,12 @@ export class HumanModel {
       if (this.weapon) this.weapon.root.removeFromParent();
       this.weapon = null;
       this.weaponKind = null;
+      this.wtype = null;
       const w = item(equip.main)?.weapon;
       if (w) {
         this.weapon = weaponModel(w.kind);
         this.weaponKind = w.kind;
+        this.wtype = weaponType(w.kind);
         this.mountWeapon();
       }
     }
@@ -147,9 +206,9 @@ export class HumanModel {
     const r = w.root;
     r.position.set(0, 0, 0);
     r.rotation.set(0, 0, 0);
-    if (k === 'bow') {
-      // held level across the front of the body (limbs left and right); the pose places it
-      // and points the left hand at its grip every frame
+    if (k === 'bow' || this.wtype?.grip === 'two') {
+      // the bow (level across the front, limbs left and right) and two-hand weapons live in the
+      // body frame: the pose places them every frame and closes the hands on their grips
       this.body.add(r);
       return;
     }
@@ -217,10 +276,11 @@ export class HumanModel {
     this.body.position.set(0, 0, 0);
     this.body.rotation.set(0, 0, 0);
     const k = this.weaponKind;
+    const grip = this.wtype?.grip ?? null;
     const sw = Math.sin(p.walk);
     const mv = p.moving;
     // walk: legs and arms swing in opposition (Minecraft gait)
-    let legSwing = sw * 0.75 * mv;
+    const legSwing = sw * 0.75 * mv;
     P.legR.rotation.x = legSwing;
     P.legL.rotation.x = -legSwing;
     let armR = -sw * 0.6 * mv;
@@ -229,30 +289,23 @@ export class HumanModel {
     const br = Math.sin(p.time * 1.6) * 0.03;
     P.armR.rotation.z = -0.04 - br;
     P.armL.rotation.z = 0.04 + br;
-    // holding stance per weapon
-    const two = k === 'sword2h' || k === 'spear' || k === 'staff2h' || k === 'crossbow';
-    if (k) armR = armR * 0.5 - 0.3;
+    // holding stance per weapon type (two-hand weapons are posed by holdTwoHanded below)
+    if (grip === 'one') armR = this.oneHandStance(k, sw, mv, br);
+    else if (k) armR = armR * 0.5 - 0.3;
     if (k === 'bow') armR = -sw * 0.4 * mv;
-    if (two && k !== 'staff2h') {
-      armR = -0.55 + armR * 0.2;
-      armL = -0.55 + armL * 0.2;
-      P.armL.rotation.y = 0.45;
-      P.armR.rotation.y = -0.15;
-    }
     if (k === 'crossbow') {
       armR = -1.1;
       armL = -1.1;
       P.armL.rotation.y = 0.5;
     }
     if (this.shield) armL = armL * 0.5 - 0.2;
-    // jump: legs tuck a little, arms lift outward
+    // jump: legs tuck a little, free arms lift outward
     if (p.airborne) {
       const up = Math.max(-1, Math.min(1, p.vy / 4));
       P.legR.rotation.x = -0.35 + up * 0.15;
       P.legL.rotation.x = 0.2 - up * 0.1;
       P.armR.rotation.z -= 0.35;
       P.armL.rotation.z += 0.35;
-      legSwing = 0;
     }
     P.armR.rotation.x = armR;
     P.armL.rotation.x = armL;
@@ -261,12 +314,153 @@ export class HumanModel {
     if (this.weapon && k === 'bow' && !p.attack) {
       // carried level in front of the belly, limbs left and right, gripped by the left hand
       const bob = Math.abs(Math.cos(p.walk)) * 0.5 * mv;
-      const grip = _g.set(1, 15.5 + bob, 6.5);
-      this.aimArm(P.armL, _sL.set(6, 22, 0), grip, 1);
-      this.placeBow(grip, 0);
+      const g = _g.set(1, 15.5 + bob, 6.5);
+      this.aimArm(P.armL, _sL.set(6, 22, 0), g, 1);
+      this.placeBow(g, 0);
       this.weapon.setDraw(null, false, 0);
     }
-    if (p.attack) this.attackPose(p.attack.t, p.attack.hitAt);
+    if (grip === 'two') this.twoHandPose(p, br);
+    else if (p.attack) this.attackPose(p.attack.t, p.attack.hitAt);
+    this.flipPose(p.flip ?? 0, grip === 'two');
+  }
+
+  /**
+   * Idle and run stance of one-hand weapons: the sword in a low guard at rest and raised, blade
+   * forward, on the run; the staff held upright like a walking staff at rest and slanted forward
+   * on the run. Returns the right arm's swing; tilts the weapon in the hand.
+   */
+  private oneHandStance(k: WeaponKind | null, sw: number, mv: number, br: number): number {
+    const r = this.weapon?.root;
+    if (k === 'staff1h') {
+      if (r) {
+        r.rotation.set(0.15 + 0.75 * mv, 0, 0);
+        r.position.set(0, 0, 2.4 * PX);
+      }
+      return -0.12 - br * 2 + (-0.18 - sw * 0.3) * mv;
+    }
+    // sword (and anything else held in one hand)
+    if (r) {
+      r.rotation.set(Math.PI / 2 + 0.42 - 0.6 * mv, 0, 0);
+      r.position.set(0, 0, 0);
+    }
+    return -0.28 - br * 2 + (-0.24 - sw * 0.25) * mv;
+  }
+
+  /**
+   * Two-hand weapons (two-handed sword, spear, staff): idle, run and attack are holds (HOLDS)
+   * blended over time; holdTwoHanded then lays the weapon along the hold and closes both hands on
+   * the handle, so the left hand never floats free of it.
+   */
+  private twoHandPose(p: HumanPose, br: number) {
+    const k = this.weaponKind!;
+    const H = HOLDS[k];
+    if (!H) return;
+    const P = this.parts;
+    const mv = p.moving;
+    // stance: idle blended into the run, with a bob of the step and a breath at rest
+    const base = mixHold(_hold, H.idle, H.run, mv);
+    base.g.y += Math.abs(Math.cos(p.walk)) * 0.7 * mv + br * 8 * (1 - mv);
+    let h = base;
+    const a = p.attack;
+    if (a) {
+      const t = a.t;
+      const hitAt = a.hitAt;
+      const wu = Math.min(1, t / Math.max(0.01, hitAt));
+      const ft = t <= hitAt ? 0 : Math.min(1, (t - hitAt) / Math.max(0.01, 1 - hitAt));
+      // wind up into pose a, strike into pose b right at the hit moment, hold, then recover
+      const up = ease(wu / 0.7);
+      const strike = ease((wu - 0.7) / 0.3);
+      const rec = t <= hitAt ? 0 : ease((ft - 0.2) / 0.8);
+      if (t <= hitAt) h = mixHold(_hold2, mixHold(_hold2, base, H.a, up), H.b, strike);
+      else h = mixHold(_hold2, H.b, base, rec);
+      const into = t <= hitAt ? strike : 1 - rec;
+      const back = t <= hitAt ? up * (1 - strike) : 0;
+      if (k === 'sword2h') {
+        this.body.rotation.x = -back * 0.08 + into * 0.18;
+        P.legR.rotation.x += -into * 0.3;
+        P.legL.rotation.x += into * 0.3;
+      } else if (k === 'spear') {
+        // the whole body steps into the thrust
+        this.body.position.z = (into * 3 - back * 1.5) * PX;
+        this.body.rotation.y = back * 0.2;
+        P.legR.rotation.x += -into * 0.35;
+        P.legL.rotation.x += into * 0.25;
+      } else {
+        this.body.rotation.x = -back * 0.06 + into * 0.12;
+        P.head.rotation.x = -back * 0.15;
+      }
+    }
+    this.holdTwoHanded(h);
+  }
+
+  /**
+   * Lays a two-hand weapon along hold `h` and puts both hands on it: the right hand reaches as
+   * far as it can toward the hold point and grips there; the left hand slides along the handle
+   * (within the weapon type's range, as close to its preferred spot as the arm allows).
+   */
+  private holdTwoHanded(h: Hold) {
+    const P = this.parts;
+    const r = this.weapon?.root;
+    const lh = this.wtype?.leftHand;
+    if (!r || !lh) return;
+    const dir = _d.set(Math.cos(h.el) * Math.sin(h.yaw), Math.sin(h.el), Math.cos(h.el) * Math.cos(h.yaw));
+    const hr = _h.subVectors(h.g, SHOULDER_R).setLength(ARM_REACH).add(SHOULDER_R);
+    // points of the handle line an arm's length from the left shoulder: |hr + dir s - S| = reach
+    const rel = _v1.subVectors(hr, SHOULDER_L);
+    const b = dir.dot(rel);
+    const disc = b * b - (rel.lengthSq() - ARM_REACH * ARM_REACH);
+    let s = Math.max(lh.min, Math.min(lh.max, -b));
+    if (disc >= 0) {
+      const q = Math.sqrt(disc);
+      let best = Infinity;
+      for (const c of [-b - q, -b + q]) {
+        const cc = Math.max(lh.min, Math.min(lh.max, c));
+        // in range first, then nearest the preferred spot
+        const cost = Math.abs(cc - c) * 10 + Math.abs(cc - lh.pref);
+        if (cost < best) {
+          best = cost;
+          s = cc;
+        }
+      }
+    }
+    const hl = _n.copy(hr).addScaledVector(dir, s);
+    this.aimArm(P.armR, SHOULDER_R, hr, 1);
+    this.aimArm(P.armL, SHOULDER_L, hl, 1);
+    // the weapon: grip in the right hand, along `dir`, the flat of the blade to the sides
+    const x = _x.set(1, 0, 0).addScaledVector(dir, -dir.x);
+    if (x.lengthSq() < 1e-4) x.set(0, 0, 1).addScaledVector(dir, -dir.z);
+    x.normalize();
+    const z = _z.crossVectors(x, dir);
+    r.quaternion.setFromRotationMatrix(_m.makeBasis(x, dir, z));
+    r.position.copy(hr).multiplyScalar(PX);
+    r.scale.setScalar(1);
+  }
+
+  /**
+   * Double jump: one smooth forward somersault around the middle of the body, knees tucked to
+   * the chest (and free arms hugging them) at its height. `t` 0..1, 0 = none.
+   */
+  private flipPose(t: number, twoHands: boolean) {
+    const tb = this.tumble;
+    if (t <= 0 || t >= 1) {
+      tb.rotation.set(0, 0, 0);
+      tb.position.set(0, 0, 0);
+      return;
+    }
+    const a = ease(t) * Math.PI * 2;
+    tb.rotation.set(a, 0, 0);
+    tb.position.set(0, FLIP_CENTER * (1 - Math.cos(a)), -FLIP_CENTER * Math.sin(a));
+    const tuck = Math.sin(Math.PI * t);
+    const P = this.parts;
+    P.legR.rotation.x = P.legR.rotation.x * (1 - tuck) - 1.25 * tuck;
+    P.legL.rotation.x = P.legL.rotation.x * (1 - tuck) - 1.1 * tuck;
+    P.head.rotation.x += 0.35 * tuck;
+    if (!twoHands && this.weaponKind !== 'bow') {
+      P.armR.rotation.x = P.armR.rotation.x * (1 - tuck) - 0.9 * tuck;
+      P.armL.rotation.x = P.armL.rotation.x * (1 - tuck) - 0.9 * tuck;
+      P.armR.rotation.z *= 1 - tuck;
+      P.armL.rotation.z *= 1 - tuck;
+    }
   }
 
   /**
@@ -340,9 +534,12 @@ export class HumanModel {
     const ft = t <= hitAt ? 0 : Math.min(1, (t - hitAt) / Math.max(0.01, 1 - hitAt));
     const ease = (x: number) => x * x * (3 - 2 * x);
     const strike = t <= hitAt ? ease(wu) : 1 - ease(ft);
+    const r = this.weapon?.root;
     switch (k) {
       case null:
       case 'sword1h': {
+        // the blade comes level out of the stance for the cut and goes back after it
+        if (r) r.rotation.x = Math.PI / 2 + (r.rotation.x - Math.PI / 2) * (t <= hitAt ? 1 - Math.min(1, wu * 3) : ft);
         // raise up and back, then a fast diagonal cut down across the body
         const up = t <= hitAt ? ease(wu) : 0;
         const down = t <= hitAt ? 0 : 1 - ease(ft);
@@ -353,47 +550,15 @@ export class HumanModel {
         if (t > hitAt && ft < 0.25) P.armR.rotation.x = -1.4 + ft * 2;
         break;
       }
-      case 'sword2h': {
-        // both hands overhead, then a heavy chop
-        const up = t <= hitAt ? ease(wu) : 0;
-        const down = t <= hitAt ? 0 : 1 - ease(ft);
-        const x = -0.55 - up * 2.2 - down * 0.6;
-        P.armR.rotation.x = x;
-        P.armL.rotation.x = x;
-        P.armL.rotation.y = 0.45 - up * 0.2;
-        this.body.rotation.x = -up * 0.08 + down * 0.18;
-        P.legR.rotation.x = -down * 0.3;
-        P.legL.rotation.x = down * 0.3;
-        break;
-      }
-      case 'spear': {
-        // draw back, then a straight thrust (the whole body steps into it)
-        const back = t <= hitAt ? ease(wu) : 0;
-        const thrust = t <= hitAt ? 0 : 1 - ease(ft);
-        P.armR.rotation.x = -1.2 - thrust * 0.37 + back * 0.25;
-        P.armL.rotation.x = -1.3 - thrust * 0.27 + back * 0.2;
-        P.armL.rotation.y = 0.5;
-        this.body.position.z = (thrust * 3 - back * 1.5) * PX;
-        this.body.rotation.y = back * 0.2;
-        P.legR.rotation.x = -thrust * 0.35;
-        P.legL.rotation.x = thrust * 0.25;
-        break;
-      }
       case 'staff1h': {
         // point the staff forward and release the spark
+        if (r) {
+          r.rotation.x += (Math.PI / 2 - r.rotation.x) * strike;
+          r.position.z *= 1 - strike;
+        }
         P.armR.rotation.x = -0.3 - strike * 1.15;
         P.armR.rotation.z = -0.04 + strike * 0.12;
         this.body.rotation.y = -strike * 0.1;
-        break;
-      }
-      case 'staff2h': {
-        // lift the staff high over the head, then sweep it forward
-        const up = t <= hitAt ? ease(wu) : 0;
-        const down = t <= hitAt ? 0 : 1 - ease(ft);
-        P.armR.rotation.x = -0.3 - up * 2.4 - down * 1.2;
-        P.armL.rotation.x = -up * 1.6 - down * 0.8;
-        P.armL.rotation.z = 0.04 + up * 0.25;
-        this.body.rotation.x = -up * 0.06 + down * 0.12;
         break;
       }
       case 'bow':
