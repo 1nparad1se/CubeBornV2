@@ -2,21 +2,32 @@ import { clamp } from '../core/math';
 import { clearLine, findPath } from '../game/arpg/Path';
 import { SLOPE } from '../game/Terrain';
 import type { WeaponStats } from './items';
+import { weaponType } from './weapons';
 import type { World } from './World';
 
 /**
- * Minecraft-like jump: one jump from the ground (standing or moving), no double jump, no dash
- * and no invulnerability. The apex (1.35 blocks) clears 1-block obstacles; walls and the map
- * border still block horizontal movement in the air.
+ * Minecraft-like jump from the ground (standing or moving), plus one more jump in the air (a
+ * double jump; a third press in the air does nothing until the hero lands). No dash and no
+ * invulnerability. The apex (1.35 blocks) clears 1-block obstacles; walls and the map border
+ * still block horizontal movement in the air.
  */
 export const JUMP = {
   height: 1.35,
   airTime: 0.56,
+  /** The second jump rises this far above the point where it is taken. */
+  airHeight: 1.1,
+  /** Jumps allowed in the air before landing. */
+  airJumps: 1,
+  /** Duration of the somersault of the second jump (renderer). */
+  flipTime: 0.46,
   /** Presses this early still count once the hero lands (s). */
   buffer: 0.14,
   /** Landing recovery (s) before the next jump. */
   landLag: 0.08,
 };
+
+/** Gravity of the jump arc: the ground jump peaks at JUMP.height after half of JUMP.airTime. */
+const GRAVITY = (8 * JUMP.height) / (JUMP.airTime * JUMP.airTime);
 
 interface AttackState {
   weapon: WeaponStats | null;
@@ -50,6 +61,10 @@ export class RpgPlayer {
   private jumpBuf = 0;
   private airY0 = 0;
   private airV0 = 0;
+  /** Jumps taken in the air since leaving the ground. */
+  airJumps = 0;
+  /** Seconds since the double jump started (renderer: somersault), -1 when none is playing. */
+  airJumpT = -1;
   path: number[] = [];
   pathI = 0;
   attack: AttackState | null = null;
@@ -183,9 +198,9 @@ export class RpgPlayer {
     this.cooldown = st.interval;
     this.fx = dx;
     this.fz = dz;
-    const k = wpn?.kind;
-    if (k === 'sword1h' || k === 'sword2h' || !k) w.fx.sound('slash', 0.45);
-    else if (k === 'spear') w.fx.sound('thrust', 0.5);
+    // fists swing like a sword; shots and spells sound when they leave
+    const snd = wpn ? weaponType(wpn.kind)?.swingSound : 'slash';
+    if (snd) w.fx.sound(snd, snd === 'thrust' ? 0.5 : 0.45);
   }
 
   private setPath(tx: number, tz: number) {
@@ -220,6 +235,10 @@ export class RpgPlayer {
   private updateJump(dt: number) {
     if (this.jumpBuf > 0 && this.jumpPhase !== 'land') this.jumpBuf -= dt;
     this.jumpT += dt;
+    if (this.airJumpT >= 0) {
+      this.airJumpT += dt;
+      if (this.airJumpT > JUMP.flipTime) this.airJumpT = -1;
+    }
     const g = this.ground;
     switch (this.jumpPhase) {
       case 'ground':
@@ -231,10 +250,19 @@ export class RpgPlayer {
         }
         break;
       case 'air': {
-        const grav = (8 * JUMP.height) / (JUMP.airTime * JUMP.airTime);
+        if (this.jumpBuf > 0 && this.airJumps < JUMP.airJumps) {
+          // double jump: a fresh arc from where the hero is, with a somersault
+          this.jumpBuf = 0;
+          this.airJumps++;
+          this.w.jumps++;
+          this.takeOff(Math.sqrt(2 * GRAVITY * JUMP.airHeight));
+          this.airJumpT = 0;
+          this.w.fx.burst(this.x, this.y - g + 0.1, this.z, 0xe8f0f8, 6, 1.6, 0.1, 0.3, 'smoke');
+          this.w.fx.sound('jump', 0.42);
+        }
         const t = this.jumpT;
-        this.y = this.airY0 + this.airV0 * t - 0.5 * grav * t * t;
-        this.jumpV = this.airV0 - grav * t;
+        this.y = this.airY0 + this.airV0 * t - 0.5 * GRAVITY * t * t;
+        this.jumpV = this.airV0 - GRAVITY * t;
         if (this.jumpV <= 0 && this.y <= g) {
           this.y = g;
           this.land();
@@ -265,6 +293,7 @@ export class RpgPlayer {
 
   private land() {
     this.jumpV = 0;
+    this.airJumps = 0;
     this.jumpPhase = 'land';
     this.jumpT = 0;
     this.w.fx.burst(this.x, 0.1, this.z, 0xb8a888, 8, 2.2, 0.14, 0.4, 'smoke');

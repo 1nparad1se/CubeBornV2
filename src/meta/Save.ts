@@ -9,7 +9,7 @@ export type AntiAliasing = 'off' | 'msaa' | 'ssaa';
 export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
-export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'attack' | 'inventory' | 'pause' | 'zoomIn' | 'zoomOut';
+export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'attack' | 'inventory' | 'map' | 'pause' | 'zoomIn' | 'zoomOut';
 
 export type Keybinds = Record<BindAction, string[]>;
 
@@ -21,7 +21,8 @@ export function defaultKeybinds(): Keybinds {
     right: ['KeyD', 'ArrowRight'],
     jump: ['Space'],
     attack: ['KeyF'],
-    inventory: ['KeyI', 'KeyB'],
+    inventory: ['KeyI', 'Tab'],
+    map: ['KeyM'],
     pause: ['Escape', 'KeyP'],
     zoomIn: ['Equal', 'NumpadAdd'],
     zoomOut: ['Minus', 'NumpadSubtract'],
@@ -148,6 +149,8 @@ export function migrate(raw: any): SaveData {
   const binds: Record<string, unknown> = { ...(rs.keybinds || {}) };
   const kb = defaultKeybinds();
   for (const k of Object.keys(kb) as BindAction[]) if (Array.isArray(binds[k])) kb[k] = (binds[k] as unknown[]).filter((c): c is string => typeof c === 'string');
+  // the inventory moved from I / B to I / Tab: untouched old defaults follow (a custom choice stays)
+  if (kb.inventory.length === 2 && kb.inventory[0] === 'KeyI' && kb.inventory[1] === 'KeyB' && !Object.values(kb).some((l) => l.includes('Tab'))) kb.inventory = ['KeyI', 'Tab'];
   const settings: Settings = { ...d.settings, ...rs, keybinds: kb };
   for (const k of Object.keys(settings) as (keyof Settings)[]) if (!(k in d.settings)) delete settings[k];
   const chars = oldVersion < VERSION || !Array.isArray(raw.chars) ? [] : (raw.chars.map(fixChar).filter(Boolean) as CharSave[]);

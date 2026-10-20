@@ -119,6 +119,23 @@
   position: absolute;
   right: 14px;
   top: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.rh-tr .clock {
+  margin-top: 4px;
+}
+/* round compass minimap: the canvas draws the disc and its ring */
+.rh-minimap {
+  width: 156px;
+  height: 156px;
+  border-radius: 50%;
+  filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6));
+}
+.rh-minimap canvas {
+  display: block;
+  image-rendering: pixelated;
 }
 .rh-bottom {
   position: absolute;
@@ -126,8 +143,44 @@
   left: 50%;
   transform: translateX(-50%);
   display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+.rh-bottom-row {
+  display: flex;
   gap: 8px;
   align-items: stretch;
+}
+/* skill bar: six slots in one row, the same bevelled cells as the inventory */
+.rh-skills {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: rgba(26, 22, 30, 0.82);
+  border: 2px solid #0c0a10;
+  box-shadow: inset 2px 2px 0 rgba(255, 255, 255, 0.12), inset -2px -2px 0 rgba(0, 0, 0, 0.45);
+}
+.rh-skill {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  box-sizing: border-box;
+  background: #8b8b8b;
+  border: 2px solid #373737;
+  box-shadow: inset 2px 2px 0 #555, inset -2px -2px 0 #fff3;
+  pointer-events: auto;
+}
+.rh-skill.empty {
+  background: #6f6f74;
+}
+.rh-skill kbd {
+  position: absolute;
+  left: 2px;
+  top: 1px;
+  font: 8px 'Press Start 2P', monospace;
+  color: #f4efe2;
+  text-shadow: 1px 1px 0 #000;
 }
 .rh-weapon {
   display: flex;
@@ -203,7 +256,7 @@
 .rh-hint {
   position: absolute;
   left: 50%;
-  bottom: 96px;
+  bottom: 150px;
   transform: translateX(-50%);
   padding: 8px 14px;
   font-size: 13px;
@@ -490,4 +543,76 @@
   margin-top: 12px;
   color: #d8d0c0;
   font-size: 13px;
+}
+
+/* ------------------------------------------------------------ world map (M) */
+.wmap {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 20;
+  font-family: 'Rubik', sans-serif;
+}
+.wmap.hidden {
+  display: none;
+}
+.wm-canvas {
+  display: block;
+  margin: 0 auto;
+  border: 3px solid #000;
+  box-shadow: inset 2px 2px 0 #555;
+  image-rendering: pixelated;
+}
+.wm-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #2a2a2a;
+}
+.wm-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.wm-key i {
+  display: inline-block;
+  width: 11px;
+  height: 11px;
+  border: 1px solid #141018;
+}
+.wm-key .wk-hero {
+  width: 0;
+  height: 0;
+  border: 6px solid transparent;
+  border-bottom: 11px solid #ffd040;
+  border-top: 0;
+}
+.wk-dummy {
+  background: #e0503a;
+}
+.wk-target {
+  background: #ffd040;
+  outline: 2px solid #ffd040;
+  outline-offset: 1px;
+}
+.wk-bush {
+  background: #356a26;
+}
+.wk-block {
+  background: #8ec85e;
+  box-shadow: inset -2px -2px 0 rgba(20, 30, 10, 0.55);
+}
+.wk-rock {
+  background: #6e7078;
+}
+.wm-coords {
+  margin-left: auto;
+  font: 10px 'Press Start 2P', monospace;
+  color: #3f3f3f;
 }

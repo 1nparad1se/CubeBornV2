@@ -47,5 +47,10 @@ const mixed = migrate({ version: 8, settings: {}, chars: [{ id: 'x', name: 'Old'
 ok(mixed.chars.length === 1 && mixed.chars[0].id === c.id, 'characters without a playable race are dropped');
 // an unavailable race cannot be created
 ok(newChar('Гимли', 'dwarf').race === 'human', 'races that are not available yet fall back to human');
+// key bindings: Tab and I open the inventory, M the map; old untouched defaults follow
+const kb = migrate({ version: 8, settings: { keybinds: { inventory: ['KeyI', 'KeyB'], jump: ['Space'] } }, chars: [] }).settings.keybinds;
+ok(kb.inventory.includes('KeyI') && kb.inventory.includes('Tab') && kb.map[0] === 'KeyM', 'inventory on I / Tab (old I / B default updated), map on M');
+const custom = migrate({ version: 8, settings: { keybinds: { inventory: ['KeyU'] } }, chars: [] }).settings.keybinds;
+ok(custom.inventory.length === 1 && custom.inventory[0] === 'KeyU', 'a custom inventory key is kept');
 console.log(fails ? `${fails} save check(s) FAILED` : 'all save checks passed');
 process.exit(fails ? 1 : 0);

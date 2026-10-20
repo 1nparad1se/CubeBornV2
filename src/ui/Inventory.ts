@@ -3,6 +3,7 @@ import { itemIcon } from './itemIcons';
 import { SLOTS, SLOT_NAME, item, type ItemDef, type Slot } from '../rpg/items';
 import { computeStats, equipFromBag, equipToSlot, moveInBag, unequip, type EquipResult, type Gear } from '../rpg/equipment';
 import { RACE_BY_ID } from '../rpg/races';
+import { weaponType } from '../rpg/weapons';
 
 const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
 
@@ -11,6 +12,8 @@ function itemLines(def: ItemDef): string[] {
   const out: string[] = [];
   const w = def.weapon;
   if (w) {
+    const type = weaponType(w.kind);
+    if (type) out.push(`Атака: ${type.attackLabel}`);
     out.push(`${w.dmgType === 'magic' ? 'Магический' : 'Физический'} урон: ${w.damage}`);
     out.push(`Скорость: удар раз в ${w.interval.toFixed(2)} с (${(1 / w.interval).toFixed(2)}/с)`);
     out.push(`Урон в секунду: ${(w.damage / w.interval).toFixed(1)}`);
@@ -28,7 +31,7 @@ function itemLines(def: ItemDef): string[] {
 }
 
 /**
- * Inventory and equipment window (I): six equipment slots, the 6 × 4 bag and the character
+ * Inventory and equipment window (Tab or I): six equipment slots, the 6 × 4 bag and the character
  * stats. Click a bag item to put it on, click an equipped item to take it off, or drag items
  * between the bag and the slots. Every change goes through the equipment rules (rpg/equipment).
  */
@@ -51,7 +54,7 @@ export class Inventory {
       'div.inv.hidden',
       h(
         'div.inv-win',
-        h('div.inv-head', h('h2', 'Инвентарь и снаряжение'), h('button.inv-x', { title: 'Закрыть (I / Esc)', onclick: () => this.onClose?.() }, '×')),
+        h('div.inv-head', h('h2', 'Инвентарь и снаряжение'), h('button.inv-x', { title: 'Закрыть (Tab / I / Esc)', onclick: () => this.onClose?.() }, '×')),
         h(
           'div.inv-body',
           h('div.inv-col', h('h3', 'Снаряжение'), this.slots),

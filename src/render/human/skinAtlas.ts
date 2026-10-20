@@ -3,6 +3,9 @@ import * as THREE from 'three';
 /** World size of one body pixel: a 32-px-tall figure stands 1.8 blocks. */
 export const PX = 1.8 / 32;
 
+/** Texels the UVs stay inside each face rectangle (per side): invisible, but off the edge. */
+const UV_INSET = 0.06;
+
 export type Face = 'front' | 'back' | 'right' | 'left' | 'top' | 'bottom';
 
 /**
@@ -90,9 +93,12 @@ export class SkinAtlas {
       const [rx, ry, rw, rh] = rects[order[f]];
       for (let k = 0; k < 4; k++) {
         const i = f * 4 + k;
-        const u = uv.getX(i);
-        const v = uv.getY(i);
-        uv.setXY(i, (rx + u * rw) / S, 1 - (ry + (1 - v) * rh) / S);
+        // pulled a little inside the face rectangle: at the exact edge, nearest sampling picks
+        // texels of the neighbouring (often empty, alpha-tested) cell, so moving models showed
+        // flickering see-through pixels along their edges (the head while jumping)
+        const u = UV_INSET + uv.getX(i) * (rw - 2 * UV_INSET);
+        const v = UV_INSET + (1 - uv.getY(i)) * (rh - 2 * UV_INSET);
+        uv.setXY(i, (rx + u) / S, 1 - (ry + v) / S);
       }
     }
     uv.needsUpdate = true;
@@ -100,7 +106,17 @@ export class SkinAtlas {
   }
 
   material(): THREE.MeshLambertMaterial {
-    return new THREE.MeshLambertMaterial({ map: this.texture, alphaTest: 0.5, side: THREE.FrontSide });
+    const m = new THREE.MeshLambertMaterial({ map: this.texture, alphaTest: 0.5, side: THREE.FrontSide });
+    // with MSAA a pixel on a box edge is shaded at its centre even when that lies outside the
+    // face: the UV runs past the face rectangle into the neighbouring (empty or other-colour)
+    // cell of the atlas, and moving edges sparkle. Centroid sampling keeps the UV on the face.
+    m.onBeforeCompile = (sh) => {
+      const centroid = (chunk: string) => THREE.ShaderChunk[chunk as 'uv_pars_vertex'].replace('varying vec2 vMapUv;', 'centroid varying vec2 vMapUv;');
+      sh.vertexShader = sh.vertexShader.replace('#include <uv_pars_vertex>', centroid('uv_pars_vertex'));
+      sh.fragmentShader = sh.fragmentShader.replace('#include <uv_pars_fragment>', centroid('uv_pars_fragment'));
+    };
+    m.customProgramCacheKey = () => 'skin-centroid';
+    return m;
   }
 
   dispose() {

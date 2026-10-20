@@ -8,6 +8,7 @@ import { Profile } from './meta/Profile';
 import { defaultSettings } from './meta/Save';
 import { Hud } from './ui/Hud';
 import { Inventory } from './ui/Inventory';
+import { WorldMap } from './ui/WorldMap';
 import { Menus, type MenuApi } from './ui/Menus';
 import { RunModals } from './ui/RunModals';
 import { h } from './ui/dom';
@@ -68,6 +69,7 @@ export class App implements MenuApi {
   private input: Input;
   private hud: Hud;
   private inventory: Inventory;
+  private worldMap: WorldMap;
   private menus: Menus;
   private modals: RunModals;
   private toasts: HTMLElement;
@@ -105,7 +107,9 @@ export class App implements MenuApi {
       if (this.world && this.mode === 'run' && !this.paused) this.world.player.requestJump();
     };
     this.input.onInventory = () => this.toggleInventory();
+    this.input.onMap = () => this.toggleMap();
     this.hud = new Hud(root);
+    this.hud.minimap.yaw = this.renderer.rig.yaw;
     this.hud.setVisible(false);
     this.hud.onInventory = () => this.toggleInventory();
     this.hud.onClearTarget = () => this.world?.select(null);
@@ -113,6 +117,9 @@ export class App implements MenuApi {
     this.inventory.onSfx = (id) => this.sfx(id);
     this.inventory.onClose = () => this.toggleInventory(false);
     this.inventory.onChange = (g) => this.setGear(g);
+    this.worldMap = new WorldMap(root);
+    this.worldMap.yaw = this.renderer.rig.yaw;
+    this.worldMap.onClose = () => this.toggleMap(false);
     this.menus = new Menus(root, this);
     this.menus.setVisible(false);
     this.modals = new RunModals(root, this);
@@ -218,6 +225,10 @@ export class App implements MenuApi {
         this.toggleInventory(false);
         return;
       }
+      if (this.worldMap.isOpen) {
+        this.toggleMap(false);
+        return;
+      }
       this.togglePause();
       return;
     }
@@ -232,8 +243,23 @@ export class App implements MenuApi {
     const open = force ?? !this.inventory.isOpen;
     if (open === this.inventory.isOpen) return;
     const ch = this.currentChar();
-    if (open && ch) this.inventory.open(cloneGear(w.gear), w.raceId, ch.name);
-    else this.inventory.close();
+    if (open && ch) {
+      this.worldMap.close();
+      this.inventory.open(cloneGear(w.gear), w.raceId, ch.name);
+    } else this.inventory.close();
+    this.sfx('ui');
+  }
+
+  /** Opens or closes the world map (M; Esc closes it too). The world keeps running behind it. */
+  toggleMap(force?: boolean) {
+    const w = this.world;
+    if (!w || this.mode !== 'run' || this.paused) return;
+    const open = force ?? !this.worldMap.isOpen;
+    if (open === this.worldMap.isOpen) return;
+    if (open) {
+      this.inventory.close();
+      this.worldMap.open(w);
+    } else this.worldMap.close();
     this.sfx('ui');
   }
 
@@ -288,6 +314,7 @@ export class App implements MenuApi {
     this.input.setEnabled(false);
     this.hud.setVisible(false);
     this.inventory.close();
+    this.worldMap.close();
     this.modals.close();
     this.menus.setVisible(true);
     this.menus.home();
@@ -351,6 +378,7 @@ export class App implements MenuApi {
     }
     this.paused = true;
     this.inventory.close();
+    this.worldMap.close();
     this.input.setEnabled(false);
     audio.play('ui');
     this.modals.pause(w, {
@@ -364,6 +392,7 @@ export class App implements MenuApi {
     this.saveChar();
     this.paused = false;
     this.inventory.close();
+    this.worldMap.close();
     this.renderer.endRun();
     this.world = null;
     this.runChar = null;
@@ -394,9 +423,9 @@ export class App implements MenuApi {
   }
 
   /**
-   * Mouse controls: left click on a dummy selects it as the target and starts attacking it, left
-   * click on the ground walks there; the right button (or the attack key) attacks the target,
-   * or toward the cursor without one.
+   * Mouse controls: the right button on a dummy selects it as the target, the right button on the
+   * selected target starts the automatic attack (walk into reach, keep hitting). The left button
+   * does nothing in the world. The attack key attacks the target, or toward the cursor without one.
    */
   private readMouse(w: World, active: boolean) {
     const inp = this.input;
@@ -425,16 +454,13 @@ export class App implements MenuApi {
       c.moveX = c.moveZ = 0;
       return;
     }
-    if (inp.lmbPressed) {
-      inp.lmbPressed = false;
-      if (hover) w.select(hover, true);
-      else c.clickMove = { x: c.aimX, z: c.aimZ };
-    }
+    // the left button has no action in the world (no target, no attack, no walking)
+    inp.lmbPressed = false;
     if (inp.rmbPressed) {
       inp.rmbPressed = false;
-      if (hover) w.select(hover, true);
+      if (hover) w.clickTarget(hover);
     }
-    c.attackHeld = inp.rmb || inp.held('attack');
+    c.attackHeld = inp.held('attack');
     if (inp.held('attack') && w.target) w.autoAttack = true;
   }
 
@@ -470,6 +496,7 @@ export class App implements MenuApi {
       this.renderer.frame(sim ? dt : 0);
       const ch = this.currentChar();
       this.hud.update(w, realDt, ch?.name ?? '', ch?.level ?? 1);
+      this.worldMap.draw(w);
       audio.setAmbience(!this.paused, 0.5, 0, w.dayNight.period === 'night', realDt);
     } else {
       audio.setAmbience(false, 0, 0, false, realDt);

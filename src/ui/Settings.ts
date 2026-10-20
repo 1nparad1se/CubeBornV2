@@ -53,6 +53,7 @@ const BIND_LABEL: Record<BindAction, [string, string]> = {
   jump: ['Прыжок', 'Jump'],
   attack: ['Базовая атака (по цели)', 'Basic attack'],
   inventory: ['Инвентарь и снаряжение', 'Inventory'],
+  map: ['Карта мира', 'World map'],
   pause: ['Пауза', 'Pause'],
   zoomIn: ['Приблизить камеру', 'Zoom in'],
   zoomOut: ['Отдалить камеру', 'Zoom out'],
@@ -61,7 +62,7 @@ const bindLabel = (a: BindAction) => tr(...BIND_LABEL[a]);
 const BIND_GROUPS: [string, string, BindAction[]][] = [
   ['Передвижение', 'Movement', ['up', 'down', 'left', 'right', 'jump']],
   ['Бой', 'Combat', ['attack']],
-  ['Экраны и камера', 'Screens and camera', ['inventory', 'pause', 'zoomIn', 'zoomOut']],
+  ['Экраны и камера', 'Screens and camera', ['inventory', 'map', 'pause', 'zoomIn', 'zoomOut']],
 ];
 /** Actions that need a key (warned about when left without one). */
 const ESSENTIAL: BindAction[] = ['jump', 'attack', 'inventory'];

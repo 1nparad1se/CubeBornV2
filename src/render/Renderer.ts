@@ -638,6 +638,7 @@ export class Renderer {
     this.sun.position.set(cx + Math.cos(ang) * 17, t.y + elev, cz + Math.sin(ang) * 17);
     this.sun.target.position.set(cx, t.y, cz);
     this.world?.uniforms.uFocus.value.set(p.x, p.y, p.z);
+    this.world?.trackHero(p.x, p.z, p.y - p.ground, dt);
     if (this.world) this.world.uniforms.uNight.value = nightK;
     this.world?.uniforms.uCamDir.value.set(this.rig.toCam.x, this.rig.toCam.z);
     // a warm light pool follows the hero on dark maps

@@ -1,4 +1,4 @@
-import { hash2 } from '../core/Rng';
+import { fbm2 } from '../core/Rng';
 import type { MapDef } from '../data/types';
 import { CELL, Terrain } from '../game/Terrain';
 
@@ -16,9 +16,15 @@ export const TEST_MAP: MapDef = {
   palette: {
     sky: 0x9fd2ec, fog: 0xa8d0c8, fogNear: 34, fogFar: 72, ambient: 0xd6ecff, ambientIntensity: 0.6,
     sun: 0xfff1d6, sunIntensity: 1.2, hemiGround: 0x5a7a34,
+    // six summer meadow grounds, close in tone: lush hollows, the plain meadow, a lighter
+    // meadow, sunlit slopes, dry patches and clover; buildTestMap lays them out by smooth noise
     tiles: {
       grass: [0x6aa842, 0x70ad46, 0x64a23f],
       grass2: [0x78b44c, 0x7eb952],
+      grass_lush: [0x62a03c, 0x66a43f, 0x5e9c3a],
+      grass_sun: [0x7cb44a, 0x82b84f, 0x78b047],
+      grass_dry: [0x84ae4c, 0x8ab252, 0x80aa49],
+      grass_clover: [0x67aa47, 0x6db04c, 0x62a443],
     },
   },
   music: { root: 45, scale: 'dorian', tempo: 100, mood: 'forest' },
@@ -55,6 +61,23 @@ export const OBSTACLES: [number, number, number, number][] = [
   [70, 12, 72, 12],
 ];
 
+/**
+ * Meadow ground at cell (x, z). A broad moisture field orders the main grounds from lush through
+ * the plain and light meadow to sunlit grass, so neighbouring cells always differ by one step
+ * in tone; dry patches sit only on the sunny side and clover only on the moist side.
+ */
+export function meadowTile(x: number, z: number): string {
+  const wet = fbm2(x / 15, z / 15, 301);
+  const dry = fbm2(x / 9, z / 9, 302);
+  const clover = fbm2(x / 5, z / 5, 303);
+  if (wet > 0.56 && dry > 0.62) return 'grass_dry';
+  if (wet < 0.5 && clover > 0.7) return 'grass_clover';
+  if (wet < 0.36) return 'grass_lush';
+  if (wet < 0.5) return 'grass';
+  if (wet < 0.62) return 'grass2';
+  return 'grass_sun';
+}
+
 export function buildTestMap(): Terrain {
   const n = TEST_MAP.size;
   const t = new Terrain(n);
@@ -62,7 +85,7 @@ export function buildTestMap(): Terrain {
   for (let z = 0; z < n; z++)
     for (let x = 0; x < n; x++) {
       const i = z * n + x;
-      t.tile[i] = t.tileId(hash2(x >> 2, z >> 2, 77) > 0.7 ? 'grass2' : 'grass');
+      t.tile[i] = t.tileId(meadowTile(x, z));
       if (Math.min(x, z, n - 1 - x, n - 1 - z) < RIM) t.cell[i] = CELL.wall;
     }
   // 1-block steps to jump onto (block-step ground: no slopes anywhere)
