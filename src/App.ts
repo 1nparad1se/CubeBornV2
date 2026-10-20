@@ -82,6 +82,11 @@ export class App implements MenuApi {
   private mode: Mode = 'splash';
   private last = performance.now();
   private charTime = 0;
+  /** Called once on the first walk order (hides the controls hint). */
+  private firstMove: (() => void) | null = null;
+  /** Holding the left button after a click on the ground keeps steering toward the cursor. */
+  private steerHeld = false;
+  private steerT = 0;
   private autosaveT = AUTOSAVE;
   /** The world's 24-hour clock: advanced only while playing, kept in the save. */
   readonly clock: GameClock;
@@ -349,7 +354,7 @@ export class App implements MenuApi {
     audio.playMusic('forest');
     this.hud.showBanner(L(TEST_MAP.name), '#ffffff', 2.2, `${ch.name} · Уровень ${ch.level}`);
     this.hud.showHint(s.showHints && ch.playTime < 60);
-    if (s.showHints) this.input.onFirstMove = () => setTimeout(() => this.hud.showHint(false), 6000);
+    this.firstMove = s.showHints ? () => setTimeout(() => this.hud.showHint(false), 6000) : null;
     this.saveChar();
   }
 
@@ -423,22 +428,26 @@ export class App implements MenuApi {
   }
 
   /**
-   * Mouse controls: the right button on a dummy selects it as the target, the right button on the
-   * selected target starts the automatic attack (walk into reach, keep hitting). The left button
-   * does nothing in the world. The attack key attacks the target, or toward the cursor without one.
+   * Mouse controls. Left button: on the ground the hero walks there (pathfinding around obstacles
+   * and over the relief; holding the button keeps steering toward the cursor; it also stops an
+   * automatic attack); on a dummy the first click selects it, a click on the selected target
+   * starts the automatic attack (walk into the weapon's reach, keep hitting). Right button held
+   * and dragged: the camera orbits the hero (left / right) and tilts (up / down). The attack key
+   * attacks the target, or toward the cursor without one.
    */
-  private readMouse(w: World, active: boolean) {
+  private readMouse(w: World, active: boolean, dt: number) {
     const inp = this.input;
     const c = w.ctl;
     const rig = this.renderer.rig;
     const vw = this.view.clientWidth || 1;
     const vh = this.view.clientHeight || 1;
     let hover = null;
+    let ground: [number, number] | null = null;
     if (inp.mx >= 0) {
-      const g = rig.terrainPoint(inp.mx, inp.my, vw, vh, (x, z) => w.terrain.groundY(x, z), 0);
-      if (g) {
-        c.aimX = g[0];
-        c.aimZ = g[1];
+      ground = rig.terrainPoint(inp.mx, inp.my, vw, vh, (x, z) => w.terrain.groundY(x, z), 0);
+      if (ground) {
+        c.aimX = ground[0];
+        c.aimZ = ground[1];
       }
       // dummies are tall: test the cursor at a few heights of the body
       for (const lift of [1.2, 0.7, 0.2]) {
@@ -448,18 +457,45 @@ export class App implements MenuApi {
       }
     }
     setCursor(hover ? 'attack' : 'default');
+    // camera orbit: the right button held and dragged
+    if (inp.dragX || inp.dragY) {
+      if (active) rig.orbit(-inp.dragX * 0.006, inp.dragY * 0.004);
+      inp.dragX = inp.dragY = 0;
+    }
+    inp.rmbPressed = false;
+    this.hud.minimap.yaw = rig.yaw;
+    this.worldMap.yaw = rig.yaw;
     if (!active) {
-      inp.lmbPressed = inp.rmbPressed = false;
+      inp.lmbPressed = false;
+      this.steerHeld = false;
       c.attackHeld = false;
       c.moveX = c.moveZ = 0;
       return;
     }
-    // the left button has no action in the world (no target, no attack, no walking)
-    inp.lmbPressed = false;
-    if (inp.rmbPressed) {
-      inp.rmbPressed = false;
+    if (inp.lmbPressed) {
+      inp.lmbPressed = false;
+      this.steerHeld = false;
       if (hover) w.clickTarget(hover);
+      else if (ground) {
+        c.clickMove = { x: ground[0], z: ground[1] };
+        this.steerHeld = true;
+        this.steerT = 0.25;
+        this.renderer.markMove(ground[0], ground[1]);
+        if (this.firstMove) {
+          const f = this.firstMove;
+          this.firstMove = null;
+          f();
+        }
+      }
+    } else if (this.steerHeld && inp.lmb && ground) {
+      this.steerT -= dt;
+      if (this.steerT <= 0) {
+        this.steerT = 0.2;
+        c.clickMove = { x: ground[0], z: ground[1] };
+        this.renderer.markMove(ground[0], ground[1]);
+      }
     }
+    if (!inp.lmb) this.steerHeld = false;
     c.attackHeld = inp.held('attack');
     if (inp.held('attack') && w.target) w.autoAttack = true;
   }
@@ -476,12 +512,11 @@ export class App implements MenuApi {
     const dt = Math.min(realDt, 1 / 20);
     const w = this.world;
     if (w && this.mode === 'run') {
-      const [sx, sz] = this.input.update();
-      const [ix, iz] = this.renderer.rig.screenToWorld(sx, sz);
+      this.input.update();
       const active = !this.paused && !this.modals.isOpen;
-      this.readMouse(w, active);
-      w.ctl.moveX = active ? ix : 0;
-      w.ctl.moveZ = active ? iz : 0;
+      this.readMouse(w, active, realDt);
+      // no keyboard walking: the hero walks by mouse orders only
+      w.ctl.moveX = w.ctl.moveZ = 0;
       const sim = !this.paused && !this.modals.isOpen;
       if (sim) {
         this.clock.advance(realDt);

@@ -440,6 +440,11 @@ export class Renderer {
     return this.makeFx(hooks);
   }
 
+  /** Marks a walk order on the ground. */
+  markMove(x: number, z: number) {
+    this.entities?.markMove(x, z);
+  }
+
   /** The hero model being drawn (previews and tests). */
   get heroModel(): HumanModel | null {
     return this.entities?.hero ?? null;
@@ -569,9 +574,9 @@ export class Renderer {
   private runFrame(dt: number) {
     const run = this.run!;
     const p = run.player;
-    const lead = { x: p.vx * 0.18, z: p.vz * 0.18 };
     this.rig.zoom += (this.zoomLevel - this.rig.zoom) * (1 - Math.exp(-10 * Math.max(dt, 1 / 120)));
-    this.rig.update(dt, p.x, p.z, lead, p.airborne ? Math.min(p.y, p.ground + 0.5) : p.ground);
+    // the hero stays in the middle of the view (no look-ahead); terrain pulls the camera in
+    this.rig.update(dt, p.x, p.z, undefined, p.airborne ? Math.min(p.y, p.ground + 0.5) : p.ground, (x, z) => run.terrain.groundY(x, z));
     if (this.photo) {
       const ph = this.photo;
       this.rig.camera.position.set(ph.x, ph.y, ph.z);

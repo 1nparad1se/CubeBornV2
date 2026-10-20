@@ -1,13 +1,11 @@
 import type { BindAction, Keybinds } from '../meta/Save';
 
 /**
- * PC input: rebindable keyboard movement (WASD / arrows), jump, attack, inventory, pause and
- * camera zoom (mouse wheel or keys), plus an optional gamepad. Produces a world-space direction where
- * screen-up maps to -z.
+ * PC input: the mouse moves the hero (left button) and turns the camera (right button held and
+ * dragged); rebindable keys for jump, attack, inventory, map, pause and camera zoom (mouse wheel
+ * or keys), plus an optional gamepad for pause and jump. There is no keyboard walking.
  */
 export class Input {
-  x = 0;
-  z = 0;
   private keys = new Set<string>();
   enabled = false;
   binds: Keybinds;
@@ -23,8 +21,6 @@ export class Input {
   onInventory: (() => void) | null = null;
   onMap: (() => void) | null = null;
   onJump: (() => void) | null = null;
-  /** Fired when the player first moves (used by the controls hint). */
-  onFirstMove: (() => void) | null = null;
   /** While set, the next key press is captured for rebinding instead of played. */
   capture: ((code: string) => void) | null = null;
   /** Mouse: position in the game view (px), buttons, and one-shot presses consumed by the client. */
@@ -34,6 +30,9 @@ export class Input {
   rmb = false;
   lmbPressed = false;
   rmbPressed = false;
+  /** Mouse travel (px) while the right button is held, consumed by the client (camera orbit). */
+  dragX = 0;
+  dragY = 0;
   private padPause = false;
   private padJump = false;
 
@@ -90,7 +89,13 @@ export class Input {
       this.mx = e.clientX - r.left;
       this.my = e.clientY - r.top;
     };
-    area.addEventListener('pointermove', pos);
+    area.addEventListener('pointermove', (e) => {
+      pos(e);
+      if (this.enabled && this.rmb) {
+        this.dragX += e.movementX;
+        this.dragY += e.movementY;
+      }
+    });
     area.addEventListener('pointerdown', (e) => {
       pos(e);
       if (!this.enabled) return;
@@ -122,22 +127,11 @@ export class Input {
     return false;
   }
 
-  update(): [number, number] {
-    let x = 0;
-    let z = 0;
-    if (this.held('left')) x -= 1;
-    if (this.held('right')) x += 1;
-    if (this.held('up')) z -= 1;
-    if (this.held('down')) z += 1;
+  /** Polls the gamepad (pause and jump buttons). */
+  update() {
     const pads = navigator.getGamepads?.() ?? [];
     for (const gp of pads) {
       if (!gp) continue;
-      const ax = gp.axes[0] ?? 0;
-      const ay = gp.axes[1] ?? 0;
-      if (Math.hypot(ax, ay) > 0.2) {
-        x += ax;
-        z += ay;
-      }
       if (gp.buttons[9]?.pressed && !this.padPause) {
         this.padPause = true;
         if (this.enabled) this.onPause?.();
@@ -148,20 +142,6 @@ export class Input {
         if (this.enabled) this.onJump?.();
       } else if (!gp.buttons[0]?.pressed) this.padJump = false;
     }
-    const l = Math.hypot(x, z);
-    if (l > 1) {
-      x /= l;
-      z /= l;
-    }
-    if (!this.enabled) x = z = 0;
-    if ((x || z) && this.onFirstMove) {
-      const f = this.onFirstMove;
-      this.onFirstMove = null;
-      f();
-    }
-    this.x = x;
-    this.z = z;
-    return [x, z];
   }
 
   setEnabled(on: boolean) {
@@ -169,6 +149,7 @@ export class Input {
     if (!on) {
       this.keys.clear();
       this.lmb = this.rmb = this.lmbPressed = this.rmbPressed = false;
+      this.dragX = this.dragY = 0;
     }
   }
 }

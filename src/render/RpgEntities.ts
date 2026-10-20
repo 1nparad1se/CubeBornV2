@@ -43,6 +43,10 @@ export class RpgEntities {
   private ring: THREE.Mesh;
   private ringMat = new THREE.MeshBasicMaterial({ color: 0xff5040, transparent: true, opacity: 0.9, depthWrite: false });
   private equipKey = '';
+  /** Where the last walk order points: a small ring on the ground that fades while walking. */
+  private mark: THREE.Mesh;
+  private markMat = new THREE.MeshBasicMaterial({ color: 0xe8ffd0, transparent: true, opacity: 0.9, depthWrite: false });
+  private markLife = 0;
 
   constructor(private world: World, shadows: boolean) {
     this.hero = new HumanModel(RACE_BY_ID[world.raceId]?.skin ?? 'human', shadows);
@@ -56,6 +60,10 @@ export class RpgEntities {
     this.ring = new THREE.Mesh(ringGeo(0.62, 0.1), this.ringMat);
     this.ring.renderOrder = 2;
     this.group.add(this.ring);
+    this.mark = new THREE.Mesh(ringGeo(0.32, 0.07), this.markMat);
+    this.mark.renderOrder = 2;
+    this.mark.visible = false;
+    this.group.add(this.mark);
     this.yaw = Math.atan2(world.player.fx, world.player.fz);
   }
 
@@ -73,7 +81,7 @@ export class RpgEntities {
     d = Math.atan2(Math.sin(d), Math.cos(d));
     this.yaw += d * (1 - Math.exp(-18 * dt));
     const h = this.hero;
-    h.root.position.set(p.x, p.y, p.z);
+    h.root.position.set(p.x, p.y + p.stepY, p.z);
     h.body.rotation.y = 0;
     h.root.rotation.y = this.yaw;
     const speed = Math.hypot(p.vx, p.vz);
@@ -89,14 +97,33 @@ export class RpgEntities {
     });
     // dummies wobble when hit
     w.dummies.forEach((dm, i) => this.dummies[i].wobble(dm.wobble, dm.wobX, dm.wobZ, w.time));
-    // target marker
+    // target marker: yellow when selected, red and faster while the auto attack is on
     const t = w.target;
     this.ring.visible = !!t;
     if (t) {
+      const atk = w.autoAttack;
       this.ring.position.set(t.x, w.terrain.groundY(t.x, t.z) + 0.03, t.z);
-      this.ringMat.opacity = 0.65 + Math.sin(w.time * 6) * 0.25;
+      this.ringMat.color.setHex(atk ? 0xff3a30 : 0xffd040);
+      this.ringMat.opacity = 0.7 + Math.sin(w.time * (atk ? 10 : 5)) * 0.25;
+      this.ring.rotation.y = atk ? w.time * 1.5 : 0;
+      this.ring.scale.setScalar(1 + Math.sin(w.time * (atk ? 10 : 5)) * 0.06);
+    }
+    // walk order marker: shrinks into the spot, fades out on arrival
+    if (this.markLife > 0) {
+      this.markLife = p.path.length ? Math.max(0.35, this.markLife - dt * 0.6) : this.markLife - dt * 3;
+      const k = Math.max(0, this.markLife);
+      this.mark.visible = k > 0;
+      this.markMat.opacity = Math.min(1, k) * 0.9;
+      this.mark.scale.setScalar(0.7 + k * 0.5);
     }
     this.syncProjectiles();
+  }
+
+  /** Shows the walk order marker at (x, z) on the ground. */
+  markMove(x: number, z: number) {
+    this.mark.position.set(x, this.world.terrain.groundY(x, z) + 0.04, z);
+    this.markLife = 1;
+    this.mark.visible = true;
   }
 
   private syncProjectiles() {
@@ -129,5 +156,7 @@ export class RpgEntities {
     this.orbMat.dispose();
     this.ring.geometry.dispose();
     this.ringMat.dispose();
+    this.mark.geometry.dispose();
+    this.markMat.dispose();
   }
 }

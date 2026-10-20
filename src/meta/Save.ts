@@ -9,16 +9,13 @@ export type AntiAliasing = 'off' | 'msaa' | 'ssaa';
 export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
-export type BindAction = 'up' | 'down' | 'left' | 'right' | 'jump' | 'attack' | 'inventory' | 'map' | 'pause' | 'zoomIn' | 'zoomOut';
+/** Rebindable actions (walking has no keys: the hero walks where the left mouse button points). */
+export type BindAction = 'jump' | 'attack' | 'inventory' | 'map' | 'pause' | 'zoomIn' | 'zoomOut';
 
 export type Keybinds = Record<BindAction, string[]>;
 
 export function defaultKeybinds(): Keybinds {
   return {
-    up: ['KeyW', 'ArrowUp'],
-    down: ['KeyS', 'ArrowDown'],
-    left: ['KeyA', 'ArrowLeft'],
-    right: ['KeyD', 'ArrowRight'],
     jump: ['Space'],
     attack: ['KeyF'],
     inventory: ['KeyI', 'Tab'],

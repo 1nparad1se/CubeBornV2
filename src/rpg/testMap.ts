@@ -1,11 +1,13 @@
-import { fbm2 } from '../core/Rng';
+import { fbm2, hash2, noise2 } from '../core/Rng';
 import type { MapDef } from '../data/types';
 import { CELL, Terrain } from '../game/Terrain';
 
 /**
- * «Тренировочная поляна»: the fixed 100 × 100 test map. A flat open meadow (block-step ground,
- * no slopes) with the spawn point, exactly three training dummies and a few 1-block terrain
- * obstacles near the edges for jumping.
+ * «Тренировочная поляна»: the fixed 100 × 100 test map. A flat training clearing (spawn point and
+ * exactly three dummies) in the middle of rolling blocky land: stepped hills, lowlands, slopes,
+ * cliffs and a ring of mountains, plus a few 1-block obstacles near the edges for jumping.
+ * Ground is made of blocks whose tops stand at whole, half and quarter block heights (see
+ * reliefHeight).
  */
 export const TEST_MAP: MapDef = {
   id: 'training',
@@ -26,6 +28,8 @@ export const TEST_MAP: MapDef = {
       grass_dry: [0x84ae4c, 0x8ab252, 0x80aa49],
       grass_clover: [0x67aa47, 0x6db04c, 0x62a443],
     },
+    // the earth under the grass on terrace sides, grey rock deeper in the mountain cliffs
+    blocks: { soil: [0x9a6a42], cliff: [0x8a8c92] },
   },
   music: { root: 45, scale: 'dorian', tempo: 100, mood: 'forest' },
 };
@@ -78,17 +82,79 @@ export function meadowTile(x: number, z: number): string {
   return 'grass_sun';
 }
 
+/** The flat training clearing around the spawn point and the dummies. */
+const CLEARING = { x: 51, z: 55, r: 10, edge: 7 };
+const smooth = (a: number, b: number, x: number) => {
+  const t = Math.max(0, Math.min(1, (x - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+};
+
+/**
+ * Continuous land height (blocks) before it is cut into blocks: rolling hills, lowlands carved
+ * into them, a mountain massif to the north-east and mountains rising toward the map border.
+ */
+function landHeight(x: number, z: number, n: number): number {
+  // rolling hills with small knolls on them
+  const hills = fbm2(x / 13, z / 13, 501);
+  let h = 2.6 + (hills - 0.5) * 8 + (noise2(x / 5, z / 5, 504) - 0.5) * 1.2;
+  // lowlands: broad hollows sinking to the bottom level
+  const low = fbm2(x / 24, z / 24, 502);
+  if (low < 0.42) h -= (0.42 - low) * 10;
+  // mountains: ridged noise, strongest in the north-east massif and along the border
+  const ridge = 1 - Math.abs(noise2(x / 9, z / 9, 503) * 2 - 1);
+  const db = Math.min(x, z, n - 1 - x, n - 1 - z);
+  const border = smooth(11, 4, db);
+  const massif = smooth(17, 4, Math.hypot(x - 78, z - 22));
+  h += (border * 0.8 + massif) * (3.5 + ridge * 5.5);
+  // the training clearing: one flat level, blending out into the land around it
+  const w = smooth(CLEARING.r, CLEARING.r + CLEARING.edge, Math.hypot(x - CLEARING.x, z - CLEARING.z));
+  h = 2.5 * (1 - w) + h * w;
+  return Math.max(0, h);
+}
+
+/**
+ * Block height of a cell: the land height cut into steps whose size follows the steepness of the
+ * ground — quarter blocks on gentle hills, half blocks on slopes, whole blocks on steep mountain
+ * sides — with a little jitter so the terraces have ragged, natural edges.
+ */
+export function reliefHeight(x: number, z: number, n: number): number {
+  const h = landHeight(x + 0.5, z + 0.5, n);
+  const gx = landHeight(x + 1.5, z + 0.5, n) - landHeight(x - 0.5, z + 0.5, n);
+  const gz = landHeight(x + 0.5, z + 1.5, n) - landHeight(x + 0.5, z - 0.5, n);
+  const steep = Math.hypot(gx, gz) * 0.5;
+  const q = steep < 0.32 ? 0.25 : steep < 0.8 ? 0.5 : 1;
+  const jitter = (hash2(x, z, 507) - 0.5) * 0.5 * q;
+  return Math.max(0, Math.round((h + jitter) / q) * q);
+}
+
 export function buildTestMap(): Terrain {
   const n = TEST_MAP.size;
   const t = new Terrain(n);
   for (const name of Object.keys(TEST_MAP.palette.tiles)) t.tileId(name);
+  const height = new Float32Array(n * n);
   for (let z = 0; z < n; z++)
     for (let x = 0; x < n; x++) {
       const i = z * n + x;
       t.tile[i] = t.tileId(meadowTile(x, z));
       if (Math.min(x, z, n - 1 - x, n - 1 - z) < RIM) t.cell[i] = CELL.wall;
+      height[i] = reliefHeight(x, z, n);
     }
-  // 1-block steps to jump onto (block-step ground: no slopes anywhere)
-  for (const [x0, z0, x1, z1] of OBSTACLES) for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) t.elev[z * n + x] = 1;
+  // the obstacles stand on small level pads, one block above them
+  for (const [x0, z0, x1, z1] of OBSTACLES) {
+    const pad = height[Math.round((z0 + z1) / 2) * n + Math.round((x0 + x1) / 2)];
+    for (let z = z0 - 4; z <= z1 + 4; z++) for (let x = x0 - 4; x <= x1 + 4; x++) height[z * n + x] = pad;
+    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) height[z * n + x] = pad + 1;
+  }
+  // every cell is one block with a flat top: the four corners share its height
+  t.corner = new Float32Array(n * n * 4);
+  t.surf = height;
+  t.shadeElev = new Uint8Array(n * n);
+  for (let i = 0; i < n * n; i++) {
+    const h = height[i];
+    t.elev[i] = Math.floor(h);
+    t.corner.fill(h, i * 4, i * 4 + 4);
+    // the ground shader's level channel, in quarter blocks (same-level blending, no snow caps)
+    t.shadeElev[i] = Math.min(255, Math.round(h * 4));
+  }
   return t;
 }

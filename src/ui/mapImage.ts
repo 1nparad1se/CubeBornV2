@@ -40,20 +40,31 @@ export function buildMapImage(t: Terrain, map: MapDef): HTMLCanvasElement {
       let col: string;
       if (cell === CELL.wall) col = shade(0x6e7078, 0.9 + hash2(x, z, 3) * 0.12);
       else if (cell === CELL.liquid) col = hex(0x3f7fc8);
-      else col = shade(tileColor(t.tileNames[t.tile[i]] ?? '', map), 0.94 + hash2(x, z, 5) * 0.08 + t.elev[i] * 0.12);
+      // higher ground is drawn lighter (relief shading), lowlands darker
+      else col = shade(tileColor(t.tileNames[t.tile[i]] ?? '', map), 0.8 + hash2(x, z, 5) * 0.06 + Math.min(t.centerY(i), 12) * 0.045);
       g.fillStyle = col;
       g.fillRect(x * MAP_PX, z * MAP_PX, MAP_PX, MAP_PX);
     }
-  // raised blocks: a dark rim where they drop to lower ground (south and east sides)
-  g.fillStyle = 'rgba(20,30,10,0.55)';
+  // ledges: a dark rim where a block drops to lower ground; a whole block or more (a step that
+  // needs a jump, a cliff) is drawn darker than the half and quarter steps of the hills
+  const h = (x: number, z: number) => t.centerY(z * n + x);
   for (let z = 0; z < n; z++)
     for (let x = 0; x < n; x++) {
-      const e = t.elev[z * n + x];
-      if (!e) continue;
-      if (z + 1 < n && t.elev[(z + 1) * n + x] < e) g.fillRect(x * MAP_PX, (z + 1) * MAP_PX - 1, MAP_PX, 1);
-      if (x + 1 < n && t.elev[z * n + x + 1] < e) g.fillRect((x + 1) * MAP_PX - 1, z * MAP_PX, 1, MAP_PX);
-      if (z > 0 && t.elev[(z - 1) * n + x] < e) g.fillRect(x * MAP_PX, z * MAP_PX, MAP_PX, 1);
-      if (x > 0 && t.elev[z * n + x - 1] < e) g.fillRect(x * MAP_PX, z * MAP_PX, 1, MAP_PX);
+      const e = h(x, z);
+      const rim = (d: number) => (d >= 0.99 ? 'rgba(20,24,10,0.6)' : d >= 0.49 ? 'rgba(20,30,10,0.3)' : null);
+      const sides: [number, number, number, number, number, number][] = [
+        [x, z + 1, x * MAP_PX, (z + 1) * MAP_PX - 1, MAP_PX, 1],
+        [x + 1, z, (x + 1) * MAP_PX - 1, z * MAP_PX, 1, MAP_PX],
+        [x, z - 1, x * MAP_PX, z * MAP_PX, MAP_PX, 1],
+        [x - 1, z, x * MAP_PX, z * MAP_PX, 1, MAP_PX],
+      ];
+      for (const [nx, nz, rx, ry, rw, rh] of sides) {
+        if (nx < 0 || nz < 0 || nx >= n || nz >= n) continue;
+        const c = rim(e - h(nx, nz));
+        if (!c) continue;
+        g.fillStyle = c;
+        g.fillRect(rx, ry, rw, rh);
+      }
     }
   // the edge of the border rock
   g.fillStyle = 'rgba(0,0,0,0.35)';

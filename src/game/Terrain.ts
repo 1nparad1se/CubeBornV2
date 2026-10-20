@@ -24,7 +24,8 @@ const STEP = {
  */
 export const SLOPE = {
   maxTan: Math.tan((40 * Math.PI) / 180),
-  lip: 0.45,
+  /** Half blocks (and quarter blocks) are stepped up on foot; a whole block needs a jump. */
+  lip: 0.55,
   fall: 0.6,
 };
 

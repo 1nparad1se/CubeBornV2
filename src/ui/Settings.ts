@@ -46,10 +46,6 @@ const SECTION_KEYS: Record<Section, (keyof Settings)[]> = {
 const SUB_KEYS = ['shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'] as const;
 
 const BIND_LABEL: Record<BindAction, [string, string]> = {
-  up: ['Вперёд', 'Up'],
-  down: ['Назад', 'Down'],
-  left: ['Влево', 'Left'],
-  right: ['Вправо', 'Right'],
   jump: ['Прыжок', 'Jump'],
   attack: ['Базовая атака (по цели)', 'Basic attack'],
   inventory: ['Инвентарь и снаряжение', 'Inventory'],
@@ -60,7 +56,7 @@ const BIND_LABEL: Record<BindAction, [string, string]> = {
 };
 const bindLabel = (a: BindAction) => tr(...BIND_LABEL[a]);
 const BIND_GROUPS: [string, string, BindAction[]][] = [
-  ['Передвижение', 'Movement', ['up', 'down', 'left', 'right', 'jump']],
+  ['Передвижение (ходьба — ЛКМ)', 'Movement (walk: left click)', ['jump']],
   ['Бой', 'Combat', ['attack']],
   ['Экраны и камера', 'Screens and camera', ['inventory', 'map', 'pause', 'zoomIn', 'zoomOut']],
 ];

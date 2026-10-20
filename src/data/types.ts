@@ -19,6 +19,8 @@ export interface MapPalette {
   heroLight?: number;
   /** Tile colors by tile type name. */
   tiles: Record<string, number[]>;
+  /** Block colours of the cliff faces: `soil` under the grass, `cliff` the deep stone. */
+  blocks?: Record<string, number[]>;
 }
 
 export interface MapDef {

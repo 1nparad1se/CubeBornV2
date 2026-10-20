@@ -65,6 +65,13 @@ export class RpgPlayer {
   airJumps = 0;
   /** Seconds since the double jump started (renderer: somersault), -1 when none is playing. */
   airJumpT = -1;
+  /** Visual offset easing a step up or down (renderer draws the body at y + stepY). */
+  stepY = 0;
+  /** Walking a path without getting anywhere: time and the spot it was measured from. */
+  private stuckT = 0;
+  private stuckX = 0;
+  private stuckZ = 0;
+  private stuckRetry = false;
   path: number[] = [];
   pathI = 0;
   attack: AttackState | null = null;
@@ -153,7 +160,10 @@ export class RpgPlayer {
       wantAttack = true;
     }
     this.repath -= dt;
-    if (!keyMove && this.path.length) [ix, iz] = this.steer();
+    if (!keyMove && this.path.length) {
+      [ix, iz] = this.steer();
+      this.checkStuck(dt);
+    } else this.stuckT = 0;
     // ---------------------------------------------------------- attacks
     if (wantAttack && !this.attack && this.cooldown <= 0) this.startAttack(aimX, aimZ);
     const a = this.attack;
@@ -185,10 +195,38 @@ export class RpgPlayer {
     this.vx += (ix * speed - this.vx) * k;
     this.vz += (iz * speed - this.vz) * k;
     this.moveWithTerrain(this.vx * dt, this.vz * dt);
+    this.followGround(dt);
     if (this.moving || Math.hypot(this.vx, this.vz) > 0.3) this.anim += dt * speed * 2.2;
   }
 
   private repath = 0;
+
+  /**
+   * A path leg that cannot be walked (a corner of a ledge the straight line clipped): after a
+   * moment without progress the path is searched again once, then the order is dropped.
+   */
+  private checkStuck(dt: number) {
+    this.stuckT += dt;
+    if (this.stuckT < 0.6) return;
+    const moved = Math.hypot(this.x - this.stuckX, this.z - this.stuckZ);
+    this.stuckX = this.x;
+    this.stuckZ = this.z;
+    this.stuckT = 0;
+    if (moved > 0.25) {
+      this.stuckRetry = false;
+      return;
+    }
+    if (this.stuckRetry) {
+      this.path.length = 0;
+      this.stuckRetry = false;
+      return;
+    }
+    this.stuckRetry = true;
+    const tx = this.path[this.path.length - 2];
+    const tz = this.path[this.path.length - 1];
+    this.path = findPath(this.w.terrain, this.x, this.z, tx, tz);
+    this.pathI = 0;
+  }
 
   private startAttack(dx: number, dz: number) {
     const w = this.w;
@@ -211,6 +249,10 @@ export class RpgPlayer {
     }
     this.path = clearLine(t, this.x, this.z, tx, tz) ? [tx, tz] : findPath(t, this.x, this.z, tx, tz);
     this.pathI = 0;
+    this.stuckT = 0;
+    this.stuckRetry = false;
+    this.stuckX = this.x;
+    this.stuckZ = this.z;
   }
 
   private steer(): [number, number] {
@@ -273,14 +315,31 @@ export class RpgPlayer {
         if (this.jumpT >= JUMP.landLag) this.jumpPhase = 'ground';
         break;
     }
+  }
+
+  /**
+   * After moving: the feet stand exactly on the block top under them (a ledge too high to step
+   * down starts a fall).
+   */
+  private followGround(dt: number) {
+    const g = this.ground;
     if (this.jumpPhase !== 'air') {
-      if (g > this.y) this.y = g;
-      else if (this.y > g) {
+      // the feet always stand exactly on the block top; a quarter or half block step is eased
+      // for the eye only (stepY), so the body glides up and down the terraces
+      if (g > this.y) {
+        this.stepY -= g - this.y;
+        this.y = g;
+      } else if (this.y > g) {
         // walking off a ledge is a fall
         if (this.y - g > SLOPE.fall) this.takeOff(0);
-        else this.y = g;
+        else {
+          this.stepY += this.y - g;
+          this.y = g;
+        }
       }
-    }
+    } else this.stepY = 0;
+    this.stepY *= Math.exp(-30 * dt);
+    if (Math.abs(this.stepY) < 1e-3) this.stepY = 0;
   }
 
   private takeOff(v0: number) {

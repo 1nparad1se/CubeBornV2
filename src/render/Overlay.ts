@@ -101,6 +101,21 @@ export class Overlay {
       if ((d.x - px) ** 2 + (d.z - pz) ** 2 > 28 * 28) continue;
       if (!this.project(camera, d.x, groundAt(d.x, d.z) + d.height + 0.35, d.z)) continue;
       const sel = run.target === d;
+      if (sel) {
+        // a bobbing pointer over the selected target (red while it is being attacked)
+        const bob = Math.sin(run.time * 5) * 3;
+        const ty = v.y - 30 + bob;
+        ctx.beginPath();
+        ctx.moveTo(v.x - 8, ty - 9);
+        ctx.lineTo(v.x + 8, ty - 9);
+        ctx.lineTo(v.x, ty);
+        ctx.closePath();
+        ctx.lineWidth = 3;
+        ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+        ctx.stroke();
+        ctx.fillStyle = run.autoAttack ? '#ff4a3a' : '#ffd040';
+        ctx.fill();
+      }
       ctx.font = '600 11px "Russo One", sans-serif';
       ctx.lineWidth = 3;
       ctx.strokeStyle = 'rgba(0,0,0,0.85)';

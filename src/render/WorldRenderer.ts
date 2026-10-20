@@ -120,15 +120,12 @@ export class WorldRenderer {
     uOrigin: { value: new THREE.Vector2(0, 0) },
   };
   /**
-   * Foliage motion: the wind (direction x, z, strength 0..1) and the hero's trail in window-local
-   * coordinates (x, z, push strength 0..1; the newest point is where the hero stands).
+   * Foliage motion (there is no wind): the hero's trail in window-local coordinates (x, z, push
+   * strength 0..1; the newest point is where the hero stands).
    */
   private readonly flora = {
-    uWind: { value: new THREE.Vector4(0.8, 0.6, 0.4, 0) },
     uTrail: { value: Array.from({ length: TRAIL }, () => new THREE.Vector4(0, 0, 0, 0)) },
   };
-  /** Current wind (world direction and strength 0..1), for anything else that sways. */
-  readonly wind = { x: 0.8, z: 0.6, strength: 0.4 };
   /** Trail bookkeeping: next slot to reuse (0 is the hero itself), life 1..0 and push of each point. */
   private trailNext = 1;
   private trailLife = new Float32Array(TRAIL);
@@ -272,7 +269,7 @@ export class WorldRenderer {
     ao.magFilter = ao.minFilter = THREE.LinearFilter;
     ao.needsUpdate = true;
 
-    const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, {});
+    const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, map.palette.blocks ?? {});
     const tileCount = Math.max(1, t.tileNames.length);
     // per tile: animation kind, water kind, water depth (one texel each, any number of tiles)
     const infoData = new Uint8Array(tileCount * 4);
@@ -387,7 +384,8 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     col *= 0.94 + h21(bk + 17.0) * 0.08;
     col *= mix(1.0, 0.72, clamp(d / 6.0, 0.0, 1.0));
     col *= 0.8 + 0.2 * smoothstep(-0.2, 0.9, vWPos.y);
-    gEmit = col * 0.22;
+    // the earth of the terrace sides stays readable in the shade of its own step
+    gEmit = col * 0.4;
     if (anim == 4.0) col = mix(col, vec3(0.12, 0.06, 0.25), clamp(d / 4.0, 0.0, 1.0));
   } else if (liquid) {
     float shore = cd.b * 255.0 / 40.0;
@@ -707,10 +705,9 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     const mat = new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, side: THREE.DoubleSide });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = u.uTime;
-      sh.uniforms.uWind = this.flora.uWind;
       sh.uniforms.uTrail = this.flora.uTrail;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform vec4 uWind;\nuniform vec4 uTrail[${TRAIL}];\nattribute float aSprite;\nattribute float aBend;\nattribute float aTop;\nvarying float vSpr;\nvarying float vH;`)
+        .replace('#include <common>', `#include <common>\nuniform float uTime;\nuniform vec4 uTrail[${TRAIL}];\nattribute float aSprite;\nattribute float aBend;\nattribute float aTop;\nvarying float vSpr;\nvarying float vH;`)
         .replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
@@ -721,17 +718,8 @@ vec3 ip = instanceMatrix[3].xyz;
 mat3 fim = mat3(instanceMatrix);
 // the root stays put, the tips move most; bushes are stiffer than grass
 float bend = position.y * position.y * aBend;
-float ph = ip.x * 0.9 + ip.z * 0.6;
-vec2 wd = uWind.xy;
-vec2 side = vec2(-wd.y, wd.x);
-float ws = uWind.z;
-// gusts roll across the meadow along the wind: a slow lean that comes and goes in waves,
-// plus a quick flutter that grows with the wind
-float wave = sin(dot(ip.xz, wd) * 0.42 - uTime * (1.1 + ws * 1.5) + sin(dot(ip.xz, side) * 0.19) * 1.6);
-float gust = 0.5 + 0.5 * wave;
-vec2 off = wd * ws * (0.05 + 0.2 * gust * gust);
-off += wd * sin(uTime * (1.6 + ws * 2.4) + ph) * (0.012 + 0.045 * ws);
-off += side * cos(uTime * (1.2 + ws * 1.8) + ph * 1.3) * (0.008 + 0.026 * ws);
+// no wind: plants stand still unless the hero pushes through them
+vec2 off = vec2(0.0);
 // the hero and the spots it just left push the blades aside; they spring back as those fade
 vec2 push = vec2(0.0);
 for (int i = 0; i < ${TRAIL}; i++) {
@@ -897,22 +885,6 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
   update(time: number, surge: number) {
     this.uniforms.uTime.value = time;
     this.uniforms.uSurge.value = surge;
-    this.updateWind(time);
-  }
-
-  /**
-   * The wind drifts on its own: calm spells and stronger gusty ones (slow noise over time) from a
-   * direction that wanders around the prevailing one. The grass shader turns it into sway.
-   */
-  private updateWind(time: number) {
-    const calm = noise2(time * 0.03, 0.5, 71) * 0.7 + noise2(time * 0.11, 4.5, 72) * 0.3;
-    const strength = 0.12 + 0.88 * Math.pow(Math.min(1, Math.max(0, (calm - 0.18) / 0.64)), 1.4);
-    const ang = 0.65 + (noise2(time * 0.015, 9.5, 73) - 0.5) * 1.4;
-    const w = this.wind;
-    w.x = Math.cos(ang);
-    w.z = Math.sin(ang);
-    w.strength = strength;
-    this.flora.uWind.value.set(w.x, w.z, strength, 0);
   }
 
   /**
