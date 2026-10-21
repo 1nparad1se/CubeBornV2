@@ -15,6 +15,7 @@ function mapPx(n: number) {
 function tileColor(name: string, map: MapDef): number {
   if (/path|trail|road|cobble/.test(name)) return 0xa8875a;
   if (/water_sea/.test(name)) return 0x2c66aa;
+  if (/water_swamp/.test(name)) return 0x5a6a3c;
   if (/water/.test(name)) return 0x3f86cc;
   return map.palette.tiles[name]?.[0] ?? 0x6aa842;
 }

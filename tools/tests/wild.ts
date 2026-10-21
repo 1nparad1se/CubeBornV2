@@ -26,6 +26,7 @@ const t = w.terrain;
 const n = t.size;
 const top = t.top!;
 const water = (c: number) => c === CELL.liquid || c === CELL.shallow || c === CELL.ice;
+const swampTile = t.tileNames.indexOf('water_swamp_1');
 ok(n === WILD_SIZE && n === 2000, 'the world is 2000 × 2000 blocks');
 ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
 
@@ -119,13 +120,54 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   for (let z = 1; z < n - 1; z++)
     for (let x = 1; x < n - 1; x++) {
       const k = z * n + x;
-      if (t.cell[k] !== CELL.shallow) continue;
+      // swamp pools stand still in their hollows
+      if (t.cell[k] !== CELL.shallow || t.tile[k] === swampTile) continue;
       rivers++;
       let drains = false;
       for (const o of [1, -1, n, -n, n + 1, n - 1, -n + 1, -n - 1]) if (water(t.cell[k + o]) && t.elev[k + o] <= t.elev[k]) drains = true;
       if (!drains) stuck++;
     }
   ok(rivers > 30000 && stuck / rivers < 0.002, `river water is never trapped above its banks (${stuck} of ${rivers})`);
+}
+
+// ---------------------------------------------------------------- water depth, banks and swamps
+{
+  const { m, down, level, river } = w.coarse;
+  // every water cell has its bed under the surface; no dry neighbour lies below the water
+  let dry = 0;
+  let hanging = 0;
+  let wet = 0;
+  const kinds = new Map<string, number>();
+  for (let z = 1; z < n - 1; z++)
+    for (let x = 1; x < n - 1; x++) {
+      const k = z * n + x;
+      const c = t.cell[k];
+      if (c !== CELL.liquid && c !== CELL.shallow) continue;
+      wet++;
+      const surf = t.elev[k] - 0.62;
+      if (top[k] > surf - 0.2) dry++;
+      for (const o of [1, -1, n, -n]) if (t.cell[k + o] === CELL.floor && top[k + o] < surf) hanging++;
+      const nm = t.tileNames[t.tile[k]];
+      kinds.set(nm, (kinds.get(nm) ?? 0) + 1);
+    }
+  ok(dry === 0, `every water block has its bed at least 0.2 under the surface (${dry} of ${wet} too shallow)`);
+  ok(hanging === 0, `no bank lies below the water beside it (${hanging})`);
+  const want = ['water_sea_4', 'water_lake_3', 'water_river_2', 'water_fast_2', 'water_swamp_1'];
+  ok(want.every((nm) => (kinds.get(nm) ?? 0) > 500), `all water bodies present: ${want.map((nm) => `${nm.split('_')[1]} ${kinds.get(nm) ?? 0}`).join(', ')}`);
+  // swamps: standing water on wet, low, flat land
+  let swamp = 0;
+  let wrong = 0;
+  for (let k = 0; k < n * n; k++) {
+    if (t.tile[k] !== swampTile) continue;
+    swamp++;
+    const ci = Math.min(m - 1, Math.floor((k % n) / 4)) + Math.min(m - 1, Math.floor(k / n / 4)) * m;
+    if (w.coarse.rain[ci] < 0.5 || t.elev[k] - SEA > 16) wrong++;
+  }
+  ok(swamp > 2000 && wrong / swamp < 0.02, `swamps lie on wet lowland (${swamp} cells, ${wrong} out of place)`);
+  // lakes and the sea get deeper away from the shore
+  let deepLake = 0;
+  for (let k = 0; k < n * n; k++) if (/lake|sea/.test(t.tileNames[t.tile[k]]) && t.elev[k] - 0.62 - top[k] > 2) deepLake++;
+  ok(deepLake > 1000, `deep water in lakes and the sea (${deepLake} cells over two blocks deep)`);
   ok(w.stats.waterfalls > 20, `waterfalls where rivers drop two blocks or more: ${w.stats.waterfalls}`);
   ok(w.stats.lakeCells > 5000, `lakes fill the hollows: ${w.stats.lakeCells} blocks of lake water`);
   // rivers rise in the highlands: the sources stand well above the average land

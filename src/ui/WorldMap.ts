@@ -57,7 +57,7 @@ export class WorldMap {
     const key = (cls: string, label: string) => h('span.wm-key', h('i.' + cls), label);
     this.extra.replaceChildren(
       ...(w.map.generator === 'wild'
-        ? [key('wk-forest', 'Лес'), key('wk-water', 'Реки и озёра'), key('wk-snow', 'Снег'), key('wk-sand', 'Пустыня, пляж'), key('wk-rock', 'Горы, скалы')]
+        ? [key('wk-forest', 'Лес'), key('wk-water', 'Реки и озёра'), key('wk-swamp', 'Болота'), key('wk-snow', 'Снег'), key('wk-sand', 'Пустыня, пляж'), key('wk-rock', 'Горы, скалы')]
         : [key('wk-bush', 'Кусты'), key('wk-block', 'Возвышение'), key('wk-rock', 'Скалы (край)')]),
     );
     this.root.classList.remove('hidden');

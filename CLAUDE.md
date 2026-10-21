@@ -29,14 +29,16 @@ Read this before changing the game. It holds the decisions the owner has already
 - Two-handed weapons are held with both hands on the handle (idle, run and attack).
 - Maps and the minimap are turned like the camera: up on the screen is up on the map.
 - Grass and bushes are decor: no wind (they stand still), they only bend away from the hero, they never block movement.
-- Nothing turns see-through: the hero hides behind trees, rocks and hills like in any 3D world. The camera itself never sits inside the ground or a tree crown.
+- See-through only where it helps: a tree that really stands between the camera and the hero fades to half see-through and back (smoothly); ground that hides the hero (a cliff, a hill) opens a see-through window around the hero only. Nothing else turns see-through. The camera itself never sits inside the ground or a tree crown.
 - World generation follows cause and effect: ranges shape the relief, the relief steers the rivers (always downhill to the sea), water and climate (temperature by latitude and height, rain from the west wind with rain shadows) choose biomes, blocks and trees. Keep it that way; `tools/tests/wild.ts` checks it.
-- Trees are solid at the trunk (one block); crowns are visual. Ground blocks: grass kinds, snow, gravel, clay, basalt, tuff, moss_stone, ice, sandstone, sand, stone.
+- Trees are solid at the trunk (one block); crowns are visual. Near models use 1/6-block leaf and trunk cubes and 1/8-block branch cubes (ragged crowns with gaps, still cubic); keep the species heights. Ground blocks: grass kinds, snow, gravel, clay, basalt, tuff, moss_stone, ice, sandstone, sand, stone.
+- Water is a see-through layer over a real bed (`src/render/water.ts`): the deeper, the darker and less see-through. Nine kinds (plain, deep, shallow, rapids, waterfall, calm lake, swamp, sea, frozen); no glossy highlights. Banks never lie below the water beside them.
+- Jumps: the hero lands on a block as soon as the feet reach its top; paths may climb one block with a jump and two with a double jump, never more.
 
 ## Commands
 - `npm install`: install dependencies (Node 20+).
 - `npm run dev`: start the game at http://localhost:5173.
-- `npm test`: equipment, weapon, world, save, clock and wild-world tests.
+- `npm test`: equipment, weapon, world, save, clock, wild-world and render-model tests.
 - `npm run build`: type-check and build into `dist/`.
 
 ## Working together

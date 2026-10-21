@@ -33,6 +33,12 @@ export const SLOPE = {
   /** Half blocks (and quarter blocks) are stepped up on foot; a whole block needs a jump. */
   lip: 0.55,
   fall: 0.6,
+  /**
+   * Rises the hero climbs by jumping (rpg/Player JUMP: the jump peaks 1.35 above the feet, a
+   * double jump about 2.45): paths may cross them and the hero jumps at the foot on its own.
+   */
+  jump: 1.2,
+  doubleJump: 2.2,
 };
 
 export class Terrain {
@@ -71,6 +77,11 @@ export class Terrain {
    * bed under the water.
    */
   top: Float32Array | null = null;
+  /**
+   * Running water: the direction a river cell flows (angle * 256 / 2pi, plus 1; 0 = still
+   * water), set by the generator for the water's surface animation.
+   */
+  flow: Uint8Array | null = null;
   constructor(readonly size: number, tall = false) {
     this.cell = new Uint8Array(size * size);
     this.tile = new Uint8Array(size * size);

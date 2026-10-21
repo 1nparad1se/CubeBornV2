@@ -62,7 +62,7 @@ export interface WildWorld {
   /** Coarse fields (M × M, M = size / 4): biome, temperature 0..1, rainfall 0..1, water flow. */
   coarse: { m: number; biome: Uint8Array; temp: Float32Array; rain: Float32Array; flow: Float32Array; level: Float32Array; down: Int32Array; river: Uint8Array };
   /** Cells of rivers (shallow water), lakes, waterfalls (river cells above a drop) found. */
-  stats: { riverCells: number; lakeCells: number; oceanCells: number; waterfalls: number; land: number; ms: number };
+  stats: { riverCells: number; lakeCells: number; oceanCells: number; swampCells: number; waterfalls: number; land: number; ms: number };
 }
 
 export const WILD_MAP: MapDef = {
@@ -96,6 +96,7 @@ export const WILD_MAP: MapDef = {
       water_lake_3: [0x3a82c8, 0x408ad0],
       water_river_2: [0x4a92d4, 0x529ad8],
       water_fast_2: [0x5aa0dc, 0x62a8e0],
+      water_swamp_1: [0x56603a, 0x5c6640],
     },
     // earth under grass and snow, grey rock deep in cliffs; rock-like blocks are their own sides
     blocks: { soil: [0x9a6a42], cliff: [0x8a8c92], snowSoil: [1], selfRock: [1] },
@@ -461,6 +462,9 @@ export function generateWild(n = WILD_SIZE): WildWorld {
   const rDist = new Uint8Array(N2).fill(255);
   const rLevel = new Float32Array(N2);
   const rWide = new Uint8Array(N2);
+  const rFlow = new Uint8Array(N2);
+  /** River drop per block along the flow (rapids where it is steep). */
+  const rSteep = new Float32Array(N2);
   const jit = (i: number, k: number) => (hash2(i % m, (i / m) | 0, 71 + k) - 0.5) * 2.2;
   const center = (i: number): [number, number] => [(i % m) * C + C / 2 + jit(i, 0), ((i / m) | 0) * C + C / 2 + jit(i, 1)];
   for (let i = 0; i < m * m; i++) {
@@ -496,6 +500,8 @@ export function generateWild(n = WILD_SIZE): WildWorld {
         // (never below the sea it flows into)
         rLevel[k] = Math.max(SEA - 0.62, fallTo ? (u < 0.5 ? fi : fj) : fi + (fj - fi) * u);
         rWide[k] = Math.round(w * 8);
+        rFlow[k] = (Math.round((Math.atan2(sz, sx) / (Math.PI * 2)) * 256) & 255) || 1;
+        rSteep[k] = (fi - fj) / Math.sqrt(len2);
       }
   }
   // ------------------------------------------------------------------ the ground, block by block
@@ -527,7 +533,8 @@ export function generateWild(n = WILD_SIZE): WildWorld {
         if (h < lv + 0.3) {
           kind[k] = 2;
           level[k] = lv;
-          h = Math.min(h, lv - 1.2);
+          // the bed follows the hollow: shallow by the shore, deeper toward the middle
+          h = Math.min(h - 0.5, lv - 0.3);
         }
       } else if (sFill(x, z) - h > 1.4 && !isSea(ci)) {
         // the rim of a lake just outside its coarse cells
@@ -545,7 +552,8 @@ export function generateWild(n = WILD_SIZE): WildWorld {
         if (d < w) {
           kind[k] = 1;
           level[k] = rLevel[k];
-          h = surf - 0.33;
+          // shallow at the banks, deeper mid-channel on the wider rivers (still waded)
+          h = surf - 0.3 - 0.6 * (1 - d / w) * Math.min(1, Math.max(0, (w - 0.8) / 2));
         } else if (d < w + 1.2) {
           h = surf + 0.13;
           bankBand[k] = 1;
@@ -580,13 +588,16 @@ export function generateWild(n = WILD_SIZE): WildWorld {
       top[k] = Math.max(0, (bankBand[k] ? Math.floor : Math.round)((h + jt) / q) * q);
     }
   // ------------------------------------------------------------------ cells and blocks
-  const stats = { riverCells: 0, lakeCells: 0, oceanCells: 0, waterfalls: 0, land: 0, ms: 0 };
+  const stats = { riverCells: 0, lakeCells: 0, oceanCells: 0, swampCells: 0, waterfalls: 0, land: 0, ms: 0 };
   const g = {
     grass: id('grass'), grass2: id('grass2'), lush: id('grass_lush'), sun: id('grass_sun'), dry: id('grass_dry'), clover: id('grass_clover'), cold: id('grass_cold'),
     snow: id('snow'), gravel: id('gravel'), clay: id('clay'), basalt: id('basalt'), tuff: id('tuff'), moss: id('moss_stone'), ice: id('ice'),
     sandstone: id('sandstone'), sand: id('sand'), stone: id('stone'), sea: id('water_sea_4'), lake: id('water_lake_3'), river: id('water_river_2'), fast: id('water_fast_2'),
+    swamp: id('water_swamp_1'),
   };
   t.top = top;
+  const flowDir = new Uint8Array(N2);
+  t.flow = flowDir;
   t.shadeElev = new Uint8Array(N2);
   for (let z = 0; z < n; z++)
     for (let x = 0; x < n; x++) {
@@ -612,7 +623,10 @@ export function generateWild(n = WILD_SIZE): WildWorld {
           top[k] = Math.floor((L - 0.62) * 4) / 4;
         } else {
           t.cell[k] = kd === 1 ? CELL.shallow : CELL.liquid;
-          t.tile[k] = kd === 3 ? g.sea : kd === 2 ? g.lake : mt > 0.3 ? g.fast : g.river;
+          t.tile[k] = kd === 3 ? g.sea : kd === 2 ? g.lake : mt > 0.3 || rSteep[k] > 0.1 ? g.fast : g.river;
+          // the bed always lies a little under the surface
+          top[k] = Math.max(0, Math.min(top[k], Math.floor((L - 0.62 - 0.25) * 4) / 4));
+          if (kd === 1) flowDir[k] = rFlow[k];
         }
         if (kd === 1) stats.riverCells++;
         else if (kd === 2) stats.lakeCells++;
@@ -650,6 +664,23 @@ export function generateWild(n = WILD_SIZE): WildWorld {
       else if (rj < 0.64) tile = g.grass;
       else tile = g.lush;
       t.tile[k] = tile;
+    }
+  // swamps: on wet, warm-enough flat lowland the ground water stands in shallow pools
+  makeSwamps(t, n, top, kind, sTemp, sRain, sMtn, g.swamp, g.lush, g.moss, g.clay, stats);
+  // banks: no dry cell lies below the water beside it (the water would hang in the air), so
+  // land cut lower by a valley next to a lake is raised to a low bank above its surface
+  for (let z = 1; z < n - 1; z++)
+    for (let x = 1; x < n - 1; x++) {
+      const k = z * n + x;
+      if (!isWaterCell(t.cell[k]) || t.cell[k] === CELL.ice) continue;
+      const s = t.elev[k] - 0.62;
+      for (const o of [1, -1, n, -n, n + 1, n - 1, -n + 1, -n - 1]) {
+        const j = k + o;
+        if (t.cell[j] !== CELL.floor || top[j] >= s + 0.1) continue;
+        top[j] = Math.ceil((s + 0.1) * 4) / 4;
+        t.elev[j] = Math.floor(top[j]);
+        t.shadeElev[j] = Math.round(top[j] * 4) & 255;
+      }
     }
   // waterfalls: river water above a drop of two blocks or more
   for (let z = 1; z < n - 1; z++)
@@ -691,6 +722,85 @@ export function generateWild(n = WILD_SIZE): WildWorld {
   const trees = placeTrees(t, n, m, { BIO, TEMP, RAIN, MTN, rDist, kind }, clear);
   stats.ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
   return { map: WILD_MAP, terrain: t, spawn, dummies, trees, coarse: { m, biome: BIO, temp: TEMP, rain: RAIN, flow, level: fill, down, river: RIVER }, stats };
+}
+
+/**
+ * Swamp pools: where the land is flat, low and wet, the hollows hold standing water a third of a
+ * block deep (murky, waded like a stream), with lush grass, moss and clay around them. A pool
+ * only forms where all its dry neighbours rise to its surface, so no water hangs over a bank.
+ */
+function makeSwamps(
+  t: Terrain,
+  n: number,
+  top: Float32Array,
+  kind: Uint8Array,
+  sTemp: (x: number, z: number) => number,
+  sRain: (x: number, z: number) => number,
+  sMtn: (x: number, z: number) => number,
+  swamp: number,
+  lush: number,
+  moss: number,
+  clay: number,
+  stats: { swampCells: number },
+) {
+  const surf = new Float32Array(n * n).fill(NaN);
+  const near = (k: number) => {
+    const x = k % n;
+    const z = (k / n) | 0;
+    return x > 1 && z > 1 && x < n - 2 && z < n - 2;
+  };
+  for (let z = 2; z < n - 2; z++)
+    for (let x = 2; x < n - 2; x++) {
+      const k = z * n + x;
+      if (t.cell[k] !== CELL.floor) continue;
+      const above = top[k] - SEA;
+      if (above < 0.5 || above > 14) continue;
+      const rj = sRain(x, z);
+      const tj = sTemp(x, z);
+      if (rj < 0.6 || tj < 0.3 || tj > 0.8 || sMtn(x, z) > 0.15) continue;
+      // swampy land comes in patches; inside them, pools where the ground dips
+      const patch = fbm2(x / 70, z / 70, 611) + (rj - 0.6) * 0.8;
+      if (patch < 0.6) continue;
+      if (noise2(x / 6, z / 6, 612) * 0.7 + noise2(x / 2.5, z / 2.5, 613) * 0.3 < 0.52 - (patch - 0.6) * 0.6) continue;
+      let flat = true;
+      for (const o of [1, -1, n, -n]) if (Math.abs(top[k + o] - top[k]) > 0.5) flat = false;
+      if (!flat) continue;
+      // the surface on the water levels used everywhere (whole block - 0.62)
+      surf[k] = Math.floor(top[k] + 0.62 + 0.05) - 0.62;
+      if (surf[k] < top[k] - 0.65) surf[k] = NaN;
+    }
+  // drop pools whose dry neighbours are lower than the water, or whose wet neighbours differ
+  for (let pass = 0; pass < 4; pass++)
+    for (let k = 0; k < n * n; k++) {
+      if (Number.isNaN(surf[k]) || !near(k)) continue;
+      for (const o of [1, -1, n, -n, n + 1, n - 1, -n + 1, -n - 1]) {
+        const j = k + o;
+        const wet = !Number.isNaN(surf[j]);
+        if ((wet && surf[j] !== surf[k]) || (!wet && (isWaterCell(t.cell[j]) || top[j] < surf[k] + 0.1))) {
+          surf[k] = NaN;
+          break;
+        }
+      }
+    }
+  for (let k = 0; k < n * n; k++) {
+    if (Number.isNaN(surf[k])) continue;
+    const x = k % n;
+    const z = (k / n) | 0;
+    t.cell[k] = CELL.shallow;
+    t.tile[k] = swamp;
+    t.elev[k] = Math.round(surf[k] + 0.62);
+    top[k] = Math.floor((surf[k] - 0.3) * 4) / 4;
+    t.shadeElev![k] = Math.round(top[k] * 4) & 255;
+    kind[k] = 1;
+    stats.swampCells++;
+    // the swamp's banks: lush grass, moss and mud
+    for (const o of [1, -1, n, -n, 2, -2, 2 * n, -2 * n]) {
+      const j = k + o;
+      if (t.cell[j] !== CELL.floor || !Number.isNaN(surf[j])) continue;
+      const r = hash2(x + o, z, 614);
+      t.tile[j] = r < 0.45 ? lush : r < 0.75 ? clay : moss;
+    }
+  }
 }
 
 function isWaterCell(c: number) {
@@ -877,7 +987,22 @@ function placeTrees(t: Terrain, n: number, m: number, f: TreeFields, clear: { x:
       // fewer trees high up, more by the water
       p *= 1 - smooth(30, 60, h);
       if (wd <= 3 && bio !== BIOME.desert && bio !== BIOME.tundra) p += 0.1;
+      // a little more room in the woods (with the spacing below, about a fifth fewer trees):
+      // small glades where the canopy opens; the dense heart of a massif stays dense
+      p *= 1.04;
+      p *= 1 - smooth(0.6, 0.68, fbm2(x / 26, z / 26, 101)) * (1 - smooth(0.6, 0.75, massif));
       if (hash2(x, z, 95) >= p) continue;
+      // no two trunks side by side: a tree needs a free block around it (now and then two)
+      let crowded = false;
+      for (let dz = -2; dz <= 2 && !crowded; dz++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const j = k + dz * n + dx;
+          if ((dx || dz) && j >= 0 && j < n * n && t.cell[j] === CELL.solid && (Math.max(Math.abs(dx), Math.abs(dz)) < 2 || hash2(x + dx, z + dz, 102) < 0.08)) {
+            crowded = true;
+            break;
+          }
+        }
+      if (crowded) continue;
       // species by biome, in patches (one species dominating a stretch of forest)
       const patch = fbm2(x / 40, z / 40, 96);
       const r = hash2(x, z, 97);

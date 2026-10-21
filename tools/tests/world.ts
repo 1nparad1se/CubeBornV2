@@ -2,13 +2,13 @@
  * Training ground simulation: jump arc and 1-block obstacles, dummies take damage and stay,
  * spear sweep hits both dummies of the pair, projectiles fly and hit. Run: npx tsx tools/tests/world.ts
  */
-import { World } from '../../src/rpg/World';
+import { World, trainingSite } from '../../src/rpg/World';
 import { GameClock } from '../../src/game/GameClock';
 import { NullFx } from '../../src/game/types';
 import { newGear, equipFromBag, type Gear } from '../../src/rpg/equipment';
 import { STARTER_ITEMS } from '../../src/rpg/items';
 import { JUMP } from '../../src/rpg/Player';
-import { DUMMIES, OBSTACLES, SPAWN, TEST_MAP } from '../../src/rpg/testMap';
+import { DUMMIES, OBSTACLES, SPAWN, TEST_MAP, buildTestMap } from '../../src/rpg/testMap';
 import { CELL } from '../../src/game/Terrain';
 
 let fails = 0;
@@ -81,7 +81,8 @@ const place = (w: World, x: number, z: number) => {
   let climbed = 0;
   run(w, 40, () => {
     const p = w.player;
-    if (!p.airborne) off = Math.max(off, Math.abs(p.y - w.terrain.groundY(p.x, p.z)));
+    // standing: the feet on a block top under the body (an edge counts), never below the ground
+    if (!p.airborne) off = Math.max(off, Math.abs(p.y - p.support(0.02)), w.terrain.groundY(p.x, p.z) - p.y);
     climbed = Math.max(climbed, p.y - base);
   });
   ok(Math.hypot(w.player.x - gx, w.player.z - gz) < 0.6, `walks by click over the hills to (${gx}, ${gz}), ${H(goal % 100, (goal / 100) | 0)} blocks high (at ${w.player.x.toFixed(1)}, ${w.player.z.toFixed(1)})`);
@@ -150,6 +151,57 @@ const place = (w: World, x: number, z: number) => {
   run(w, 0.5, () => (vMax = Math.max(vMax, Math.hypot(w.player.vx, w.player.vz))));
   w.ctl.moveX = 0;
   ok(vMax <= vWalk + 1e-6, `running jump is not a dash (air speed ${vMax.toFixed(2)} ≤ walk ${vWalk.toFixed(2)})`);
+}
+
+// ---------------------------------------------------------------- climbing blocks by jumping
+{
+  // three test blocks on the level clearing: one, two and three blocks high (3 × 3 cells each)
+  const terrain = buildTestMap();
+  const n = terrain.size;
+  const base = terrain.top![56 * n + 44];
+  const raise = (x0: number, z0: number, h: number) => {
+    for (let z = z0; z < z0 + 3; z++) for (let x = x0; x < x0 + 3; x++) terrain.top![z * n + x] = base + h;
+  };
+  raise(44, 56, 1);
+  raise(50, 59, 2);
+  raise(55, 56, 3);
+  const mk = () => new World(NullFx, new GameClock(), 'human', wield('sword_recruit'), trainingSite(terrain));
+  const go = (w: World, x: number, z: number, sec: number) => {
+    w.ctl.clickMove = { x, z };
+    run(w, sec);
+  };
+  const a = mk();
+  place(a, 45.5, 61);
+  go(a, 45.5, 57.5, 4);
+  ok(Math.hypot(a.player.x - 45.5, a.player.z - 57.5) < 0.5 && a.player.y === base + 1 && a.jumps >= 1, `a click on a block one high: the hero jumps up by itself (y ${a.player.y - base})`);
+  const b = mk();
+  place(b, 51.5, 63.5);
+  go(b, 51.5, 60.5, 5);
+  ok(Math.hypot(b.player.x - 51.5, b.player.z - 60.5) < 0.5 && b.player.y === base + 2 && b.jumps >= 2, `two high: a double jump gets there (y ${b.player.y - base}, ${b.jumps} jumps)`);
+  const c = mk();
+  place(c, 56.5, 61);
+  go(c, 56.5, 57.5, 5);
+  ok(c.player.y < base + 0.01 && c.player.z > 58.9, `three high: out of reach, the hero stays below (y ${c.player.y - base})`);
+  // jumping by hand while walking at a block: lands on top of it
+  const d = mk();
+  place(d, 45.5, 60.2);
+  d.ctl.moveZ = -1;
+  run(d, 0.15);
+  d.player.requestJump();
+  run(d, 0.6);
+  d.ctl.moveZ = 0;
+  run(d, 0.4);
+  ok(d.player.y === base + 1 && d.player.z < 59, `a jump while walking at it lands on the block (y ${d.player.y - base})`);
+  // standing over the edge with part of the body: stays up, no sliding off
+  const e = mk();
+  place(e, 45.5, 58.8);
+  e.player.y = base + 1;
+  e.player.z = 59.15; // the centre just past the edge, the back of the feet still on the block
+  run(e, 0.5);
+  ok(e.player.y === base + 1, 'part of the feet on the block: the hero stands on its edge');
+  e.player.z = 59.6;
+  run(e, 0.8);
+  ok(e.player.y === base && !e.player.airborne, 'off the edge entirely: down onto the ground below');
 }
 
 // ---------------------------------------------------------------- 1-block obstacle

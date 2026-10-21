@@ -81,7 +81,15 @@ function enter(t: Terrain, from: number, cx: number, cz: number): boolean {
   const fz = (from / t.size) | 0;
   if (Math.abs(fx - cx) > 1 || Math.abs(fz - cz) > 1) return false;
   if (t.passable(from, j)) return true;
-  return t.centerY(j) < t.centerY(from) - SLOPE.lip;
+  // a drop off a ledge, or a rise the hero can jump onto (a double jump for the higher ones)
+  const rise = t.centerY(j) - t.centerY(from);
+  return rise < -SLOPE.lip || (rise > 0 && rise <= SLOPE.doubleJump);
+}
+
+/** Extra cost of a step that needs a jump (paths prefer to walk round when it is not far). */
+function jumpCost(t: Terrain, from: number, to: number): number {
+  const rise = t.centerY(to) - t.centerY(from);
+  return rise <= SLOPE.lip ? 0 : rise <= SLOPE.jump ? 2 : 5;
 }
 
 /** True when a body of radius r can walk straight from a to b. */
@@ -218,7 +226,7 @@ function findPathL(t: Terrain, sx: number, sz: number, tx: number, tz: number, b
       if (k >= 4 && (!enter(t, here, cx + DX[k], cz) || !enter(t, here, cx, cz + DZ[k]))) continue;
       const id = wi(nx, nz);
       if (closed[id] === gen) continue;
-      const ng = gScore[cur] + COST[k];
+      const ng = gScore[cur] + COST[k] + jumpCost(t, here, cellOf(id));
       if (stamp[id] === gen && ng >= gScore[id]) continue;
       stamp[id] = gen;
       gScore[id] = ng;

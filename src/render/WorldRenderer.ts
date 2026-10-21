@@ -4,12 +4,17 @@ import { CELL, isWater, type Terrain } from '../game/Terrain';
 import { hash2, noise2 } from '../core/Rng';
 import { ATLAS_VARIANTS, BUSH_TOP, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_BUSH, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { bushSpots } from './flora';
+import { GLSL_NOISE } from './glsl';
+import { GLSL_WATER, bedTileName, waterGeometry, waterMaterial, waterTextures } from './water';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
 
 
 /** Ground chunks are larger: they are cheap merged quads. */
 const GCHUNK = 32;
+const _v = new THREE.Vector3();
+const _c = new THREE.Vector3();
+const _e = new THREE.Vector3();
 /** Depth of the cliffs around the map edge. */
 const SKIRT = -14;
 
@@ -121,12 +126,6 @@ function pickSprite(list: SpriteW, r: number): number {
   return list[list.length - 1][0];
 }
 
-const GLSL_NOISE = `
-float h21(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
-float vnoise(vec2 p) {
-  vec2 i = floor(p); vec2 f = fract(p); f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y);
-}`;
 
 
 
@@ -144,7 +143,16 @@ export class WorldRenderer {
     uNight: { value: 0 },
     /** World position of the terrain's cell (0, 0) (streamed windows; 0 on fixed maps). */
     uOrigin: { value: new THREE.Vector2(0, 0) },
+    /** Ground hiding the hero: strength 0..1, the hero on screen, its view depth, window radii. */
+    uOcc: { value: 0 },
+    uHeroNdc: { value: new THREE.Vector2() },
+    uHeroDist: { value: 0 },
+    uOccR: { value: new THREE.Vector2(0.1, 0.1) },
+    uHeroFeet: { value: new THREE.Vector3() },
   };
+  /** Materials of the see-through passes (depth, colour) and their meshes in use. */
+  private ghostMats: THREE.Material[] = [];
+  private ghosts: THREE.Mesh[] = [];
   /**
    * Foliage motion (there is no wind): the hero's trail in window-local coordinates (x, z, push
    * strength 0..1; the newest point is where the hero stands).
@@ -297,8 +305,9 @@ export class WorldRenderer {
 
     const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, map.palette.blocks ?? {});
     const tileCount = Math.max(1, t.tileNames.length);
-    // per tile: animation kind, water kind, water depth (one texel each, any number of tiles)
-    const infoData = new Uint8Array(tileCount * 4);
+    // per tile: animation kind, water kind, water depth (one texel each, any number of tiles);
+    // second row: the ground tile under the water (beds)
+    const infoData = new Uint8Array(tileCount * 8);
     t.tileNames.forEach((nm, i) => {
       const w = waterLook(nm);
       infoData[i * 4] = tileAnim(nm);
@@ -306,15 +315,33 @@ export class WorldRenderer {
       infoData[i * 4 + 2] = w.depth;
       // meadow grounds (one family) blend smoothly into each other
       infoData[i * 4 + 3] = /grass|moss/.test(nm) ? 255 : 0;
+      const bed = /water/.test(nm) ? bedTileName(nm, t.tileNames) : null;
+      infoData[(tileCount + i) * 4] = bed ? t.tileNames.indexOf(bed) : i;
     });
-    const info = new THREE.DataTexture(infoData, tileCount, 1, THREE.RGBAFormat);
+    const info = new THREE.DataTexture(infoData, tileCount, 2, THREE.RGBAFormat);
     info.magFilter = info.minFilter = THREE.NearestFilter;
     info.needsUpdate = true;
 
-    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    // water beds are drawn by the ground, the water over them by its own see-through layer
+    const beds = !!t.top;
+    const wtex = waterTextures(t, level);
+    const wmat = waterMaterial(this.uniforms, cells, wtex, n);
+    this.disposables.push(wtex.lin, wtex.body, wmat);
     const u = this.uniforms;
-    mat.onBeforeCompile = (sh) => {
+    /**
+     * The ground in three passes: 0 the solid ground (with a hole where it hides the hero), 1 the
+     * depth of that hole's nearest surface, 2 its colour blended over the hero (see occlude).
+     */
+    const compile = (mode: number) => (sh: THREE.WebGLProgramParametersWithUniforms) => {
+      sh.uniforms.uOcc = u.uOcc;
+      sh.uniforms.uHeroNdc = u.uHeroNdc;
+      sh.uniforms.uHeroDist = u.uHeroDist;
+      sh.uniforms.uOccR = u.uOccR;
+      sh.uniforms.uHeroFeet = u.uHeroFeet;
       sh.uniforms.uCells = { value: cells };
+      sh.uniforms.uWLin = { value: wtex.lin };
+      sh.uniforms.uWBody = { value: wtex.body };
+      sh.uniforms.uBeds = { value: beds ? 1 : 0 };
       sh.uniforms.uAtlas = { value: atlas };
       sh.uniforms.uAO = { value: ao };
       sh.uniforms.uTime = u.uTime;
@@ -326,12 +353,19 @@ export class WorldRenderer {
       sh.uniforms.uSize = { value: n };
       sh.uniforms.uTiles = { value: tileCount };
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aTop;\nattribute float aSide;\nvarying vec3 vWPos;\nvarying vec3 vN;\nvarying float vTop;\nvarying float vSide;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;\nvN = normal;\nvTop = aTop;\nvSide = aSide;');
-      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nattribute float aTop;\nattribute float aSide;\nvarying vec4 vClip;\nvarying vec3 vWPos;\nvarying vec3 vN;\nvarying float vTop;\nvarying float vSide;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWPos = (modelMatrix * vec4(position, 1.0)).xyz;\nvN = normal;\nvTop = aTop;\nvSide = aSide;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvClip = gl_Position;');
+      sh.fragmentShader = `#define OCC_MODE ${mode}\n` + sh.fragmentShader
         .replace(
           '#include <common>',
           `#include <common>
+uniform float uOcc;
+uniform vec2 uHeroNdc;
+uniform float uHeroDist;
+uniform vec2 uOccR;
+uniform vec3 uHeroFeet;
+varying vec4 vClip;
 varying vec3 vWPos;
 varying vec3 vN;
 varying float vTop;
@@ -347,22 +381,40 @@ uniform vec2 uCamDir;
 uniform sampler2D uInfo;
 uniform float uSize;
 uniform float uTiles;
+uniform float uBeds;
 vec3 gEmit = vec3(0.0);
 ${GLSL_NOISE}
+${GLSL_WATER}
 vec4 cellAt(vec2 c) { return texture2D(uCells, (c + 0.5) / uSize); }
 vec3 atlasAt(float tile, float row, vec2 l) {
   l = clamp(l, 0.001, 0.999);
   return texture2D(uAtlas, vec2((tile + l.x) / uTiles, 1.0 - (row + l.y) / ${GROUND_ROWS.toFixed(1)})).rgb;
 }
-vec3 infoOf(float tile) { return floor(texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.5)).rgb * 255.0 + 0.5); }
+vec3 infoOf(float tile) { return floor(texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.25)).rgb * 255.0 + 0.5); }
 float animOf(float tile) { return infoOf(tile).r; }
-bool grassOf(float tile) { return texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.5)).a > 0.5; }
+float bedOf(float tile) { return floor(texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.75)).r * 255.0 + 0.5); }
+bool grassOf(float tile) { return texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.25)).a > 0.5; }
 float tileOf(vec4 c) { return floor(c.r * 255.0 + 0.5); }
 bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         )
         .replace(
           '#include <map_fragment>',
           `{
+  // the window around the hero: ground nearer to the camera than the hero, over it on screen
+  float occK = 0.0;
+  if (uOcc > 0.001) {
+    vec2 dd = (vClip.xy / vClip.w - uHeroNdc) / uOccR;
+    // only what rises above the line from the camera down to the hero's feet stands in the way
+    vec2 sxz = uHeroFeet.xz - cameraPosition.xz;
+    float tl = clamp(dot(vWPos.xz - cameraPosition.xz, sxz) / max(dot(sxz, sxz), 1e-4), 0.0, 1.0);
+    float lineY = mix(cameraPosition.y, uHeroFeet.y, tl);
+    if (vClip.w < uHeroDist - 0.9 && vWPos.y > lineY - 0.05) occK = uOcc * (1.0 - smoothstep(0.7, 1.0, length(dd)));
+  }
+#if OCC_MODE == 0
+  if (occK > 0.01) discard;
+#else
+  if (occK <= 0.01) discard;
+#endif
   bool side = vSide > 0.5;
   vec2 xz = (side ? vWPos.xz - vN.xz * 0.05 : vWPos.xz) - uOrigin;
   vec2 cell = floor(xz);
@@ -375,21 +427,10 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
   vec2 local = fract(xz);
   vec3 col;
   float elev = cd.a * 255.0 / 16.0;
-  if (side && liquid && anim == 1.0) {
-    // waterfall: pixel lanes of water rushing down with bright streaks
-    float along = dot(vWPos.xz, vec2(-vN.z, vN.x));
-    float lx = floor(along * 16.0);
-    float py = floor(vWPos.y * 16.0) / 16.0;
-    float lane = h21(vec2(lx, 3.0));
-    float sp = 2.6 + lane * 1.6;
-    vec3 base = atlasAt(tile, variant, fract(vec2(along * 2.0, py * 2.0 + uTime * sp)));
-    col = base * (1.05 + lane * 0.15);
-    float streak = fract(py * 0.8 + uTime * sp * 0.5 + lane * 5.0);
-    if (streak > 0.78) col = mix(col, vec3(0.88, 0.95, 1.0), 0.7);
-    float lip = clamp(1.0 - (vTop - vWPos.y) * 3.0, 0.0, 1.0);
-    col = mix(col, vec3(0.9, 0.97, 1.0), lip * 0.6);
-    gEmit = col * 0.25;
-  } else if (side) {
+  // under water: the bed's own ground (sand, gravel, mud), the water is drawn over it
+  bool bedCell = liquid && anim == 1.0 && uBeds > 0.5;
+  if (bedCell) tile = bedOf(tile);
+  if (side) {
     // cliff face: block-aligned rim (top layer hanging over), soil, then stone deeper down
     float along = dot(vWPos.xz, vec2(-vN.z, vN.x));
     float d = max(0.0, vTop - vWPos.y);
@@ -408,6 +449,19 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     // the earth of the terrace sides stays readable in the shade of its own step
     gEmit = col * 0.4;
     if (anim == 4.0) col = mix(col, vec3(0.12, 0.06, 0.25), clamp(d / 4.0, 0.0, 1.0));
+    if (bedCell) col *= 0.8;
+  } else if (bedCell) {
+    vec2 bp = xz * 2.0;
+    vec2 blk = floor(bp);
+    vec2 l = fract(bp);
+    if (h21(blk + 5.0) > 0.5) l.x = 1.0 - l.x;
+    col = atlasAt(tile, floor(h21(blk * 1.37 + tile) * ${ATLAS_VARIANTS.toFixed(1)}), l) * 0.8;
+    float dep = waterDepth(pxc);
+    col *= 1.0 - clamp(dep * 0.1, 0.0, 0.3);
+    col *= 0.94 + vnoise(xz * 0.4) * 0.12;
+    // sunlight dancing on a shallow bed
+    float ca = abs(vnoise(pxc * 2.3 + vec2(uTime * 0.35, -uTime * 0.25)) - vnoise(pxc * 2.1 - vec2(uTime * 0.3, uTime * 0.2)));
+    gEmit = vec3(0.55, 0.7, 0.75) * step(ca, 0.06) * 0.22 * (1.0 - smoothstep(0.3, 1.5, dep));
   } else if (liquid) {
     float shore = cd.b * 255.0 / 40.0;
     float ed = 1.0;
@@ -522,14 +576,35 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       gEmit = col * 0.22 + vec3(0.3, 0.55, 0.15) * bub * 0.15;
     }
     if (ua == 5.0) gEmit = col * (0.5 + 0.5 * sin(uTime * 3.0)) * (0.6 + uSurge * 1.5);
-    if (ua == 6.0) gEmit = vec3(0.8, 0.95, 1.0) * spark * 0.3;
+    if (ua == 6.0) {
+      // frozen water: dark water seen through clear patches, white cracks, trapped bubbles
+      float clear = smoothstep(0.55, 0.75, vnoise(xz * 0.35 + 4.0));
+      col = mix(col, col * vec3(0.5, 0.66, 0.86), clear * 0.65);
+      float cr = abs(vnoise(pxc * 1.3 + 9.0) - 0.5);
+      if (cr < 0.022) col = mix(col, vec3(0.95, 0.98, 1.0), 0.75);
+      col = mix(col, vec3(0.92, 0.96, 1.0), step(0.986, h21(floor(pxc * 16.0) + 3.0)) * 0.6);
+      gEmit = vec3(0.8, 0.95, 1.0) * spark * 0.3;
+    }
   }
   diffuseColor.rgb *= col;
+#if OCC_MODE == 2
+  diffuseColor.a = 1.0 - occK * 0.68;
+#endif
 }`,
         )
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += gEmit;');
     };
-    this.disposables.push(mat, cells, atlas, ao);
+    const mat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+    mat.onBeforeCompile = compile(0);
+    mat.customProgramCacheKey = () => 'ground0';
+    const ghostDepth = new THREE.MeshLambertMaterial({ colorWrite: false, transparent: true });
+    ghostDepth.onBeforeCompile = compile(1);
+    ghostDepth.customProgramCacheKey = () => 'ground1';
+    const ghostColor = new THREE.MeshLambertMaterial({ color: 0xffffff, transparent: true, depthWrite: false });
+    ghostColor.onBeforeCompile = compile(2);
+    ghostColor.customProgramCacheKey = () => 'ground2';
+    this.ghostMats = [ghostDepth, ghostColor];
+    this.disposables.push(mat, ghostDepth, ghostColor, cells, atlas, ao);
 
     // merged geometry per chunk: the sloped ground surface (two triangles per cell, flat runs
     // merged), flat water, and vertical rock faces where neighbouring surfaces do not meet (cliffs,
@@ -542,7 +617,9 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       // streamed windows: a short skirt under the edge (the far LOD continues beyond it)
       if (x < 0 || z < 0 || x >= n || z >= n) return t.shadeElev ? ch(Math.max(0, Math.min(n - 1, x)), Math.max(0, Math.min(n - 1, z)), k) - 6 : SKIRT;
       const i = z * n + x;
-      return liq(i) || !C ? (liq(i) || !t.top ? level[i] : t.top[i]) : C[i * 4 + k];
+      // water cells: the bed when it is known (the water layer draws the surface), else the surface
+      if (liq(i)) return beds ? t.top![i] : level[i];
+      return C ? C[i * 4 + k] : t.top ? t.top[i] : level[i];
     };
     // per-cell surface gradient, for smooth vertex normals across linked cells
     const grad = new Float32Array(n * n * 2);
@@ -672,8 +749,15 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
           const mesh = new THREE.Mesh(geo, mat);
           mesh.receiveShadow = true;
           mesh.castShadow = k === 1 && castShadows;
+          mesh.userData.ground = [x0 + GCHUNK / 2, z0 + GCHUNK / 2];
           this.place(mesh, x0 + GCHUNK / 2, z0 + GCHUNK / 2);
         });
+        const wg = beds ? waterGeometry(t, level, x0, z0, x1, z1) : null;
+        if (wg) {
+          const wm = new THREE.Mesh(wg, wmat);
+          wm.receiveShadow = true;
+          this.place(wm, x0 + GCHUNK / 2, z0 + GCHUNK / 2);
+        }
       });
   }
 
@@ -908,6 +992,58 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
     s.objs = null;
     this.stats.freed++;
     this.stats.live--;
+  }
+
+  /**
+   * Shows the hero through the ground that hides them (a hill, a cliff, a rock face): `k` 0..1
+   * eases the window in and out; only that window turns see-through, the rest stays solid.
+   * `hero` is the middle of the hero (0.9 above the feet).
+   */
+  occlude(k: number, camera: THREE.PerspectiveCamera, hero: THREE.Vector3) {
+    const u = this.uniforms;
+    u.uOcc.value = k;
+    for (const g of this.ghosts) g.visible = false;
+    if (k < 0.005) return;
+    u.uHeroFeet.value.set(hero.x, hero.y - 0.9, hero.z);
+    const v = _v.copy(hero).applyMatrix4(camera.matrixWorldInverse);
+    u.uHeroDist.value = -v.z;
+    const c = _c.copy(hero).project(camera);
+    u.uHeroNdc.value.set(c.x, c.y);
+    // a window about 1.5 blocks across around the hero's middle
+    const e = _e.copy(v).setX(v.x + 1.5).applyMatrix4(camera.matrixWorld).project(camera);
+    const r = Math.abs(e.x - c.x);
+    u.uOccR.value.set(r, r * camera.aspect);
+    // the ground chunks between the camera and the hero get a see-through copy
+    let n = 0;
+    const cx = camera.position.x;
+    const cz = camera.position.z;
+    for (const m of this.group.children) {
+      const at = m.userData.ground as [number, number] | undefined;
+      if (!at || !m.visible) continue;
+      const wx = at[0] + this.ox;
+      const wz = at[1] + this.oz;
+      // distance from the chunk centre to the camera-hero line on the map
+      const sx = hero.x - cx;
+      const sz = hero.z - cz;
+      const l2 = sx * sx + sz * sz || 1;
+      const tt = Math.max(0, Math.min(1, ((wx - cx) * sx + (wz - cz) * sz) / l2));
+      if (Math.hypot(wx - cx - sx * tt, wz - cz - sz * tt) > GCHUNK * 0.75) continue;
+      for (const mat of this.ghostMats) {
+        let g = this.ghosts[n];
+        if (!g) {
+          g = this.ghosts[n] = new THREE.Mesh();
+          g.matrixAutoUpdate = false;
+          g.renderOrder = 18;
+          this.group.add(g);
+        }
+        g.geometry = (m as THREE.Mesh).geometry;
+        g.material = mat;
+        g.renderOrder = mat === this.ghostMats[0] ? 18 : 19;
+        g.matrix.copy(m.matrix);
+        g.visible = true;
+        n++;
+      }
+    }
   }
 
   update(time: number, surge: number) {

@@ -89,6 +89,22 @@ export class RpgPlayer {
     return this.w.terrain.groundY(this.x, this.z);
   }
 
+  /**
+   * What the feet stand on: the highest block top under any part of the body's footprint that is
+   * not above the feet by more than `tol` (so the hero stands on the edge of a block instead of
+   * sliding off it, and never snaps onto a block it is only touching from the side).
+   */
+  support(tol: number): number {
+    const t = this.w.terrain;
+    const r = this.radius * 0.7;
+    let best = -Infinity;
+    for (const [dx, dz] of [[0, 0], [r, r], [-r, r], [r, -r], [-r, -r]]) {
+      const g = t.groundY(this.x + dx, this.z + dz);
+      if (g <= this.y + tol && g > best) best = g;
+    }
+    return best === -Infinity ? this.ground : best;
+  }
+
   get airborne(): boolean {
     return this.jumpPhase === 'air';
   }
@@ -163,6 +179,7 @@ export class RpgPlayer {
     if (!keyMove && this.path.length) {
       [ix, iz] = this.steer();
       this.checkStuck(dt);
+      this.autoJump(ix, iz);
     } else this.stuckT = 0;
     // ---------------------------------------------------------- attacks
     if (wantAttack && !this.attack && this.cooldown <= 0) this.startAttack(aimX, aimZ);
@@ -200,6 +217,35 @@ export class RpgPlayer {
   }
 
   private repath = 0;
+  /** The block ahead needs a double jump: jump again near the top of the first one. */
+  private climbTo = -Infinity;
+
+  /**
+   * Walking a path onto a higher block: at its foot the hero jumps by itself (twice for a block
+   * the first jump does not reach), then moves on over the edge once the feet are above it.
+   */
+  private autoJump(ix: number, iz: number) {
+    const len = Math.hypot(ix, iz);
+    if (len < 0.1) return;
+    // the ground just ahead across the body's width (where its sides would bump into a block)
+    const fx = ix / len;
+    const fz = iz / len;
+    const ahead = this.radius + 0.3;
+    let top = -Infinity;
+    for (const side of [0, -0.8, 0.8]) {
+      const sx = this.x + fx * ahead - fz * this.radius * side;
+      const sz = this.z + fz * ahead + fx * this.radius * side;
+      top = Math.max(top, this.w.terrain.groundY(sx, sz));
+    }
+    const rise = top - this.y;
+    if (this.jumpPhase === 'ground' && rise > SLOPE.lip + 0.01 && rise <= SLOPE.doubleJump) {
+      this.requestJump();
+      this.climbTo = rise > SLOPE.jump ? top : -Infinity;
+    } else if (this.airborne && this.airJumps === 0 && this.climbTo > this.y && this.jumpV < 1.2) {
+      this.requestJump();
+      this.climbTo = -Infinity;
+    }
+  }
 
   /**
    * A path leg that cannot be walked (a corner of a ledge the straight line clipped): after a
@@ -305,8 +351,9 @@ export class RpgPlayer {
         const t = this.jumpT;
         this.y = this.airY0 + this.airV0 * t - 0.5 * GRAVITY * t * t;
         this.jumpV = this.airV0 - GRAVITY * t;
-        if (this.jumpV <= 0 && this.y <= g) {
-          this.y = g;
+        const s = this.support(0.02);
+        if (this.jumpV <= 0 && this.y <= s) {
+          this.y = s;
           this.land();
         }
         break;
@@ -322,7 +369,7 @@ export class RpgPlayer {
    * down starts a fall).
    */
   private followGround(dt: number) {
-    const g = this.ground;
+    const g = this.support(SLOPE.lip);
     if (this.jumpPhase !== 'air') {
       // the feet always stand exactly on the block top; a quarter or half block step is eased
       // for the eye only (stepY), so the body glides up and down the terraces

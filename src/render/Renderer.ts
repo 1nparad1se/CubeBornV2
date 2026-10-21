@@ -233,6 +233,10 @@ export class Renderer {
   private ao: AOPass | null = null;
   private ambient: AmbientFx | null = null;
   private trees: TreeRenderer | null = null;
+  private heroAt = new THREE.Vector3();
+  private heroMid = new THREE.Vector3();
+  /** How much the ground hides the hero, eased (0..1). */
+  private occ = 0;
   private cA = new THREE.Color();
   private cB = new THREE.Color();
 
@@ -665,9 +669,36 @@ export class Renderer {
     else if (nightK > 0.05) this.lights.request(p.x, 2.6, p.z, 0xffd8a0, 2.6 * nightK, 10, t.x, t.z);
     this.entities!.update(dt);
     this.particles!.update(dt);
+    // trees between the camera and the hero fade to see-through
+    this.trees?.occlude(this.rig.camera.position, this.heroAt.set(p.x, p.y, p.z), 1.8, dt);
+    // and so does the ground (a hill, a cliff, a rock face) where it hides them
+    this.world?.occlude(this.groundOcc(run.terrain, p, dt), this.rig.camera, this.heroMid.set(p.x, p.y + 0.9, p.z));
     const cam = this.rig.camera;
     const px = (this.h * this.gl.getPixelRatio()) / (2 * Math.tan((cam.fov * Math.PI) / 360));
     this.ambient?.update(dt, t.x, t.z, nightK, px, 0, t.y);
+  }
+
+  /**
+   * Whether the ground stands between the camera and the hero (their feet, middle or head; the
+   * ground right at their feet does not count), eased in and out so the window fades.
+   */
+  private groundOcc(t: Terrain, p: { x: number; y: number; z: number }, dt: number): number {
+    const c = this.rig.camera.position;
+    let hidden = false;
+    for (const k of [0.3, 0.9, 1.6]) {
+      const hy = p.y + k;
+      const d = Math.hypot(p.x - c.x, hy - c.y, p.z - c.z);
+      const steps = Math.ceil(d / 0.25);
+      for (let i = 1; i < steps && !hidden; i++) {
+        const f = i / steps;
+        if ((1 - f) * d < 0.7) break;
+        hidden = t.groundY(c.x + (p.x - c.x) * f, c.z + (p.z - c.z) * f) > c.y + (hy - c.y) * f + 0.05;
+      }
+      if (hidden) break;
+    }
+    this.occ += ((hidden ? 1 : 0) - this.occ) * (1 - Math.exp(-6 * dt));
+    if (!hidden && this.occ < 0.01) this.occ = 0;
+    return this.occ;
   }
 
   /** Top of the trees within a crown's reach of (x, z) (0 where there are none). */
