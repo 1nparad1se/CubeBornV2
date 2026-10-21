@@ -8,7 +8,13 @@ export const CELL = {
   hazard: 3, // walkable, damages the player
   ice: 4, // walkable, slippery
   wall: 5, // map border: blocks everything
+  shallow: 6, // a shallow stream or river: walkable (the hero wades), drawn as water
 } as const;
+
+/** Cells drawn as water: deep (blocks walkers) and shallow (waded). */
+export function isWater(c: number): boolean {
+  return c === CELL.liquid || c === CELL.shallow;
+}
 
 /** Height limits for walkers (world units): a step taken on foot, and a ledge caught mid-jump. */
 const STEP = {
@@ -59,6 +65,12 @@ export class Terrain {
   corner: Float32Array | null = null;
   /** Smoothed centre height per cell (the field the corners are made from). */
   surf: Float32Array | null = null;
+  /**
+   * Block ground: one flat-topped block per cell, its top height here (quarter-block steps).
+   * Takes the place of `corner` (a quarter of the memory on big worlds); for water cells it is the
+   * bed under the water.
+   */
+  top: Float32Array | null = null;
   constructor(readonly size: number, tall = false) {
     this.cell = new Uint8Array(size * size);
     this.tile = new Uint8Array(size * size);
@@ -97,6 +109,7 @@ export class Terrain {
     const cz = Math.floor(z);
     if (!this.inLocal(cx, cz)) return 0;
     const i = cz * this.size + cx;
+    if (this.top) return this.top[i];
     const c = this.cornersOf(i);
     if (!c) return this.elev[i];
     const fx = x - cx;
@@ -113,7 +126,7 @@ export class Terrain {
   private slopeL(x: number, z: number): [number, number] {
     const cx = Math.floor(x);
     const cz = Math.floor(z);
-    if (!this.inLocal(cx, cz)) return [0, 0];
+    if (!this.inLocal(cx, cz) || this.top) return [0, 0];
     const c = this.cornersOf(cz * this.size + cx);
     if (!c) return [0, 0];
     const fx = x - cx;
@@ -123,16 +136,19 @@ export class Terrain {
 
   /** Height of the walking surface at the centre of cell i. */
   centerY(i: number): number {
+    if (this.top) return this.top[i];
     const c = this.cornersOf(i);
     return c ? (c[0] + c[1] + c[2] + c[3]) * 0.25 : this.elev[i];
   }
 
   /** Lowest / highest corner of cell i (shots stop at the highest). */
   minCorner(i: number): number {
+    if (this.top) return this.top[i];
     const c = this.cornersOf(i);
     return c ? Math.min(c[0], c[1], c[2], c[3]) : this.elev[i];
   }
   maxCorner(i: number): number {
+    if (this.top) return this.top[i];
     const c = this.cornersOf(i);
     return c ? Math.max(c[0], c[1], c[2], c[3]) : this.elev[i];
   }
@@ -191,6 +207,8 @@ export class Terrain {
     const hb = this.centerY(j);
     const dist = dx && dz ? Math.SQRT2 : 1;
     if (Math.abs(ha - hb) > SLOPE.maxTan * dist + 0.04) return false;
+    // block ground: neighbours join when the step between their tops can be walked
+    if (this.top) return Math.abs(ha - hb) <= SLOPE.lip;
     const ca = this.cornersOf(i);
     const cb = this.cornersOf(j);
     if (!ca || !cb) return Math.abs(this.elev[i] - this.elev[j]) <= 1;
@@ -421,7 +439,7 @@ export class Terrain {
     if (!this.inLocal(cx, cz)) return true;
     const i = cz * this.size + cx;
     // terrain rising above the shot's height (a hill or cliff face) stops it
-    if ((this.corner ? this.maxCorner(i) : this.elev[i]) > y) return true;
+    if ((this.corner || this.top ? this.maxCorner(i) : this.elev[i]) > y) return true;
     const c = this.cell[i];
     if (c === CELL.wall) return true;
     if (c !== CELL.solid) return false;

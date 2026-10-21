@@ -1,0 +1,24 @@
+
+  VITE v8.3.4  ready in 1480 ms
+
+  ➜  Local:   http://localhost:5173/
+  ➜  Network: use --host to expose
+9:04:57 AM [vite] (client) page reload src/render/TreeRenderer.ts
+9:04:57 AM [vite] (client) page reload src/render/TreeRenderer.ts
+9:08:07 AM [vite] (client) page reload src/render/Renderer.ts
+9:08:07 AM [vite] (client) page reload src/world/wild.ts
+9:10:24 AM [vite] (client) page reload src/render/CameraRig.ts
+9:10:24 AM [vite] (client) page reload src/render/Renderer.ts
+9:13:00 AM [vite] (client) page reload src/render/treeModels.ts
+9:15:10 AM [vite] (client) page reload src/world/wild.ts
+9:15:10 AM [vite] (client) page reload src/render/treeModels.ts
+9:16:28 AM [vite] (client) page reload src/render/treeModels.ts
+9:16:28 AM [vite] (client) page reload src/render/TreeRenderer.ts
+9:16:28 AM [vite] (client) page reload src/render/Renderer.ts
+9:19:54 AM [vite] (client) page reload src/world/wild.ts
+9:21:30 AM [vite] (client) page reload src/world/wild.ts
+9:21:53 AM [vite] (client) page reload src/world/wild.ts
+9:22:10 AM [vite] (client) page reload src/world/wild.ts
+9:22:29 AM [vite] (client) page reload src/world/wild.ts
+9:23:07 AM [vite] (client) page reload src/world/wild.ts
+9:26:52 AM [vite] (client) page reload src/world/wild.ts

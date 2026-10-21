@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { World } from '../rpg/World';
 import type { MapDef } from '../data/types';
 import type { FxSink, ParticleKind } from '../game/types';
-import type { Terrain } from '../game/Terrain';
+import { CELL, type Terrain } from '../game/Terrain';
 import { CameraRig } from './CameraRig';
 import { WorldRenderer } from './WorldRenderer';
 import { GROUND } from './ground';
@@ -19,6 +19,7 @@ import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { AmbientFx } from './AmbientFx';
+import { TreeRenderer } from './TreeRenderer';
 
 import type { Settings } from '../meta/Save';
 
@@ -231,6 +232,7 @@ export class Renderer {
   private grade: ShaderPass | null = null;
   private ao: AOPass | null = null;
   private ambient: AmbientFx | null = null;
+  private trees: TreeRenderer | null = null;
   private cA = new THREE.Color();
   private cB = new THREE.Color();
 
@@ -432,6 +434,11 @@ export class Renderer {
     this.applyFar();
     this.entities = new RpgEntities(run, this.s.shadows !== 'off');
     this.scene.add(this.entities.group);
+    if (run.trees) {
+      this.trees = new TreeRenderer(run.trees, this.s.shadows !== 'off');
+      this.scene.add(this.trees.group);
+      this.trees.update(run.player.x, run.player.z, 110);
+    }
     this.particles = new Particles(this.scene, this.blockTex, this.blobTex, this.s.particles);
     this.ambient = new AmbientFx(this.scene, run.map.generator, this.quality, this.particleMul);
     this.overlay.clear();
@@ -489,6 +496,11 @@ export class Renderer {
     }
     this.particles?.dispose();
     this.particles = null;
+    if (this.trees) {
+      this.scene.remove(this.trees.group);
+      this.trees.dispose();
+      this.trees = null;
+    }
     this.ambient?.dispose();
     this.ambient = null;
     this.disposeWorld();
@@ -576,7 +588,7 @@ export class Renderer {
     const p = run.player;
     this.rig.zoom += (this.zoomLevel - this.rig.zoom) * (1 - Math.exp(-10 * Math.max(dt, 1 / 120)));
     // the hero stays in the middle of the view (no look-ahead); terrain pulls the camera in
-    this.rig.update(dt, p.x, p.z, undefined, p.airborne ? Math.min(p.y, p.ground + 0.5) : p.ground, (x, z) => run.terrain.groundY(x, z));
+    this.rig.update(dt, p.x, p.z, undefined, p.airborne ? Math.min(p.y, p.ground + 0.5) : p.ground, (x, z) => run.terrain.groundY(x, z), (x, z) => this.canopy(run.terrain, x, z));
     if (this.photo) {
       const ph = this.photo;
       this.rig.camera.position.set(ph.x, ph.y, ph.z);
@@ -630,6 +642,8 @@ export class Renderer {
     if (this.cullT <= 0) {
       this.cullT = 0.25;
       this.world?.cull(t.x, t.z, fog.far + 6);
+      // trees fade into the fog well before its end: no need to draw them farther
+      this.trees?.update(t.x, t.z, Math.min(fog.far + 4, 84));
     }
     // sun follows the camera so the shadow map covers the view; the box is centred a little
     // up-screen because the tilted view sees farther toward the top
@@ -654,6 +668,22 @@ export class Renderer {
     const cam = this.rig.camera;
     const px = (this.h * this.gl.getPixelRatio()) / (2 * Math.tan((cam.fov * Math.PI) / 360));
     this.ambient?.update(dt, t.x, t.z, nightK, px, 0, t.y);
+  }
+
+  /** Top of the trees within a crown's reach of (x, z) (0 where there are none). */
+  private canopy(t: Terrain, x: number, z: number): number {
+    let top = 0;
+    const cx = Math.floor(x - t.ox);
+    const cz = Math.floor(z - t.oz);
+    for (let dz = -3; dz <= 3; dz++)
+      for (let dx = -3; dx <= 3; dx++) {
+        const px = cx + dx;
+        const pz = cz + dz;
+        if (!t.inLocal(px, pz)) continue;
+        const i = pz * t.size + px;
+        if (t.cell[i] === CELL.solid && t.height[i]) top = Math.max(top, t.centerY(i) + t.height[i]);
+      }
+    return top;
   }
 
   dispose() {

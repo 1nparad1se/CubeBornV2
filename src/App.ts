@@ -13,7 +13,8 @@ import { Menus, type MenuApi } from './ui/Menus';
 import { RunModals } from './ui/RunModals';
 import { h } from './ui/dom';
 import { t, L, setLang } from './i18n';
-import { World } from './rpg/World';
+import { World, type WorldSite } from './rpg/World';
+import { generateWild } from './world/wild';
 import { SPAWN, TEST_MAP, buildTestMap } from './rpg/testMap';
 import { cloneGear, type Gear } from './rpg/equipment';
 import type { Terrain } from './game/Terrain';
@@ -328,17 +329,38 @@ export class App implements MenuApi {
 
   // ------------------------------------------------------------------ playing
   /** Enters the training meadow with a saved character (always at the spawn point). */
+  /** The open world, generated once on the first entry (the same world every time). */
+  private wild: WorldSite | null = null;
+  private loading = false;
+
   play(charId: string) {
     const p = this.profile;
     const ch = p.data.chars.find((c) => c.id === charId);
-    if (!ch) return;
+    if (!ch || this.loading) return;
+    if (!this.wild) {
+      // building the world takes a few seconds: show it, then build after the screen has painted
+      this.loading = true;
+      this.menus.setVisible(false);
+      const el = h('div.world-loading', h('div.logo-cubes', h('i'), h('i'), h('i')), h('b', 'Создание мира…'), h('span', 'Горы, реки, леса и климат Диких земель'));
+      this.root.appendChild(el);
+      setTimeout(() => {
+        try {
+          this.wild = generateWild();
+        } finally {
+          el.remove();
+          this.loading = false;
+        }
+        this.play(charId);
+      }, 60);
+      return;
+    }
     p.selectChar(ch.id);
     this.menus.setVisible(false);
     this.modals.close();
     this.renderer.endRun();
     const fx = new ProxyFx();
     const s = p.data.settings;
-    const world = new World(fx, this.clock, ch.race, cloneGear(ch.gear), this.testTerrain());
+    const world = new World(fx, this.clock, ch.race, cloneGear(ch.gear), this.wild);
     this.world = world;
     this.runChar = ch.id;
     this.charTime = 0;
@@ -352,7 +374,7 @@ export class App implements MenuApi {
     this.mode = 'run';
     world.events.on('banner', (key) => this.hud.showBanner(t(key), key === 'dn_dawn' ? '#ffd08a' : '#9ab8ff'));
     audio.playMusic('forest');
-    this.hud.showBanner(L(TEST_MAP.name), '#ffffff', 2.2, `${ch.name} · Уровень ${ch.level}`);
+    this.hud.showBanner(L(world.map.name), '#ffffff', 2.2, `${ch.name} · Уровень ${ch.level}`);
     this.hud.showHint(s.showHints && ch.playTime < 60);
     this.firstMove = s.showHints ? () => setTimeout(() => this.hud.showHint(false), 6000) : null;
     this.saveChar();

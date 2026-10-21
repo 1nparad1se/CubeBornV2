@@ -15,6 +15,8 @@ export class WorldMap {
   private g: CanvasRenderingContext2D;
   private title = h('h2');
   private coords = h('span.wm-coords');
+  /** Legend entries of the map's own landscape (set on open). */
+  private extra = h('span.wm-extra');
   private img: HTMLCanvasElement | null = null;
   private imgFor: Terrain | null = null;
   private px = 0;
@@ -38,9 +40,7 @@ export class WorldMap {
           key('wk-hero', 'Вы'),
           key('wk-dummy', 'Манекен'),
           key('wk-target', 'Цель'),
-          key('wk-bush', 'Кусты'),
-          key('wk-block', 'Возвышение'),
-          key('wk-rock', 'Скалы (край)'),
+          this.extra,
           this.coords,
         ),
       ),
@@ -54,6 +54,12 @@ export class WorldMap {
 
   open(w: World) {
     this.title.textContent = `Карта: ${L(w.map.name)}`;
+    const key = (cls: string, label: string) => h('span.wm-key', h('i.' + cls), label);
+    this.extra.replaceChildren(
+      ...(w.map.generator === 'wild'
+        ? [key('wk-forest', 'Лес'), key('wk-water', 'Реки и озёра'), key('wk-snow', 'Снег'), key('wk-sand', 'Пустыня, пляж'), key('wk-rock', 'Горы, скалы')]
+        : [key('wk-bush', 'Кусты'), key('wk-block', 'Возвышение'), key('wk-rock', 'Скалы (край)')]),
+    );
     this.root.classList.remove('hidden');
     this.draw(w);
   }
@@ -80,7 +86,7 @@ export class WorldMap {
     const S = this.fit();
     const t = w.terrain;
     if (this.imgFor !== t) {
-      this.img = buildMapImage(t, w.map);
+      this.img = buildMapImage(t, w.map, w.trees);
       this.imgFor = t;
     }
     const g = this.g;
@@ -97,13 +103,15 @@ export class WorldMap {
     g.rotate(this.yaw);
     g.scale(k, k);
     g.translate(-cx, -cz);
-    g.imageSmoothingEnabled = false;
+    // a big world is drawn much smaller than its picture: smooth it down
+    g.imageSmoothingEnabled = n > 400;
     if (this.img) g.drawImage(this.img, t.ox, t.oz, n, n);
     // a faint grid every ten blocks
     g.strokeStyle = 'rgba(0,0,0,0.12)';
     g.lineWidth = 1 / k;
     g.beginPath();
-    for (let i = 10; i < n; i += 10) {
+    const step = n > 400 ? 100 : 10;
+    for (let i = step; i < n; i += step) {
       g.moveTo(t.ox + i, t.oz);
       g.lineTo(t.ox + i, t.oz + n);
       g.moveTo(t.ox, t.oz + i);

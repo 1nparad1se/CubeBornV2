@@ -8,6 +8,21 @@ import { computeStats, type CharStats, type Gear } from './equipment';
 import type { WeaponStats } from './items';
 import { RpgPlayer } from './Player';
 import { DUMMIES, SPAWN, TEST_MAP, buildTestMap } from './testMap';
+import type { TreeList } from '../world/trees';
+
+/** Where a world is played: the map, its ground, the spawn point, the dummies and the trees. */
+export interface WorldSite {
+  map: MapDef;
+  terrain: Terrain;
+  spawn: { x: number; z: number };
+  dummies: { id: string; name: string; x: number; z: number }[];
+  trees?: TreeList;
+}
+
+/** The small training meadow (tests and the menu backdrop). */
+export function trainingSite(terrain?: Terrain): WorldSite {
+  return { map: TEST_MAP, terrain: terrain ?? buildTestMap(), spawn: SPAWN, dummies: DUMMIES };
+}
 
 /** Training dummy: static, never attacks, never dies; it only counts the damage it takes. */
 export class Dummy {
@@ -81,8 +96,10 @@ interface WorldEvents extends Record<string, unknown> {
 
 /** The training ground simulation: the hero, three dummies and projectiles. No rendering. */
 export class World {
-  readonly map: MapDef = TEST_MAP;
+  readonly map: MapDef;
   readonly terrain: Terrain;
+  /** The world's trees (none on the training meadow). */
+  readonly trees: TreeList | null;
   readonly events = new EventBus<WorldEvents>();
   readonly dayNight: DayNight;
   readonly player: RpgPlayer;
@@ -102,12 +119,14 @@ export class World {
     clock: GameClock,
     readonly raceId: string,
     public gear: Gear,
-    terrain?: Terrain,
+    site: WorldSite = trainingSite(),
   ) {
-    this.terrain = terrain ?? buildTestMap();
-    this.dummies = DUMMIES.map((d) => new Dummy(d.id, d.name, d.x, d.z));
+    this.map = site.map;
+    this.terrain = site.terrain;
+    this.trees = site.trees ?? null;
+    this.dummies = site.dummies.map((d) => new Dummy(d.id, d.name, d.x, d.z));
     this.stats = computeStats(raceId, gear);
-    this.player = new RpgPlayer(this, SPAWN.x, SPAWN.z);
+    this.player = new RpgPlayer(this, site.spawn.x, site.spawn.z);
     this.dayNight = new DayNight(this, clock);
   }
 

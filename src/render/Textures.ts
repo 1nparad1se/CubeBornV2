@@ -60,9 +60,16 @@ const H = (x: number, y: number, s: number) => hash2(((x % 16) + 16) % 16, ((y %
 /** Ground tile families: each draws its own pixel pattern. */
 type GroundFam =
   | 'grass' | 'dirt' | 'path' | 'cobble' | 'slab' | 'tile' | 'snow' | 'sand' | 'ash' | 'basalt'
-  | 'rock' | 'sulfur' | 'ice' | 'water' | 'lava' | 'bog' | 'void' | 'rune' | 'bone';
+  | 'rock' | 'sulfur' | 'ice' | 'water' | 'lava' | 'bog' | 'void' | 'rune' | 'bone'
+  | 'gravel' | 'clay' | 'tuff' | 'mossy' | 'sandstone';
 
 function groundFamily(name: string): GroundFam {
+  // natural blocks of the wild world first (their names overlap the older families)
+  if (/moss_stone|mossy/.test(name)) return 'mossy';
+  if (/gravel/.test(name)) return 'gravel';
+  if (/clay/.test(name)) return 'clay';
+  if (/tuff/.test(name)) return 'tuff';
+  if (/sandstone/.test(name)) return 'sandstone';
   if (/grass|moss/.test(name)) return 'grass';
   if (/^dirt/.test(name)) return 'dirt';
   if (/path|trail/.test(name)) return 'path';
@@ -207,7 +214,49 @@ const PATTERN: Record<string, (s: number) => Px> = {
   void: (s) => (x, y) => 0.8 + H(x, y, s) * 0.3,
   rune: (s) => (x, y) => (x === 7 || x === 8 || y === 7 || y === 8 ? 1.35 : 0.88 + H(x, y, s) * 0.1),
   bone: (s) => (x, y) => (y % 5 === 0 ? 0.86 : 0.92 + H(x, y, s) * 0.1),
+  // gravel: round pebbles of mixed shades (2 × 2 clumps) with dark gaps between them
+  gravel: (s) => (x, y) => {
+    const id = H(x >> 1, y >> 1, s);
+    if (H(x, y, s + 1) < 0.14) return 0.6;
+    let m = 0.76 + id * 0.42;
+    if ((x & 1) === 0 && (y & 1) === 0) m *= 1.07;
+    return m;
+  },
+  // clay: smooth, faint horizontal layers, a few pale grains
+  clay: (s) => (x, y) => {
+    let m = 0.95 + H(x >> 2, y, s) * 0.07;
+    if (y % 6 === 0) m *= 0.95;
+    if (H(x, y, s + 1) > 0.95) m = 1.1;
+    return m;
+  },
+  // tuff: porous volcanic stone, small dark pores and light ash grains
+  tuff: (s) => (x, y) => {
+    const r = H(x, y, s);
+    if (r < 0.09) return 0.7;
+    if (r > 0.93) return 1.14;
+    return 0.92 + H(x >> 1, y >> 1, s + 1) * 0.1;
+  },
+  // mossy stone: rough stone (the moss is painted over it, see MOSS)
+  mossy: (s) => (x, y) => {
+    let m = 0.9 + H(x >> 1, y, s) * 0.12;
+    if (H(x >> 2, y >> 1, s + 1) > 0.82) m = 0.78;
+    return m;
+  },
+  // sandstone: smooth slabs in courses, staggered joints
+  sandstone: (s) => (x, y) => {
+    const row = y >> 2;
+    if ((y & 3) === 3) return 0.84;
+    if (((x + (row & 1) * 4) & 7) === 7) return 0.88;
+    if ((y & 3) === 0) return 1.05;
+    return 0.95 + H(x, y >> 1, s) * 0.05;
+  },
 };
+
+/** Mossy stone: where the moss grows over the stone (patchy, thicker on top and in cracks). */
+function mossAt(x: number, y: number, s: number, top: boolean): boolean {
+  const patch = H(x >> 2, y >> 2, s + 9) * 0.6 + H(x >> 1, y >> 1, s + 10) * 0.4;
+  return patch > (top ? 0.42 : 0.55);
+}
 
 /**
  * Summer meadow grounds: the grass pattern with its own detail per tile name (same family, so
@@ -254,12 +303,15 @@ const GRASS_VARIANT: Record<string, (s: number) => Px> = {
 
 /** Families whose top layer hangs over the cliff face like a grass block side. */
 const OVERHANG = new Set<GroundFam>(['grass', 'snow', 'bog']);
+/** Solid stone-like blocks whose sides are the same block all the way down (no soil under them). */
+const SELF_SIDED = new Set<GroundFam>(['gravel', 'clay', 'tuff', 'mossy', 'sandstone', 'ice']);
 
 type SoilKind = 'dirt' | 'rock' | 'sandstone' | 'basalt';
 
 function soilOf(fam: GroundFam, blocks: Record<string, number[]>, tiles: Record<string, number[]>): [SoilKind, number, number] {
   const cliff = blocks.cliff?.[0];
-  if (fam === 'grass' || fam === 'dirt' || fam === 'path' || fam === 'bog')
+  // snow lies on earth (a white cap over brown soil)
+  if (fam === 'grass' || fam === 'dirt' || fam === 'path' || fam === 'bog' || (fam === 'snow' && blocks.snowSoil))
     return ['dirt', blocks.soil?.[0] ?? tiles.dirt?.[0] ?? 0x7a5636, cliff ?? 0x80848a];
   if (fam === 'snow' || fam === 'ice' || fam === 'rock') return ['rock', cliff ?? tiles.rock?.[0] ?? 0x7a828c, blocks.soil?.[0] ?? 0x5e646e];
   if (fam === 'sand' || fam === 'rune' || fam === 'void') return ['sandstone', blocks.soil?.[0] ?? blocks.sandstone?.[0] ?? 0xb89a6a, cliff ?? 0x9a8058];
@@ -303,14 +355,24 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
     const colors = tiles[name] ?? [0x777777];
     const fam = groundFamily(name);
     const pat = (fam === 'grass' && GRASS_VARIANT[name]) || PATTERN[fam];
-    const [kind, soil, stone] = soilOf(fam, blocks, tiles);
-    const soilPat = SOIL_PATTERN[kind];
+    const [kind, soil0, stone0] = soilOf(fam, blocks, tiles);
+    // stone-like blocks are the same block on their sides; rock and basalt use their own colour
+    const self = SELF_SIDED.has(fam) || ((fam === 'rock' || fam === 'basalt') && !!blocks.selfRock);
+    const soil = self ? new THREE.Color(colors[0]).multiplyScalar(0.92).getHex() : soil0;
+    const stone = self ? new THREE.Color(colors[0]).multiplyScalar(0.8).getHex() : stone0;
+    const soilPat = self ? pat : SOIL_PATTERN[kind];
+    const moss = fam === 'mossy' ? colors[colors.length - 1] : -1;
+    const stoneCols = fam === 'mossy' ? colors.slice(0, -1) : colors;
     const vc = new THREE.Color();
     for (let v = 0; v < ATLAS_VARIANTS; v++) {
       const f = pat(11 + ti * 7 + v * 131);
       // variants stay close to the main colour so blocks read as one surface, not a checkerboard
-      const c = vc.setHex(colors[0]).lerp(new THREE.Color(colors[v % colors.length]), 0.45).getHex();
-      for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, v, x, y, c, f(x, y));
+      const c = vc.setHex(stoneCols[0]).lerp(new THREE.Color(stoneCols[v % stoneCols.length]), 0.45).getHex();
+      for (let y = 0; y < TILE_PX; y++)
+        for (let x = 0; x < TILE_PX; x++) {
+          if (moss >= 0 && mossAt(x, y, v * 13 + ti, true)) put(ti, v, x, y, moss, 0.9 + H(x, y, v + 5) * 0.2);
+          else put(ti, v, x, y, c, f(x, y));
+        }
     }
     // rim: the top layer hanging over the soil in a ragged strip
     const topPat = pat(17 + ti * 7);
@@ -320,17 +382,23 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
       if (OVERHANG.has(fam)) {
         hang = 3 + Math.floor(hash2(x, 0, 29 + ti) * 2.6);
         if (hash2(x, 1, 29 + ti) > 0.82) hang += 2;
-      } else if (kind === 'sandstone' || kind === 'basalt') hang = fam === 'sand' || fam === 'ash' ? 2 : 1;
+      } else if (moss >= 0) hang = 1 + Math.floor(hash2(x, 0, 31 + ti) * 3);
+      else if (self) hang = 0;
+      else if (kind === 'sandstone' || kind === 'basalt') hang = fam === 'sand' || fam === 'ash' ? 2 : 1;
       for (let y = 0; y < TILE_PX; y++) {
-        if (y < hang) put(ti, ROW_RIM, x, y, colors[0], topPat(x, y) * (y === hang - 1 ? 0.88 : 1));
+        if (y < hang) put(ti, ROW_RIM, x, y, moss >= 0 ? moss : colors[0], topPat(x, y) * (y === hang - 1 ? 0.88 : 1));
         else put(ti, ROW_RIM, x, y, soil, sp(x, y) * (y === hang ? 0.84 : 1));
       }
     }
     for (let r = 0; r < 2; r++) {
       const p = soilPat(41 + ti * 3 + r * 17);
-      for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, ROW_SOIL + r, x, y, soil, p(x, y));
+      for (let y = 0; y < TILE_PX; y++)
+        for (let x = 0; x < TILE_PX; x++) {
+          if (moss >= 0 && mossAt(x, y, r * 7 + ti, false)) put(ti, ROW_SOIL + r, x, y, moss, 0.82 + H(x, y, r + 3) * 0.2);
+          else put(ti, ROW_SOIL + r, x, y, soil, p(x, y));
+        }
     }
-    const deep = (kind === 'basalt' ? PATTERN.basalt : PATTERN.rock)(53 + ti);
+    const deep = (self ? pat : kind === 'basalt' ? PATTERN.basalt : PATTERN.rock)(53 + ti);
     for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, ROW_STONE, x, y, stone, deep(x, y));
   });
   ctx.putImageData(img, 0, 0);

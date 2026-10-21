@@ -1,87 +1,100 @@
 import { hash2 } from '../core/Rng';
-import { CELL, type Terrain } from '../game/Terrain';
+import { CELL, isWater, type Terrain } from '../game/Terrain';
 import type { MapDef } from '../data/types';
 import { bushSpots } from '../render/flora';
 import { SPRITE } from '../render/Textures';
 import type { World } from '../rpg/World';
+import type { TreeList } from '../world/trees';
 
-/** Pixels per cell of the map picture (the maps scale it; pixelated, like the world). */
-export const MAP_PX = 4;
-
-const hex = (c: number) => '#' + c.toString(16).padStart(6, '0');
+/** Pixels per cell of the map picture: 4 on small maps, 1 on big worlds (it is scaled anyway). */
+function mapPx(n: number) {
+  return n > 400 ? 1 : 4;
+}
 
 /** Map colour of a ground tile: its palette colour, or a fixed one for roads, water and rock. */
 function tileColor(name: string, map: MapDef): number {
   if (/path|trail|road|cobble/.test(name)) return 0xa8875a;
-  if (/water/.test(name)) return 0x3f7fc8;
+  if (/water_sea/.test(name)) return 0x2c66aa;
+  if (/water/.test(name)) return 0x3f86cc;
   return map.palette.tiles[name]?.[0] ?? 0x6aa842;
 }
 
 /**
- * The whole map as a picture, north up, one MAP_PX square per cell: the ground by tile (meadow
- * shades, roads, water), raised blocks lit with a shadowed edge, the border rock and the bushes.
- * Built once per terrain; the minimap and the world map draw it turned to the camera view.
+ * The whole map as a picture, north up: the ground by its block (meadows, snow, sand, rock,
+ * water), shaded by the relief (lit from the north-west, darker rims under ledges and cliffs),
+ * with the trees (or the bushes of the training meadow) as dark green dots. Built once per
+ * terrain, pixel by pixel; the minimap and the world map draw it turned to the camera view.
  */
-export function buildMapImage(t: Terrain, map: MapDef): HTMLCanvasElement {
+const cache = new WeakMap<Terrain, HTMLCanvasElement>();
+
+export function buildMapImage(t: Terrain, map: MapDef, trees?: TreeList | null): HTMLCanvasElement {
+  const hit = cache.get(t);
+  if (hit) return hit;
   const n = t.size;
+  const P = mapPx(n);
+  const W = n * P;
   const c = document.createElement('canvas');
-  c.width = c.height = n * MAP_PX;
+  c.width = c.height = W;
   const g = c.getContext('2d')!;
-  const shade = (hexc: number, k: number) => {
-    const r = Math.min(255, ((hexc >> 16) & 255) * k);
-    const gg = Math.min(255, ((hexc >> 8) & 255) * k);
-    const b = Math.min(255, (hexc & 255) * k);
-    return `rgb(${r | 0},${gg | 0},${b | 0})`;
+  const img = g.createImageData(W, W);
+  const d = img.data;
+  const tileRGB = t.tileNames.map((nm) => tileColor(nm, map));
+  const h = (x: number, z: number) => t.centerY(Math.max(0, Math.min(n - 1, z)) * n + Math.max(0, Math.min(n - 1, x)));
+  const put = (px: number, pz: number, rgb: number, k: number) => {
+    const o = (pz * W + px) * 4;
+    d[o] = Math.min(255, ((rgb >> 16) & 255) * k);
+    d[o + 1] = Math.min(255, ((rgb >> 8) & 255) * k);
+    d[o + 2] = Math.min(255, (rgb & 255) * k);
+    d[o + 3] = 255;
   };
   for (let z = 0; z < n; z++)
     for (let x = 0; x < n; x++) {
       const i = z * n + x;
       const cell = t.cell[i];
-      let col: string;
-      if (cell === CELL.wall) col = shade(0x6e7078, 0.9 + hash2(x, z, 3) * 0.12);
-      else if (cell === CELL.liquid) col = hex(0x3f7fc8);
-      // higher ground is drawn lighter (relief shading), lowlands darker
-      else col = shade(tileColor(t.tileNames[t.tile[i]] ?? '', map), 0.8 + hash2(x, z, 5) * 0.06 + Math.min(t.centerY(i), 12) * 0.045);
-      g.fillStyle = col;
-      g.fillRect(x * MAP_PX, z * MAP_PX, MAP_PX, MAP_PX);
+      let rgb: number;
+      let k: number;
+      if (cell === CELL.wall) {
+        rgb = 0x6e7078;
+        k = 0.9 + hash2(x, z, 3) * 0.12;
+      } else {
+        rgb = tileRGB[t.tile[i]] ?? 0x6aa842;
+        if (isWater(cell)) k = 0.95 + hash2(x, z, 4) * 0.04;
+        else {
+          // relief: lit from the north-west, slopes facing away darker, height a little lighter
+          const e = h(x, z);
+          const slope = h(x - 1, z - 1) - e;
+          k = 0.9 + hash2(x, z, 5) * 0.05 + Math.max(-0.35, Math.min(0.2, -slope * 0.12)) + Math.min(e, 90) * (n > 400 ? 0.002 : 0.04);
+          // ledges: a dark rim where the ground drops a whole block or more
+          if (e - h(x + 1, z) >= 0.99 || e - h(x, z + 1) >= 0.99) k *= 0.72;
+          else if (n <= 400 && (e - h(x + 1, z) >= 0.49 || e - h(x, z + 1) >= 0.49)) k *= 0.86;
+        }
+        if (cell === CELL.solid) {
+          rgb = 0x2e5a24;
+          k = 1;
+        }
+      }
+      for (let dz = 0; dz < P; dz++) for (let dx = 0; dx < P; dx++) put(x * P + dx, z * P + dz, rgb, k);
     }
-  // ledges: a dark rim where a block drops to lower ground; a whole block or more (a step that
-  // needs a jump, a cliff) is drawn darker than the half and quarter steps of the hills
-  const h = (x: number, z: number) => t.centerY(z * n + x);
-  for (let z = 0; z < n; z++)
-    for (let x = 0; x < n; x++) {
-      const e = h(x, z);
-      const rim = (d: number) => (d >= 0.99 ? 'rgba(20,24,10,0.6)' : d >= 0.49 ? 'rgba(20,30,10,0.3)' : null);
-      const sides: [number, number, number, number, number, number][] = [
-        [x, z + 1, x * MAP_PX, (z + 1) * MAP_PX - 1, MAP_PX, 1],
-        [x + 1, z, (x + 1) * MAP_PX - 1, z * MAP_PX, 1, MAP_PX],
-        [x, z - 1, x * MAP_PX, z * MAP_PX, MAP_PX, 1],
-        [x - 1, z, x * MAP_PX, z * MAP_PX, 1, MAP_PX],
-      ];
-      for (const [nx, nz, rx, ry, rw, rh] of sides) {
-        if (nx < 0 || nz < 0 || nx >= n || nz >= n) continue;
-        const c = rim(e - h(nx, nz));
-        if (!c) continue;
-        g.fillStyle = c;
-        g.fillRect(rx, ry, rw, rh);
+  // trees: a dark crown around each trunk
+  if (trees)
+    for (let i = 0; i < trees.count; i++) {
+      const x = Math.floor(trees.x[i]);
+      const z = Math.floor(trees.z[i]);
+      const dead = trees.kind[i] === 4;
+      for (const [dx, dz] of [[0, 0], [1, 0], [0, 1], [-1, 0], [0, -1]]) {
+        const px = x + dx;
+        const pz = z + dz;
+        if (px < 0 || pz < 0 || px >= n || pz >= n) continue;
+        put(px * P, pz * P, dead ? 0x6e6052 : trees.kind[i] === 1 || trees.kind[i] === 7 ? 0x24482a : 0x2f6a26, dx || dz ? 0.95 : 0.75);
       }
     }
-  // the edge of the border rock
-  g.fillStyle = 'rgba(0,0,0,0.35)';
-  for (let z = 1; z < n - 1; z++)
-    for (let x = 1; x < n - 1; x++) {
-      if (t.cell[z * n + x] === CELL.wall) continue;
-      if (t.cell[z * n + x - 1] === CELL.wall) g.fillRect(x * MAP_PX, z * MAP_PX, 1, MAP_PX);
-      if (t.cell[z * n + x + 1] === CELL.wall) g.fillRect((x + 1) * MAP_PX - 1, z * MAP_PX, 1, MAP_PX);
-      if (t.cell[(z - 1) * n + x] === CELL.wall) g.fillRect(x * MAP_PX, z * MAP_PX, MAP_PX, 1);
-      if (t.cell[(z + 1) * n + x] === CELL.wall) g.fillRect(x * MAP_PX, (z + 1) * MAP_PX - 1, MAP_PX, 1);
-    }
-  // bushes: dark leafy dots (berry bushes with a red speck)
+  g.putImageData(img, 0, 0);
+  // bushes of the training meadow: dark leafy dots (berry bushes with a red speck)
   if (map.generator === 'meadow')
     for (const b of bushSpots(t)) {
-      const r = Math.max(1.5, b.s * MAP_PX * 0.42);
-      const cx = Math.round(b.x * MAP_PX);
-      const cz = Math.round(b.z * MAP_PX);
+      const r = Math.max(1.5, b.s * P * 0.42);
+      const cx = Math.round(b.x * P);
+      const cz = Math.round(b.z * P);
       g.fillStyle = 'rgba(16,40,12,0.55)';
       g.fillRect(cx - r + 1, cz - r + 1, r * 2, r * 2);
       g.fillStyle = b.sprite === SPRITE.shrub ? '#3f6e2a' : '#356a26';
@@ -91,6 +104,7 @@ export function buildMapImage(t: Terrain, map: MapDef): HTMLCanvasElement {
         g.fillRect(cx, cz - 1, 1, 1);
       }
     }
+  cache.set(t, c);
   return c;
 }
 

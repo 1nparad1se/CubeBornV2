@@ -3,7 +3,7 @@ import { t, L } from '../i18n';
 import type { Profile } from '../meta/Profile';
 import { MAX_CHARS, type CharSave } from '../meta/Characters';
 import { playableRaces, RACE_BY_ID, type RaceDef } from '../rpg/races';
-import { TEST_MAP } from '../rpg/testMap';
+import { WILD_MAP } from '../world/wild';
 import { settingsPanel, leaveSettings } from './Settings';
 import { tr } from './tr';
 import './menu.css';
@@ -239,7 +239,7 @@ export class Menus {
               },
               ondblclick: () => this.api.play(c.id),
             },
-            h('div.mc-txt', h('b', c.name), h('span', `${RACE_BY_ID[c.race]?.name ?? ''} · ${tr('Уровень', 'Level')} ${c.level}`), h('small', `${L(TEST_MAP.name)} · ${playTime(c.playTime)}`)),
+            h('div.mc-txt', h('b', c.name), h('span', `${RACE_BY_ID[c.race]?.name ?? ''} · ${tr('Уровень', 'Level')} ${c.level}`), h('small', `${L(WILD_MAP.name)} · ${playTime(c.playTime)}`)),
           ),
         );
       }
@@ -247,7 +247,7 @@ export class Menus {
       const detail = h(
         'div.mc-detail',
         h('div.mc-head', h('div', h('h2', cur.name), h('span', `${RACE_BY_ID[cur.race]?.name ?? ''} · ${tr('Уровень', 'Level')} ${cur.level}`))),
-        h('div.mc-kv', h('span', tr('Локация', 'Location')), h('b', L(TEST_MAP.name))),
+        h('div.mc-kv', h('span', tr('Локация', 'Location')), h('b', L(WILD_MAP.name))),
         h('div.mc-kv', h('span', tr('Время в игре', 'Play time')), h('b', playTime(cur.playTime))),
         h('div.mc-kv', h('span', tr('Последняя игра', 'Last played')), h('b', new Date(cur.lastPlayed).toLocaleDateString())),
         h('button.mm-big', { onclick: () => this.api.play(cur.id) }, tr('Играть', 'Play')),

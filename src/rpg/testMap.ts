@@ -145,16 +145,13 @@ export function buildTestMap(): Terrain {
     for (let z = z0 - 4; z <= z1 + 4; z++) for (let x = x0 - 4; x <= x1 + 4; x++) height[z * n + x] = pad;
     for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) height[z * n + x] = pad + 1;
   }
-  // every cell is one block with a flat top: the four corners share its height
-  t.corner = new Float32Array(n * n * 4);
-  t.surf = height;
+  // every cell is one block with a flat top at its own height
+  t.top = height;
   t.shadeElev = new Uint8Array(n * n);
   for (let i = 0; i < n * n; i++) {
-    const h = height[i];
-    t.elev[i] = Math.floor(h);
-    t.corner.fill(h, i * 4, i * 4 + 4);
-    // the ground shader's level channel, in quarter blocks (same-level blending, no snow caps)
-    t.shadeElev[i] = Math.min(255, Math.round(h * 4));
+    t.elev[i] = Math.floor(height[i]);
+    // the ground shader's level channel, in quarter blocks (same-level blending)
+    t.shadeElev[i] = Math.round(height[i] * 4) & 255;
   }
   return t;
 }

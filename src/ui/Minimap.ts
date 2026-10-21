@@ -46,7 +46,7 @@ export class Minimap {
   draw(w: World) {
     this.fit();
     if (this.imgFor !== w.terrain) {
-      this.img = buildMapImage(w.terrain, w.map);
+      this.img = buildMapImage(w.terrain, w.map, w.trees);
       this.imgFor = w.terrain;
     }
     const g = this.g;

@@ -155,8 +155,16 @@ function findPathL(t: Terrain, sx: number, sz: number, tx: number, tz: number, b
   if (!goal) return [];
   [tx, tz] = goal;
   if (clearLineL(t, sx, sz, tx, tz)) return [tx, tz];
-  const n = t.size * t.size;
-  if (gScore.length !== n) {
+  // the search runs in a window around the start and the goal (big worlds: the arrays stay small)
+  const size = t.size;
+  const M = 48;
+  const wx0 = Math.max(0, Math.min(Math.floor(sx), Math.floor(tx)) - M);
+  const wz0 = Math.max(0, Math.min(Math.floor(sz), Math.floor(tz)) - M);
+  const wx1 = Math.min(size - 1, Math.max(Math.floor(sx), Math.floor(tx)) + M);
+  const wz1 = Math.min(size - 1, Math.max(Math.floor(sz), Math.floor(tz)) + M);
+  const ww = wx1 - wx0 + 1;
+  const n = ww * (wz1 - wz0 + 1);
+  if (gScore.length < n) {
     gScore = new Float32Array(n);
     came = new Int32Array(n);
     stamp = new Uint32Array(n);
@@ -164,14 +172,16 @@ function findPathL(t: Terrain, sx: number, sz: number, tx: number, tz: number, b
     gen = 0;
   }
   gen++;
-  const size = t.size;
-  const s = Math.floor(sz) * size + Math.floor(sx);
+  /** Window index of terrain cell (x, z) and back. */
+  const wi = (x: number, z: number) => (z - wz0) * ww + (x - wx0);
+  const cellOf = (w: number) => (((w / ww) | 0) + wz0) * size + (w % ww) + wx0;
+  const s = wi(Math.floor(sx), Math.floor(sz));
   const gcx = Math.floor(tx);
   const gcz = Math.floor(tz);
-  const g = gcz * size + gcx;
+  const g = wi(gcx, gcz);
   const h = (id: number) => {
-    const dx = Math.abs((id % size) - gcx);
-    const dz = Math.abs(((id / size) | 0) - gcz);
+    const dx = Math.abs((id % ww) + wx0 - gcx);
+    const dz = Math.abs(((id / ww) | 0) + wz0 - gcz);
     return Math.max(dx, dz) + (Math.SQRT2 - 1) * Math.min(dx, dz);
   };
   const open = new Heap();
@@ -196,16 +206,17 @@ function findPathL(t: Terrain, sx: number, sz: number, tx: number, tz: number, b
       bestH = ch;
       best = cur;
     }
-    const cx = cur % size;
-    const cz = (cur / size) | 0;
+    const cx = (cur % ww) + wx0;
+    const cz = ((cur / ww) | 0) + wz0;
+    const here = cellOf(cur);
     for (let k = 0; k < 8; k++) {
       const nx = cx + DX[k];
       const nz = cz + DZ[k];
-      const here = cur;
+      if (nx < wx0 || nz < wz0 || nx > wx1 || nz > wz1) continue;
       if (!enter(t, here, nx, nz)) continue;
       // no squeezing diagonally past a corner
       if (k >= 4 && (!enter(t, here, cx + DX[k], cz) || !enter(t, here, cx, cz + DZ[k]))) continue;
-      const id = nz * size + nx;
+      const id = wi(nx, nz);
       if (closed[id] === gen) continue;
       const ng = gScore[cur] + COST[k];
       if (stamp[id] === gen && ng >= gScore[id]) continue;
@@ -220,7 +231,7 @@ function findPathL(t: Terrain, sx: number, sz: number, tx: number, tz: number, b
   for (let c = end; c !== -1 && c !== s; c = came[c]) cells.push(c);
   cells.reverse();
   const pts: number[] = [];
-  for (const c of cells) pts.push((c % size) + 0.5, ((c / size) | 0) + 0.5);
+  for (const c of cells) pts.push((c % ww) + wx0 + 0.5, ((c / ww) | 0) + wz0 + 0.5);
   if (found) {
     pts[pts.length - 2] = tx;
     pts[pts.length - 1] = tz;

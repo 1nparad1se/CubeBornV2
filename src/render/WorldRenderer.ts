@@ -1,9 +1,8 @@
 import * as THREE from 'three';
 import type { MapDef } from '../data/types';
-import { CELL, type Terrain } from '../game/Terrain';
+import { CELL, isWater, type Terrain } from '../game/Terrain';
 import { hash2, noise2 } from '../core/Rng';
 import { ATLAS_VARIANTS, BUSH_TOP, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_BUSH, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
-import { DITHER } from './dither';
 import { bushSpots } from './flora';
 
 type Slot = { x: number; z: number; build: () => void; objs: THREE.Mesh[] | null };
@@ -50,6 +49,9 @@ interface FoliageRule {
   sprites: SpriteW;
   /** Fixed tint for grey sprites (null: the tile colour). */
   tint?: number;
+  /** Chance per cell of a bush (wild world), and which bush sprites. */
+  bush?: number;
+  bushes?: SpriteW;
 }
 
 const FLOWERS: SpriteW = [[SPRITE.poppy, 3], [SPRITE.dandelion, 3], [SPRITE.cornflower, 2], [SPRITE.bluet, 3], [SPRITE.tulip, 1.5], [SPRITE.daisy, 2.5], [SPRITE.allium, 1]];
@@ -72,8 +74,32 @@ const TRAIL = 8;
 const TRAIL_FADE = 1.6;
 
 /** Which foliage grows on a tile, per map generator. */
+/**
+ * The wild world's grounds: meadow grasses (with bushes, shrubs on the dry side), cold grass with
+ * ferns, and sparse dry stems, tufts or dead bushes on snow, sand, gravel and rock.
+ */
+const LEAFY: SpriteW = [[SPRITE.bush, 6], [SPRITE.berryBush, 1]];
+const WILD_GROUNDS: Record<string, FoliageRule> = {
+  grass: { ...MEADOW_GROUNDS.grass, bush: 0.02, bushes: LEAFY },
+  grass2: { ...MEADOW_GROUNDS.grass2, bush: 0.015, bushes: LEAFY },
+  grass_lush: { ...MEADOW_GROUNDS.grass_lush, bush: 0.03, bushes: LEAFY },
+  grass_sun: { ...MEADOW_GROUNDS.grass_sun, bush: 0.01, bushes: [[SPRITE.bush, 2], [SPRITE.shrub, 1]] },
+  grass_dry: { ...MEADOW_GROUNDS.grass_dry, density: 0.9, bush: 0.025, bushes: [[SPRITE.shrub, 4], [SPRITE.deadBush, 1]] },
+  grass_clover: MEADOW_GROUNDS.grass_clover,
+  grass_cold: { density: 1.5, sprites: [[SPRITE.grass, 36], [SPRITE.tallGrass, 18], [SPRITE.fern, 14], [SPRITE.shortGrass, 10], [SPRITE.sedge, 6], [SPRITE.bluet, 1]], bush: 0.015, bushes: LEAFY },
+  snow: { density: 0.2, sprites: [[SPRITE.dryGrass, 2], [SPRITE.shortGrass, 1]], tint: 0xb8c4b8 },
+  sand: { density: 0.05, sprites: [[SPRITE.dryGrass, 3], [SPRITE.deadBush, 1]] },
+  sandstone: { density: 0.02, sprites: [[SPRITE.deadBush, 1]] },
+  gravel: { density: 0.25, sprites: [[SPRITE.shortGrass, 3], [SPRITE.dryGrass, 1]], tint: 0x8aa860 },
+  clay: { density: 0.6, sprites: TUFTS, tint: 0x6aa040 },
+  moss_stone: { density: 0.5, sprites: [[SPRITE.fern, 2], [SPRITE.shortGrass, 2], [SPRITE.grass, 1]], tint: 0x5e9a3a },
+  tuff: { density: 0.08, sprites: [[SPRITE.dryGrass, 1]], tint: 0x9aa060 },
+  stone: { density: 0.06, sprites: [[SPRITE.shortGrass, 1]], tint: 0x7a9a50 },
+};
+
 function foliageRule(gen: string, tile: string): FoliageRule | null {
   const grassy = /grass/.test(tile);
+  if (gen === 'wild') return WILD_GROUNDS[tile] ?? null;
   if (gen === 'meadow') {
     if (MEADOW_GROUNDS[tile]) return MEADOW_GROUNDS[tile];
     if (grassy) return { density: 1.7, sprites: MEADOW };
@@ -182,8 +208,8 @@ export class WorldRenderer {
     const n = t.size;
     const level = new Float32Array(n * n);
     for (let i = 0; i < n * n; i++) {
-      if (t.cell[i] === CELL.liquid) level[i] = t.elev[i] + liquidLevel(t.tileNames[t.tile[i]] ?? '');
-      else level[i] = t.elev[i];
+      if (isWater(t.cell[i])) level[i] = t.elev[i] + liquidLevel(t.tileNames[t.tile[i]] ?? '');
+      else level[i] = t.top ? t.top[i] : t.elev[i];
     }
     return level;
   }
@@ -196,7 +222,7 @@ export class WorldRenderer {
     const q = new Int32Array(n * n);
     let qh = 0;
     let qt = 0;
-    const wet = (i: number) => t.cell[i] === CELL.liquid;
+    const wet = (i: number) => isWater(t.cell[i]);
     for (let i = 0; i < n * n; i++) {
       if (wet(i)) {
         const x = i % n;
@@ -240,7 +266,7 @@ export class WorldRenderer {
 
     // ambient occlusion on the ground from taller neighbours: cliff feet, walls
     const top = new Float32Array(n * n);
-    const C0 = t.corner;
+    const C0 = t.corner || t.top;
     for (let i = 0; i < n * n; i++) {
       const c = t.cell[i];
       top[i] = C0 ? t.centerY(i) : t.elev[i];
@@ -334,7 +360,6 @@ bool grassOf(float tile) { return texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0
 float tileOf(vec4 c) { return floor(c.r * 255.0 + 0.5); }
 bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         )
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + DITHER)
         .replace(
           '#include <map_fragment>',
           `{
@@ -376,11 +401,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     float row;
     if (bk.y < 0.5) row = ${ROW_RIM.toFixed(1)};
     else row = h21(bk * 1.31 + cell) < smoothstep(0.3, 1.6, d) ? ${ROW_STONE.toFixed(1)} : ${ROW_SOIL.toFixed(1)} + step(0.5, hb);
-    // high peaks are bare rock all the way up
-    if (elev > 7.5) row = ${ROW_STONE.toFixed(1)};
     col = atlasAt(tile, row, sl);
-    // snow caps hang over the rim of the highest cliffs
-    if (elev > 10.5 && d < 0.5 - h21(vec2(bk.x, 9.0)) * 0.3) col = vec3(0.9, 0.94, 0.98) * (0.94 + hb * 0.06);
     col *= 0.94 + h21(bk + 17.0) * 0.08;
     col *= mix(1.0, 0.72, clamp(d / 6.0, 0.0, 1.0));
     col *= 0.8 + 0.2 * smoothstep(-0.2, 0.9, vWPos.y);
@@ -488,9 +509,6 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       if (dith < smoothstep(0.1, 0.2, tilt) * 0.85) col = atlasAt(ut, ${ROW_SOIL.toFixed(1)} + step(0.5, bh), l);
       if (dith < smoothstep(0.24, 0.36, tilt)) col = atlasAt(ut, ${ROW_STONE.toFixed(1)}, l);
     }
-    // the high peaks (by block tier, not by the height of the rolling hills): bare stone, then snow
-    if (elev > 7.5) col = atlasAt(ut, ${ROW_STONE.toFixed(1)}, l) * 1.05;
-    if (elev > 10.5) col = vec3(0.9, 0.94, 0.98) * (0.93 + h21(floor(xz * 16.0)) * 0.07);
     col *= 0.97 + h21(blk + 11.0) * 0.05;
     // broad painted patches of lighter and darker ground
     float m = vnoise(xz * 0.07) * 0.6 + vnoise(xz * 0.23) * 0.4;
@@ -518,13 +536,13 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     // banks, waterfalls); raised geometry goes into its own mesh so it can cast shadows
     const per = Math.ceil(n / GCHUNK);
     const C = t.corner;
-    const liq = (i: number) => t.cell[i] === CELL.liquid;
+    const liq = (i: number) => isWater(t.cell[i]);
     /** Height of corner k (dx + 2 dz) of cell (x, z): water flat at its level, the edge skirt below. */
     const ch = (x: number, z: number, k: number): number => {
       // streamed windows: a short skirt under the edge (the far LOD continues beyond it)
       if (x < 0 || z < 0 || x >= n || z >= n) return t.shadeElev ? ch(Math.max(0, Math.min(n - 1, x)), Math.max(0, Math.min(n - 1, z)), k) - 6 : SKIRT;
       const i = z * n + x;
-      return liq(i) || !C ? level[i] : C[i * 4 + k];
+      return liq(i) || !C ? (liq(i) || !t.top ? level[i] : t.top[i]) : C[i * 4 + k];
     };
     // per-cell surface gradient, for smooth vertex normals across linked cells
     const grad = new Float32Array(n * n * 2);
@@ -769,8 +787,9 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         const c = t.cell[i];
         const e = t.elev[i];
         if (c !== CELL.floor && c !== CELL.hazard && c !== CELL.ice) continue;
-        // nothing grows on the bare rock and snow of the peaks
-        if (e >= 8) continue;
+        // nothing grows on the bare rock and snow of the peaks (block-tier maps; block-ground
+        // worlds say what grows by their ground blocks)
+        if (e >= 8 && !t.top) continue;
         // nor on rock-steep slopes
         const [sgx, sgz] = t.slopeAt(x + 0.5, z + 0.5);
         if (Math.hypot(sgx, sgz) > 0.75) continue;
@@ -788,6 +807,15 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
           const fz = z + 0.12 + r(4) * 0.76;
           put({ x: fx, y: t.groundY(fx, fz) - 0.03, z: fz, s: 0.6 * (0.8 + r(5) * 0.5) * (SPRITE_SIZE[sp] ?? 1), sp, c: tint, a: r(6) });
         }
+        // bushes of the wild world, scattered by the ground's chance
+        if (rule.bush && rule.bushes && hash2(x, z, 92) < rule.bush * q) {
+          const r = (a: number) => hash2(x * 5 + 1, z * 3 + 2, a);
+          const sp = pickSprite(rule.bushes, r(1));
+          const leaf = SPRITE_COLORED.has(sp) ? 0xffffff : col.setHex(sp === SPRITE.deadBush ? 0xffffff : 0x4f8a34).multiplyScalar(0.9 + r(2) * 0.2).getHex();
+          const fx = x + 0.3 + r(3) * 0.4;
+          const fz = z + 0.3 + r(4) * 0.4;
+          put({ x: fx, y: t.groundY(fx, fz) - 0.04, z: fz, s: 0.85 + r(5) * 0.4, sp, c: leaf, a: r(6) });
+        }
         // a fringe of tall grass along cliff rims, hanging over the edge
         if (e && rule.sprites.some(([sp]) => sp === SPRITE.grass) && q > 0.5) {
           const lvl = this.level;
@@ -797,7 +825,7 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
             if (nx < 0 || nz < 0 || nx >= n || nz >= n) continue;
             // only over a real rim: the neighbour's surface well below this cell's
             const nb = nz * n + nx;
-            if ((t.cell[nb] === CELL.liquid ? lvl[nb] : t.centerY(nb)) > t.centerY(i) - 0.9) continue;
+            if ((isWater(t.cell[nb]) ? lvl[nb] : t.centerY(nb)) > t.centerY(i) - 0.9) continue;
             for (let k = 0; k < 2; k++) {
               const r = (a: number) => hash2(x * 7 + k + dx * 3, z * 11 + k + dz * 5, a);
               const along = 0.15 + (k + r(1)) * 0.35;

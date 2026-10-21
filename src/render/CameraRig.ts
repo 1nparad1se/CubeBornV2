@@ -94,7 +94,11 @@ export class CameraRig {
    * `ground` (optional) is the terrain height: when hills or mountains rise between the hero and
    * the camera, the camera slides in along its line toward the hero until the view is clear.
    */
-  update(dt: number, x: number, z: number, lead = { x: 0, z: 0 }, y = 0, ground?: (x: number, z: number) => number) {
+  /**
+   * `canopy` (optional): the top of trees around a point; the camera itself never sits in a crown
+   * (it tilts up over the forest instead; trees between it and the hero may hide the hero).
+   */
+  update(dt: number, x: number, z: number, lead = { x: 0, z: 0 }, y = 0, ground?: (x: number, z: number) => number, canopy?: (x: number, z: number) => number) {
     const k = 1 - Math.exp(-8 * dt);
     this.tx += (x + lead.x - this.tx) * k;
     this.tz += (z + lead.z - this.tz) * k;
@@ -113,7 +117,13 @@ export class CameraRig {
       const hi = (PITCH_MAX * Math.PI) / 180;
       let best = -1;
       for (let a = this.pitch; ; a = Math.min(hi, a + (5 * Math.PI) / 180)) {
-        const f = this.clearance(ground, a, dist);
+        let f = this.clearance(ground, a, dist);
+        if (canopy && f > 0) {
+          // where the camera would be: inside a crown counts as blocked (look over the trees)
+          const cb = Math.cos(a) * dist * f;
+          const cy = this.ty + 1.2 + (Math.sin(a) * dist - 1.2) * f;
+          if (canopy(this.tx + this.toCam.x * cb, this.tz + this.toCam.z * cb) + 1 > cy && a < hi) f = Math.min(f, 0.999);
+        }
         if (f > best + 1e-3) {
           best = f;
           pitch = a;
