@@ -353,8 +353,9 @@ export class GrowthScreens {
     const learnName = md.teaches === 'magic' ? 'Круги и заклинания' : md.teaches === 'sword' ? 'Навыки меча' : 'Навыки лука';
     const body = h(
       'div',
-      h('h1', md.name),
-      h('div.r2-sub', `Наставник · ${md.place} · LP ${this.s.hero.progress.lp} · золото ${this.s.growth.gold}`),
+      h('h1', 'Обучение у наставника'),
+      h('div.r2-npc', pxIcon(id === 'mira' ? 'npc-mira' : 'npc-' + id, 96, 'r2-npcface'), h('div', h('h2', md.name), h('div.r2-sub', `Наставник · ${md.place}`),
+        h('div.r2-chips', h('span.r2-chip.lp', pxIcon('lp', 28), `Доступно: ${this.s.hero.progress.lp} LP`), h('span.r2-chip', pxIcon('coins', 28), `${this.s.growth.gold} зол.`)))),
       h('div.r2-rule'),
       c.inCombat ? h('p.r2-req.no', 'В бою обучение недоступно.') : null,
       h('div.r2-tabs', ([['stats', 'Характеристики'], ['learn', learnName], ['talents', 'Сброс талантов']] as const).map(([t, l]) => h('button.r2-btn.small' + (tab === t ? '.sel' : ''), { onclick: () => this.mentor(id, t) }, l))),
