@@ -407,3 +407,35 @@
 .r2-select { background: #17130f; color: var(--r2-text); border: 1px solid #5a4a2c; font: 500 12px 'Rubik', sans-serif; padding: 3px; margin: 2px; max-width: 170px; }
 .r2-loadout { display: grid; grid-template-columns: auto repeat(6, auto); gap: 2px 4px; align-items: center; margin: 6px 0 12px; }
 .r2-loadout span { font: 600 12px 'Rubik', sans-serif; color: var(--r2-dim); }
+
+/* ---- stage 3: character, development, mentor and inventory windows ---- */
+.r2-sub { margin: 0 0 8px; font: 500 13px 'Rubik', sans-serif; color: var(--r2-dim); }
+.r2-tabs { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 10px; }
+.r2-tabs .r2-btn { width: auto; margin: 0; }
+.r2-tabs .r2-btn.sel, .r2-tabs .r2-btn.primary { outline: 2px solid var(--r2-gold); }
+.r2-card { border: 2px solid #4a3d26; background: rgba(30, 25, 18, 0.7); padding: 8px 10px; margin: 6px 0; }
+.r2-card-h { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font: 700 14px 'Rubik', sans-serif; color: #f6dfa4; }
+.r2-card p { margin: 4px 0; font: 400 13px 'Rubik', sans-serif; color: var(--r2-text); }
+.r2-req { font: 500 12px 'Rubik', sans-serif; margin: 2px 0; }
+.r2-req.ok { color: #8fcf6a; }
+.r2-req.no { color: #e0705a; }
+.r2-mods { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-top: 6px; }
+.r2-mod { border: 1px solid #4a3d26; padding: 4px 6px; font: 400 12px 'Rubik', sans-serif; color: var(--r2-text); }
+.r2-trees { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.r2-tree { border: 2px solid #4a3d26; padding: 6px; }
+.r2-tree h3 { margin: 0 0 4px; }
+.r2-branch { margin: 6px 0; }
+.r2-talent { border: 1px solid #4a3d26; padding: 4px 6px; margin: 3px 0; font: 400 12px 'Rubik', sans-serif; color: var(--r2-text); }
+.r2-talent.on { border-color: var(--r2-gold); background: rgba(184, 145, 63, 0.18); }
+.r2-talent.off { opacity: 0.6; }
+.r2-item { border: 2px solid #4a3d26; padding: 6px 8px; margin: 4px 0; font: 400 12px 'Rubik', sans-serif; color: var(--r2-text); }
+.r2-affix { color: #8fb8e8; font-size: 12px; }
+.r2-legend { color: #f0a830; font-size: 12px; }
+.r2-equip { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.r2-eslot { border: 2px dashed #4a3d26; padding: 6px; min-height: 48px; }
+.r2-bag { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
+.r2-item-btns { display: flex; gap: 4px; margin-top: 4px; }
+.r2-item-btns .r2-btn { width: auto; margin: 0; }
+.r2-off { opacity: 0.55; }
+.r2-hint { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 6px 12px; background: var(--r2-bg); border: 2px solid var(--r2-gold); font: 600 14px 'Rubik', sans-serif; color: var(--r2-text); pointer-events: none; z-index: 5; }
+@media (max-width: 640px) { .r2-trees, .r2-mods, .r2-equip, .r2-bag { grid-template-columns: 1fr; } }

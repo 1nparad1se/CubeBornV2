@@ -22,6 +22,10 @@ import { SceneMenus } from './ui/menus';
 import { SKILLS, SPELLS, WEAPONS, abilityName, type WeaponFamily } from './combat/data';
 import { CombatSystem, FAMILY_NAME, applyTestProfile, arenaEnemies, newCombatData, type Aim, type CombatData } from './combat/system';
 import { CombatView } from './combat/view';
+import { MENTORS, MENTOR_RANGE, addItem, applyHeroMods, combatBonuses, equip, itemOf, newGrowth, totalArmor, type GrowthData, type MentorId } from './growth/growth';
+import { ARMOR_BY_ID, RARITIES, RARITY, isWeapon, itemName, type Rarity } from './growth/items';
+import { XP_CAP, addXp } from './growth/levels';
+import { GrowthScreens } from './ui/growthUi';
 
 /** What the RPG test scene borrows from the app. */
 export interface SceneHost {
@@ -59,6 +63,10 @@ export class TestScene {
   motor!: HeroMotor;
   time = new ActiveTime();
   gear: Gear = newGear(STARTER_ITEMS);
+  /** Stage 3: gold, items and equipment, talents, circles and mods. */
+  growth: GrowthData = newGrowth();
+  readonly screens: GrowthScreens;
+  private mentorHint: HTMLElement | null = null;
   readonly dev: boolean;
   private devPanel: HTMLElement | null = null;
   /** Intent of the current frame; edge presses are used by the first simulation step only. */
@@ -84,6 +92,17 @@ export class TestScene {
     this.input = new SceneInput(host.view, this.controls.binds);
     this.hud = new SceneHud(host.root);
     this.hud.setBinds(this.controls.binds);
+    const self = this;
+    this.screens = new GrowthScreens({
+      get hero() { return self.hero; },
+      get growth() { return self.growth; },
+      get combat() { return self.combat; },
+      menus: this.menus,
+      name: HERO_NAME,
+      inCombat: () => this.hero.inCombat,
+      toast: (t) => this.hud.toast(t),
+      changed: () => this.growthChanged(),
+    });
     // D208 / D211: a menu stops sprint, drops queued presses and frees the cursor
     this.pause.onPause = () => {
       this.input.live = false;
@@ -115,6 +134,7 @@ export class TestScene {
     this.world.driver = (dt) => this.step(dt);
     this.installCombat(newCombatData('start'));
     this.addMarkers(this.site.markers);
+    this.addMentors();
     this.input.active = true;
     this.input.live = true;
     this.hud.setVisible(true);
@@ -155,6 +175,7 @@ export class TestScene {
     this.menus.closeAll();
     this.hud.dispose();
     this.devPanel?.remove();
+    this.mentorHint?.remove();
     window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('visibilitychange', this.onBlur);
     if ((window as unknown as { rpg2?: TestScene }).rpg2 === this) delete (window as unknown as { rpg2?: TestScene }).rpg2;
@@ -202,6 +223,7 @@ export class TestScene {
     this.hud.update(this.world, this.hero, this.motor, this.time, HERO_NAME, rig.yaw, realDt);
     this.host.worldMap.yaw = rig.yaw;
     this.host.worldMap.draw(this.world);
+    this.updateMentorHint();
   }
 
   /** Camera forward on the ground (unit x / z). */
@@ -217,9 +239,15 @@ export class TestScene {
     if (pr.has('inventory')) return this.toggleInventory(true);
     if (pr.has('map')) return this.toggleMap(true);
     if (pr.has('character')) return this.openCharacter();
+    if (pr.has('progress')) return this.screens.development();
+    if (pr.has('interact')) {
+      const m = this.nearMentor();
+      if (m && this.hero.inCombat) this.hud.toast('Наставник не учит во время боя');
+      else if (m) return this.screens.mentor(m);
+    }
     if (pr.has('quickSave')) this.quickSave();
     if (pr.has('quickLoad')) return this.quickLoad();
-    for (const a of ['journal', 'progress', 'bestiary', 'trade', 'dialog'] as ControlAction[]) if (pr.has(a)) this.hud.toast(`«${actionName(a)}» — появится на следующих этапах`);
+    for (const a of ['journal', 'bestiary', 'trade', 'dialog'] as ControlAction[]) if (pr.has(a)) this.hud.toast(`«${actionName(a)}» — появится на следующих этапах`);
     if (pr.has('walkToggle')) {
       this.motor.walk = !this.motor.walk;
       this.hud.toast(this.motor.walk ? 'Ходьба' : 'Бег');
@@ -388,6 +416,7 @@ export class TestScene {
     if (a === 'inventory' && top === 'inventory') this.toggleInventory(false);
     else if (a === 'map' && top === 'map') this.toggleMap(false);
     else if (a === 'character' && top === 'character') this.menus.close('character');
+    else if (a === 'progress' && top === 'development') this.menus.close('development');
   }
 
   openPause() {
@@ -400,13 +429,14 @@ export class TestScene {
       h('div.r2-rule'),
       btn('Продолжить', () => this.resume(), true),
       btn('Персонаж', () => this.openCharacter()),
-      btn('Оружие и умения', () => this.openLoadout()),
+      btn('Развитие и умения', () => this.screens.development()),
+      btn('Панели и быстрые назначения', () => this.openLoadout()),
       btn('Управление', () => this.openControls()),
       btn('Сохранить', () => {
         note.textContent = this.save('manual') ? 'Сохранено.' : this.lastSave;
       }),
       btn('Загрузить последнее', () => this.quickLoad()),
-      btn('Начать площадку заново', () => this.menus.confirm('Начать тестовое прохождение заново? Текущее состояние будет заменено при следующем сохранении.', () => this.restart())),
+      btn('Начать площадку заново', () => this.menus.confirm('Начать тестовое прохождение заново? Текущее состояние будет заменено при следующем сохранении.', () => this.chooseStart())),
       btn('Выйти в главное меню', () => this.exit()),
       note,
       h('div.r2-note', 'Мир, время, восстановление и перезарядки стоят, пока открыто любое окно.'),
@@ -420,12 +450,10 @@ export class TestScene {
     if (!this.pause.paused) this.input.requestLock();
   }
 
+  /** I: the stage 3 inventory and equipment window (D200). */
   toggleInventory(open: boolean) {
-    const inv = this.host.inventory;
-    if (open && !this.menus.isOpen('inventory')) {
-      inv.open(cloneGear(this.gear), 'human', HERO_NAME);
-      this.menus.attach('inventory', () => inv.close());
-    } else if (!open) this.menus.close('inventory');
+    if (open && !this.menus.isOpen('inventory')) this.screens.inventory();
+    else if (!open) this.menus.close('inventory');
   }
 
   /** Gear changed in the inventory (the world's stats follow; equipment rules are stage 3). */
@@ -443,6 +471,11 @@ export class TestScene {
   }
 
   openCharacter() {
+    return this.screens.character();
+  }
+
+  /** Stage 2 summary (kept for reference in dev mode). */
+  openCharacterOld() {
     const hr = this.hero;
     const pr = hr.progress;
     const kv = (k: string, v: string | number) => [h('span', k), h('b', String(v))];
@@ -583,7 +616,7 @@ export class TestScene {
       this.lastSave = 'Мёртвого героя сохранить нельзя.';
       return false;
     }
-    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data });
+    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data, growth: this.growth });
     const ok = writePlaythrough(s);
     this.lastSave = ok ? `Сохранено (${kind})` : 'Не удалось записать сохранение: браузер отказал в хранилище.';
     return ok;
@@ -622,6 +655,7 @@ export class TestScene {
     this.time.clock.minutes = r.time.clock.minutes;
     this.time.clock.days = r.time.clock.days;
     this.motor.loadSave(s.motor);
+    this.growth = r.growth;
     this.installCombat(r.combat);
     this.world.player.attack = null;
     this.input.freeze();
@@ -644,9 +678,26 @@ export class TestScene {
     this.menus.show('loadError', body);
   }
 
+  /** D048: the start weapon is chosen before a new playthrough begins. */
+  chooseStart() {
+    const pick = (id: 'sword1' | 'bow1' | 'staff1', label: string) => h('button.r2-btn', { onclick: () => this.restart(id) }, label);
+    const body = h(
+      'div',
+      h('h1', 'Начальное оружие'),
+      h('div.r2-rule'),
+      h('p', 'Выберите оружие, с которым герой начнёт путь. Лёгкая броня I, 3 малых зелья здоровья, 0 золота; умений нет.'),
+      pick('sword1', 'Железный меч'),
+      pick('bow1', 'Охотничий лук'),
+      pick('staff1', 'Посох ученика'),
+      h('button.r2-btn.small', { onclick: () => this.menus.close('start') }, 'Отмена'),
+    );
+    this.menus.show('start', body);
+  }
+
   /** A new test playthrough: full resources, day 1 08:00, at the spawn. */
-  restart() {
+  restart(start: 'sword1' | 'bow1' | 'staff1' = 'sword1') {
     this.menus.closeAll();
+    this.growth = newGrowth(start);
     this.hero = new HeroState();
     const t = new ActiveTime();
     this.time.seconds = 0;
@@ -671,7 +722,7 @@ export class TestScene {
       h('h1', 'Вы погибли'),
       h('div.r2-rule'),
       h('button.r2-btn.primary', { onclick: () => this.quickLoad() }, 'Загрузить последнее'),
-      h('button.r2-btn', { onclick: () => this.restart() }, 'Начать площадку заново'),
+      h('button.r2-btn', { onclick: () => this.chooseStart() }, 'Начать площадку заново'),
       h('button.r2-btn', { onclick: () => this.exit() }, 'Главное меню'),
       h('div.r2-note', 'Смерть не создаёт сохранение; прежние записи остаются.'),
     );
@@ -709,7 +760,12 @@ export class TestScene {
     btn('Оглушить на 2 с', () => this.motor.applyStun(2));
     btn('Замедление 50 % / снять', () => (this.motor.slow = this.motor.slow ? 0 : 0.5));
     btn('Тестовый профиль: всё оружие и умения', () => this.devProfile('test'));
+    btn('Высокий уровень: 60, характеристики 100', () => this.devProfile('high'));
     btn('Обычный старт: меч без умений', () => this.devProfile('start'));
+    btn('+1000 золота', () => this.devGrant({ gold: 1000 }));
+    btn('+50 LP', () => this.devGrant({ lp: 50 }));
+    btn('+5000 XP', () => this.devGrant({ xp: 5000 }));
+    btn('Предмет…', () => this.openDevItems());
     btn('Оружие и умения…', () => this.openLoadout());
     btn('Возродить противников', () => this.combat.respawnAll());
     btn('Разозлить Серого Клыка', () => this.combat.provoke('greyfang1'));
@@ -719,11 +775,25 @@ export class TestScene {
   }
 
   /** Dev mode only: switches the combat profile (ОМ, enemies and cooldowns stay). */
-  devProfile(p: 'test' | 'start') {
+  devProfile(p: 'test' | 'start' | 'high') {
     if (!this.dev) return;
     const d = this.combat.data;
-    if (p === 'test') applyTestProfile(d);
-    else {
+    if (p === 'high') {
+      addXp(this.hero.progress, XP_CAP);
+      for (const s of STAT_IDS) this.hero.stats[s] = Math.max(this.hero.stats[s], 100);
+      this.growth.gold += 1_000_000;
+      this.growth.circles = 5;
+      this.hero.clamp();
+      this.growthChanged();
+      this.hud.toast('Высокий уровень: 60, характеристики 100, 1 000 000 золота');
+      return;
+    }
+    if (p === 'test') {
+      applyTestProfile(d);
+      this.growth.circles = 5;
+      for (const r of RARITIES) for (const tpl of ['sword1', 'bow1', 'staff1']) if (r !== 'common') addItem(this.growth, tpl, r);
+      this.linkGrowth();
+    } else {
       const f = newCombatData('start');
       d.profile = 'start';
       d.quick = f.quick;
@@ -732,6 +802,7 @@ export class TestScene {
       d.panels = f.panels;
     }
     this.combat.cancelAction();
+    if (p === 'start') this.linkGrowth();
     this.hud.toast(p === 'test' ? 'Тестовый профиль: 4 оружия, 12 навыков, 15 заклинаний' : 'Обычный старт: железный меч, без умений');
   }
 
@@ -761,19 +832,134 @@ export class TestScene {
       const inCone = (dx * fx + dz * fz) / dist > Math.cos((60 * Math.PI) / 180);
       return !inCone || !this.combat.los(m.x, m.y + 1.6, m.z, e.homeX, g.top(e.homeX, e.homeZ) + 0.6, e.homeZ);
     };
+    this.linkGrowth();
     if (this.view) this.view.root.parent?.remove(this.view.root);
     this.view = new CombatView(this.combat);
     this.host.renderer.addRunObject(this.view.root);
     this.syncWeapon();
   }
 
-  /** The drawn weapon follows the current quick slot (existing cubic item meshes). */
+  /**
+   * Stage 3: the combat system reads the weapon, quick list items and every bonus from growth;
+   * the quick list holds item uids (template ids of an old record become the matching items).
+   */
+  private linkGrowth() {
+    const c = this.combat;
+    const hero = this.hero;
+    const gr = () => this.growth;
+    c.gear = {
+      weaponTpl: () => itemOf(gr(), gr().equip.weapon)?.tpl ?? 'sword1',
+      itemTpl: (uid) => itemOf(gr(), uid)?.tpl,
+      equipWeapon: (uid) => equip(gr(), uid, hero),
+      bonuses: () => combatBonuses(gr()),
+    };
+    const d = c.data;
+    const g = this.growth;
+    d.quick = d.quick.map((q) => {
+      if (!q) return null;
+      if (itemOf(g, q) && isWeapon(itemOf(g, q)!.tpl)) return q;
+      const it = g.items.find((i) => i.tpl === q) ?? (isWeapon(q) ? addItem(g, q, 'common') : null);
+      return it ? it.uid : null;
+    });
+    while (d.quick.length < 4) d.quick.push(null);
+    const w = g.equip.weapon;
+    const k = d.quick.indexOf(w);
+    if (k >= 0) d.cur = k;
+    else {
+      const free = d.quick.indexOf(null);
+      d.cur = free >= 0 ? free : 0;
+      d.quick[d.cur] = w;
+    }
+    this.growthChanged();
+  }
+
+  /** Equipment, talents or stats changed: maxima, armor and the drawn gear follow (D121). */
+  growthChanged() {
+    applyHeroMods(this.growth, this.hero);
+    this.combat.heroArmor = totalArmor(this.growth);
+    // the equipped weapon is always in the quick list at the current slot
+    const d = this.combat.data;
+    const w = this.growth.equip.weapon;
+    if (w && d.quick[d.cur] !== w) {
+      const k = d.quick.indexOf(w);
+      if (k >= 0) d.cur = k;
+      else d.quick[d.cur] = w;
+    }
+    this.syncWeapon();
+  }
+
+  /** The drawn weapon and armor follow the equipment (existing cubic item meshes). */
   private syncWeapon() {
-    const mesh = this.combat.weapon.mesh;
-    if (this.gear.equip.main === mesh && !this.gear.equip.off) return;
-    this.gear.equip.main = mesh;
-    this.gear.equip.off = null;
+    const e = this.gear.equip;
+    const arm = (slot: 'head' | 'chest' | 'legs') => {
+      const it = itemOf(this.growth, this.growth.equip[slot]);
+      return it ? ARMOR_BY_ID[it.tpl]?.mesh ?? null : null;
+    };
+    const want = { main: this.combat.weapon.mesh, off: null, head: arm('head'), body: arm('chest'), feet: arm('legs') };
+    if (e.main === want.main && !e.off && e.head === want.head && e.body === want.body && e.feet === want.feet) return;
+    Object.assign(e, want);
     this.world.setGear(cloneGear(this.gear));
+  }
+
+  // ------------------------------------------------------------------ mentors (placeholders until stage 5)
+  private mentorSpots: { id: MentorId; x: number; z: number }[] = [
+    { id: 'arden', x: 46, z: 55 },
+    { id: 'hira', x: 46, z: 59 },
+    { id: 'mira', x: 46, z: 63 },
+  ];
+
+  /** Cubic placeholder figures with name labels; E within 3 m opens the training window. */
+  private addMentors() {
+    const group = new THREE.Group();
+    const colors: Record<MentorId, number> = { arden: 0x8c3b2a, hira: 0x3d6b32, mira: 0x3a4f8f };
+    const skin = new THREE.MeshLambertMaterial({ color: 0xd9a87c });
+    const legs = new THREE.MeshLambertMaterial({ color: 0x3a2f28 });
+    for (const sp of this.mentorSpots) {
+      const y = this.site.ground.top(sp.x, sp.z);
+      const cloth = new THREE.MeshLambertMaterial({ color: colors[sp.id] });
+      const parts: [THREE.Material, number, number, number, number][] = [
+        [legs, 0.5, 0.75, 0.3, 0.375],
+        [cloth, 0.6, 0.75, 0.35, 1.125],
+        [skin, 0.5, 0.5, 0.5, 1.75],
+      ];
+      for (const [mat, w, hh, dd, cy] of parts) {
+        const b = new THREE.Mesh(new THREE.BoxGeometry(w, hh, dd), mat);
+        b.position.set(sp.x, y + cy, sp.z);
+        b.rotation.y = Math.PI / 2;
+        group.add(b);
+      }
+      const m = MENTORS[sp.id];
+      const label = labelSprite(m.name);
+      label.position.set(sp.x, y + 2.4, sp.z);
+      group.add(label);
+    }
+    this.host.renderer.addRunObject(group);
+    this.mentorHint = h('div.r2.r2-hint');
+    this.mentorHint.style.display = 'none';
+    this.host.root.appendChild(this.mentorHint);
+  }
+
+  /** The mentor within the 3 m interaction range, if any. */
+  nearMentor(): MentorId | null {
+    let best: MentorId | null = null;
+    let bd = MENTOR_RANGE;
+    for (const sp of this.mentorSpots) {
+      const d = Math.hypot(sp.x - this.motor.x, sp.z - this.motor.z);
+      if (d <= bd) {
+        bd = d;
+        best = sp.id;
+      }
+    }
+    return best;
+  }
+
+  private updateMentorHint() {
+    const el = this.mentorHint;
+    if (!el) return;
+    const m = !this.pause.paused && !this.hero.dead ? this.nearMentor() : null;
+    const txt = m ? `${codeName(this.controls.binds.interact[0] ?? 'KeyE')} — обучение: ${MENTORS[m].name}` : '';
+    if (el.textContent !== txt) el.textContent = txt;
+    el.style.display = txt ? '' : 'none';
   }
 
   /** D207: up to four weapons for Tab and a 1–6 panel per weapon type (a window of the pause menu). */
@@ -793,9 +979,18 @@ export class TestScene {
       s.onchange = () => on(s.value || null);
       return s;
     };
-    const owned = d.profile === 'test' ? WEAPONS : WEAPONS.filter((w) => w.id === 'sword1' || d.quick.includes(w.id));
-    const wOpts: [string, string][] = [['', '— пусто —'], ...owned.map((w) => [w.id, w.name] as [string, string])];
-    const quick = h('div.r2-loadout', h('span', 'Tab'), [0, 1, 2, 3].map((i) => sel(wOpts, d.quick[i], (v) => { c.setQuick(i, v); this.openLoadout(); })), h('span', ''), h('span', ''));
+    const owned = this.growth.items.filter((it) => isWeapon(it.tpl));
+    const wOpts: [string, string][] = [['', '— пусто —'], ...owned.map((it) => [it.uid, itemName(it)] as [string, string])];
+    const setQ = (i: number, v: string | null) => {
+      if (i === d.cur && v !== this.growth.equip.weapon) {
+        // the current slot holds the equipped weapon: changing it equips the new one (requirements checked)
+        const why = v ? equip(this.growth, v, this.hero) : 'Текущее оружие можно только заменить';
+        if (why) return this.hud.toast(why);
+      }
+      d.quick[i] = v;
+      this.growthChanged();
+    };
+    const quick = h('div.r2-loadout', h('span', 'Tab'), [0, 1, 2, 3].map((i) => sel(wOpts, d.quick[i], (v) => { setQ(i, v); this.openLoadout(); })), h('span', ''), h('span', ''));
     const panels = h('div.r2-loadout');
     for (const f of ['sword', 'bow', 'staff'] as WeaponFamily[]) {
       const ids = (f === 'staff' ? SPELLS.map((x) => x.id) : SKILLS.filter((x) => x.family === f).map((x) => x.id)).filter((id) => d.learned.includes(id));
@@ -810,12 +1005,50 @@ export class TestScene {
       h('h3', 'Быстрое переключение (до четырёх, по кругу клавишей Tab)'),
       quick,
       h('h3', `Панели 1–6 по типу оружия (сейчас: ${FAMILY_NAME[c.family]} — ${c.weapon.name})`),
-      d.learned.length ? panels : h('p.r2-note', 'Умения не изучены (обучение у наставников — этап 3). В режиме разработки есть «Тестовый профиль».'),
+      d.learned.length ? panels : h('p.r2-note', 'Умения не изучены: их преподают наставники Арден, Хира и Мира (E рядом с ними). В режиме разработки есть «Тестовый профиль».'),
       h('p.r2-note', 'Одноручный и двуручный меч используют один набор. Откаты сохраняются при смене оружия.'),
       h('button.r2-btn.small', { onclick: () => this.menus.close('loadout') }, 'Закрыть'),
     );
     if (this.menus.isOpen('loadout')) this.menus.close('loadout');
     this.menus.show('loadout', body);
+  }
+
+  /** Dev mode only: grants gold, LP or XP (XP raises levels as a kill would). */
+  devGrant(v: { gold?: number; lp?: number; xp?: number }) {
+    if (!this.dev) return;
+    if (v.gold) this.growth.gold += v.gold;
+    if (v.lp) this.hero.progress.lp += v.lp;
+    if (v.xp) {
+      const up = addXp(this.hero.progress, v.xp);
+      if (up) this.hud.toast(`Новый уровень: ${this.hero.progress.level}`);
+    }
+  }
+
+  /** Dev mode only: creates an item of any template and rarity (affixes rolled as in the catalog). */
+  devItem(tpl: string, rarity: Rarity = 'common'): string | null {
+    if (!this.dev) return null;
+    if (!isWeapon(tpl) && !ARMOR_BY_ID[tpl]) return null;
+    return addItem(this.growth, tpl, rarity).uid;
+  }
+
+  private openDevItems() {
+    const tplSel = document.createElement('select');
+    tplSel.className = 'r2-select';
+    for (const w of WEAPONS) tplSel.append(new Option(w.name, w.id));
+    for (const a of Object.values(ARMOR_BY_ID)) tplSel.append(new Option(a.name, a.id));
+    const rSel = document.createElement('select');
+    rSel.className = 'r2-select';
+    for (const r of RARITIES) rSel.append(new Option(RARITY[r].name, r));
+    const body = h(
+      'div',
+      h('h1', 'Создать предмет'),
+      h('div.r2-rule'),
+      tplSel,
+      rSel,
+      h('button.r2-btn.primary', { onclick: () => { if (this.devItem(tplSel.value, rSel.value as Rarity)) this.hud.toast('Предмет создан'); } }, 'Создать'),
+      h('button.r2-btn.small', { onclick: () => this.menus.close('devItems') }, 'Закрыть'),
+    );
+    this.menus.show('devItems', body);
   }
 
   /** Dev mode only: sets current resources. */
