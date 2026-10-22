@@ -630,6 +630,20 @@ export class Renderer {
     const farK = 0.35 + 0.65 * L.fog;
     fog.near = Math.max(camD * 0.75, camD - 6 + (pal.fogNear - 18) * vm * nearK);
     fog.far = Math.max(camD + 12, camD - 6 + (pal.fogFar - 6) * vm * farK);
+    // the player's fog: where it begins and how deep the haze is before everything is gone
+    const st = this.s;
+    if (!st.fog) {
+      // no haze: the view ends at the draw distance (objects stop there)
+      fog.near = 1e5;
+      fog.far = 1e5 + 1;
+    } else {
+      const start = 0.45 + st.fogStart * 1.1;
+      const depth = (fog.far - fog.near) * (1.7 - st.fogDensity * 1.3);
+      fog.near = Math.max(camD * 0.6, camD + (fog.near - camD) * start);
+      fog.far = fog.near + Math.max(8, depth);
+    }
+    /** How far the world and the trees are drawn: to the end of the fog, or the draw distance. */
+    const drawTo = st.fog ? Math.min(fog.far, 150 * vm) : 110 * vm;
     // shadow box grows with zoom so the whole view stays shadowed
     if (this.photo?.noFog) {
       fog.near = 400;
@@ -645,9 +659,9 @@ export class Renderer {
     this.cullT -= dt;
     if (this.cullT <= 0) {
       this.cullT = 0.25;
-      this.world?.cull(t.x, t.z, fog.far + 6);
-      // trees fade into the fog well before its end: no need to draw them farther
-      this.trees?.update(t.x, t.z, Math.min(fog.far + 4, 84));
+      this.world?.cull(t.x, t.z, drawTo + 6);
+      // trees fade into the fog before its end: no need to draw them farther
+      this.trees?.update(t.x, t.z, Math.min(drawTo + 4, 96));
     }
     // sun follows the camera so the shadow map covers the view; the box is centred a little
     // up-screen because the tilted view sees farther toward the top

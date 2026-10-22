@@ -7,6 +7,7 @@ import { TREE_KINDS, TREE_SPECS, TREE_VARIANTS, treeHeight } from '../../src/wor
 import { BRANCH_VOX, LEAF_VOX, treeGeometry } from '../../src/render/treeModels';
 import { Terrain, CELL } from '../../src/game/Terrain';
 import { WATER, waterBody, waterGeometry } from '../../src/render/water';
+import { BUSH_KINDS, BUSH_SIZES, BUSH_VARIANTS, bushGeometry } from '../../src/render/bushModels';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -54,9 +55,10 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
     const a = treeGeometry(k, 0, 0).index!.count;
     const b = treeGeometry(k, 0, 1).index!.count;
     const c = treeGeometry(k, 0, 2).index!.count;
-    if (!(b < a * 0.4 && c < b)) lighter = false;
+    const d = treeGeometry(k, 0, 3).index!.count;
+    if (!(b < a * 0.5 && c < b && d < c)) lighter = false;
   }
-  ok(lighter, 'mid and far models are a fraction of the near one');
+  ok(lighter, 'each coarser model (1/3, 1/2, 1 block cubes) is lighter than the one before');
 }
 
 // ---------------------------------------------------------------- water
@@ -96,6 +98,24 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
   ok(surf > 0 && badY === 0, `water surfaces lie at their water level (${surf} quads)`);
   ok(sheets === 4, `a falling sheet on each edge where the water drops (${sheets})`);
   ok(spray === 8, `spray where a tall fall lands (${spray / 2} puffs)`);
+}
+
+// ---------------------------------------------------------------- bushes
+{
+  let sizes = 0;
+  let heavy = 0;
+  for (let k = 0; k < BUSH_KINDS; k++)
+    for (let v = 0; v < BUSH_VARIANTS; v++) {
+      const g = bushGeometry(k, v);
+      g.computeBoundingBox();
+      const b = g.boundingBox!;
+      // a bush model is at most about half a block across and tall (the medium size)
+      if (b.max.y > 0.7 || b.max.y < 0.04 || b.max.x - b.min.x > 0.85) sizes++;
+      if (g.index!.count / 3 > 3000) heavy++;
+    }
+  ok(sizes === 0, `${BUSH_KINDS} bush species: models fit the medium size (half a block), placed at 0.3 / 0.6 / 1 of it`);
+  ok(heavy === 0, 'bush models stay light (under 3000 triangles each)');
+  ok(BUSH_SIZES[0] * 0.5 <= 0.16 && BUSH_SIZES[1] * 0.5 <= 0.31, 'very small (~0.15 block) and small (~0.3 block) sizes');
 }
 
 console.log(fails ? `${fails} render check(s) FAILED` : 'all render checks passed');

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { TREE_CHUNK, TREE_KINDS, TREE_VARIANTS, type TreeList } from '../world/trees';
-import { treeGeometry, type TreeLod } from './treeModels';
+import { GLSL_NOISE } from './glsl';
+import { SURF, TREE_LODS, treeGeometry, type TreeLod } from './treeModels';
 
 const _m = new THREE.Matrix4();
 const _r = new THREE.Matrix4();
@@ -11,19 +12,80 @@ const _ray = new THREE.Ray();
 const _hit = new THREE.Vector3();
 const _p = new THREE.Vector3();
 
-/** Distances (blocks) where trees switch to the mid and the far model. */
-const NEAR = 16;
-const MID = 48;
+/**
+ * Farthest distance (blocks from the hero) of each level of detail: 1/6-block cubes near, then
+ * 1/3, 1/2 and 1 block. Each step halves the detail at about twice the distance, so a switch
+ * changes a tree by no more than its pixels already shrank.
+ */
+const LOD_DIST = [18, 34, 56];
+/** Level whose model casts the near trees' shadows (cheap and the same outline). */
+const SHADOW_LOD: TreeLod = 2;
 /** Opacity of a tree that hides the hero, and how fast it fades (per second). */
 const GHOST_ALPHA = 0.32;
 const FADE_RATE = 4;
 
+/**
+ * Tree material: vertex colours (clumps, shade) plus a pixel texture of 1/16 block painted in the
+ * model's own space, so the leaves of one cube already differ (light and dark leaves, a yellower
+ * or bluer one here and there) and bark runs in grooves and plates, at no geometry cost.
+ */
+export function treeMaterial(opts: THREE.MeshLambertMaterialParameters = {}): THREE.MeshLambertMaterial {
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aSurf;\nvarying float vSurf;\nvarying vec3 vObj;\nvarying vec3 vObjN;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSurf = aSurf;\nvObj = position;\nvObjN = normal;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>\nvarying float vSurf;\nvarying vec3 vObj;\nvarying vec3 vObjN;\n${GLSL_NOISE}`)
+      .replace(
+        '#include <color_fragment>',
+        `#include <color_fragment>
+{
+  vec3 an = abs(vObjN);
+  bool top = an.y > 0.5;
+  // face coordinates: across and up on the sides, x and z on top and bottom
+  vec2 uv = an.x > 0.5 ? vObj.zy : an.z > 0.5 ? vObj.xy : vObj.xz;
+  vec2 p = floor(uv * 16.0 + 0.001);
+  float t = 1.0;
+  vec3 tint = vec3(1.0);
+  if (vSurf < ${(SURF.leaf + 0.5).toFixed(1)}) {
+    // leaves: single dark and light leaves, little clusters a shade apart, a few warmer or cooler
+    float r = h21(p + vObjN.xz * 31.0);
+    float cl = h21(floor(p / 3.0) + vObjN.xy * 17.0 + 5.0);
+    t = r < 0.12 ? 0.72 : r < 0.3 ? 0.87 : r > 0.92 ? 1.18 : r > 0.8 ? 1.07 : 1.0;
+    t *= 0.92 + cl * 0.16;
+    if (r > 0.86) tint = vec3(1.07, 1.05, 0.84);
+    else if (r < 0.06) tint = vec3(0.9, 1.0, 1.06);
+  } else if (vSurf < ${(SURF.wood + 0.5).toFixed(1)}) {
+    if (top) {
+      // the cut top of a trunk: growth rings
+      float ring = fract(length(floor(uv * 16.0) / 16.0) * 5.0);
+      t = ring < 0.25 ? 0.82 : 0.96 + h21(p) * 0.08;
+    } else {
+      // bark: vertical grooves, plates of slightly different shade, a few light flecks
+      float lane = h21(vec2(p.x, 3.0));
+      float plate = h21(vec2(p.x, floor((p.y + lane * 7.0) / 4.0)));
+      t = lane < 0.22 ? 0.74 : 0.9 + plate * 0.18;
+      if (h21(p + 9.0) > 0.95) t = 1.15;
+    }
+  } else {
+    // fruit and flowers: a bright spot and a darker side
+    t = h21(p) > 0.75 ? 1.2 : 0.95;
+  }
+  diffuseColor.rgb *= t * tint;
+}`,
+      );
+  };
+  mat.customProgramCacheKey = () => 'tree-' + (opts.transparent ? 't' : 'o');
+  return mat;
+}
+
 interface LodSet {
   lod: TreeLod;
-  meshes: THREE.InstancedMesh[];
-  geos: THREE.BufferGeometry[];
+  meshes: (THREE.InstancedMesh | null)[];
   shadows: boolean;
   mat: THREE.Material;
+  hidden?: boolean;
 }
 
 /** A tree drawn see-through because it stands between the camera and the hero. */
@@ -38,19 +100,20 @@ interface Ghost {
 /**
  * Draws the world's trees near the camera: one instanced mesh per species variant and level of
  * detail, refilled from the tree chunks around the camera whenever it has moved a few blocks.
- * Near trees use the fine model (1/6-block leaves); their shadows come from an invisible
- * mid-detail copy, which looks the same in the shadow map at a fraction of the cost. Trees beyond
- * the fog are never drawn. A tree that hides the hero fades to half see-through and back.
+ * Models are built the first time a variant is needed. Near trees use the fine model (1/6-block
+ * leaves); their shadows come from an invisible coarser copy, which looks the same in the shadow
+ * map at a fraction of the cost. Trees beyond the fog are never drawn. A tree that hides the hero
+ * fades to half see-through and back.
  */
 export class TreeRenderer {
   readonly group = new THREE.Group();
-  private mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  private mat = treeMaterial();
   /** Shadow casters only: draws nothing on screen. */
   private shadowMat = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false });
-  private near: LodSet;
-  private mid: LodSet;
-  private far: LodSet;
+  /** Levels of detail, nearest first. */
+  private sets: LodSet[];
   private proxy: LodSet;
+  private geos = new Map<number, THREE.BufferGeometry>();
   /** Where each near tree sits: tree index -> variant * 65536 + instance. */
   private slot = new Map<number, number>();
   private nearList: number[] = [];
@@ -62,25 +125,27 @@ export class TreeRenderer {
   /** Trees drawn after the last refill (debug and tests). */
   drawn = 0;
 
-  constructor(private trees: TreeList, private shadows: boolean) {
+  constructor(private trees: TreeList, shadows: boolean) {
     this.ghostDepthMat.depthWrite = true;
-    this.near = this.makeSet(0, false, this.mat);
-    this.mid = this.makeSet(1, shadows, this.mat);
-    this.far = this.makeSet(2, false, this.mat);
-    this.proxy = this.makeSet(1, shadows, this.shadowMat, this.mid.geos);
-    if (!shadows) this.proxy.meshes.forEach((m) => (m.visible = false));
+    const n = TREE_KINDS * TREE_VARIANTS;
+    // the second level casts its own shadows; farther trees are past the shadow map anyway
+    this.sets = Array.from({ length: TREE_LODS }, (_, lod) => ({ lod: lod as TreeLod, meshes: new Array(n).fill(null), shadows: shadows && lod === 1, mat: this.mat }));
+    this.proxy = { lod: SHADOW_LOD, meshes: new Array(n).fill(null), shadows, mat: this.shadowMat, hidden: !shadows };
   }
 
-  private makeSet(lod: TreeLod, shadows: boolean, mat: THREE.Material, share?: THREE.BufferGeometry[]): LodSet {
-    const geos: THREE.BufferGeometry[] = [];
-    for (let k = 0; k < TREE_KINDS; k++) for (let v = 0; v < TREE_VARIANTS; v++) geos.push(share ? share[k * TREE_VARIANTS + v] : treeGeometry(k, v, lod));
-    const set: LodSet = { lod, geos, shadows, mat, meshes: [] };
-    set.meshes = geos.map((g) => this.makeMesh(set, g, 128));
-    return set;
+  /** The model of variant `mi` at a level of detail (built on first use). */
+  private geo(lod: TreeLod, mi: number) {
+    const key = lod * 1024 + mi;
+    let g = this.geos.get(key);
+    if (!g) {
+      g = treeGeometry(Math.floor(mi / TREE_VARIANTS), mi % TREE_VARIANTS, lod);
+      this.geos.set(key, g);
+    }
+    return g;
   }
 
-  private makeMesh(set: LodSet, g: THREE.BufferGeometry, cap: number) {
-    const m = new THREE.InstancedMesh(g, set.mat, cap);
+  private makeMesh(set: LodSet, mi: number, cap: number) {
+    const m = new THREE.InstancedMesh(this.geo(set.lod, mi), set.mat, cap);
     m.count = 0;
     m.castShadow = set.shadows;
     // lit by the sun and the sky only: shadow maps on the many small leaf faces turn to acne
@@ -88,14 +153,12 @@ export class TreeRenderer {
     // the instances are already limited to the view radius
     m.frustumCulled = false;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    if (set.hidden) m.visible = false;
     this.group.add(m);
     return m;
   }
 
-  /**
-   * Refills the instances around (x, z) out to `radius` once the view has moved enough; trees
-   * farther than NEAR use the mid model, farther than MID the far one.
-   */
+  /** Refills the instances around (x, z) out to `radius` once the view has moved enough. */
   update(x: number, z: number, radius: number) {
     if (Math.hypot(x - this.lastX, z - this.lastZ) < 6 && Math.abs(radius - this.lastR) < 8) return;
     this.lastX = x;
@@ -103,9 +166,8 @@ export class TreeRenderer {
     this.lastR = radius;
     const L = this.trees;
     const n = TREE_KINDS * TREE_VARIANTS;
-    const want = [0, 1, 2].map(() => Array.from({ length: n }, () => [] as number[]));
-    const n2 = NEAR * NEAR;
-    const m2 = MID * MID;
+    const want = this.sets.map(() => Array.from({ length: n }, () => [] as number[]));
+    const lim = LOD_DIST.map((d) => d * d);
     const c0x = Math.max(0, Math.floor((x - radius) / TREE_CHUNK));
     const c1x = Math.min(L.per - 1, Math.floor((x + radius) / TREE_CHUNK));
     const c0z = Math.max(0, Math.floor((z - radius) / TREE_CHUNK));
@@ -119,16 +181,16 @@ export class TreeRenderer {
           const dz = L.z[i] - z;
           const d2 = dx * dx + dz * dz;
           if (d2 > r2) continue;
-          want[d2 < n2 ? 0 : d2 < m2 ? 1 : 2][L.kind[i] * TREE_VARIANTS + L.variant[i]].push(i);
+          let lod = 0;
+          while (lod < lim.length && d2 >= lim[lod]) lod++;
+          want[lod][L.kind[i] * TREE_VARIANTS + L.variant[i]].push(i);
         }
       }
     this.drawn = 0;
     this.slot.clear();
     this.nearList = want[0].flat();
-    this.fill(this.near, want[0], true);
+    this.sets.forEach((set, lod) => this.fill(set, want[lod], lod === 0));
     this.fill(this.proxy, want[0], false);
-    this.fill(this.mid, want[1], false);
-    this.fill(this.far, want[2], false);
     // trees fading out stay hidden in the instanced meshes
     for (const g of this.ghosts) this.hide(g.tree);
   }
@@ -136,22 +198,25 @@ export class TreeRenderer {
   private fill(set: LodSet, want: number[][], slots: boolean) {
     want.forEach((list, mi) => {
       let mesh = set.meshes[mi];
-      if (list.length > mesh.instanceMatrix.count) {
-        // grow (rare): a bigger buffer for this variant
-        this.group.remove(mesh);
-        mesh.dispose();
-        mesh = set.meshes[mi] = this.makeMesh(set, set.geos[mi], Math.ceil(list.length * 1.5));
-        if (set === this.proxy && !this.shadows) mesh.visible = false;
+      if (!mesh && !list.length) return;
+      if (!mesh || list.length > mesh.instanceMatrix.count) {
+        // first use or grow: a buffer for this variant with room to spare
+        if (mesh) {
+          this.group.remove(mesh);
+          mesh.dispose();
+        }
+        mesh = set.meshes[mi] = this.makeMesh(set, mi, Math.max(16, Math.ceil(list.length * 1.5)));
       }
+      const m = mesh;
       list.forEach((i, n) => {
         this.matrix(i, _m);
-        mesh.setMatrixAt(n, _m);
-        mesh.setColorAt(n, _c.setScalar(this.tint(i)));
+        m.setMatrixAt(n, _m);
+        m.setColorAt(n, _c.setScalar(this.tint(i)));
         if (slots) this.slot.set(i, mi * 65536 + n);
       });
-      mesh.count = list.length;
-      mesh.instanceMatrix.needsUpdate = true;
-      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      m.count = list.length;
+      m.instanceMatrix.needsUpdate = true;
+      if (m.instanceColor) m.instanceColor.needsUpdate = true;
       if (set !== this.proxy) this.drawn += list.length;
     });
   }
@@ -173,7 +238,8 @@ export class TreeRenderer {
   private hide(tree: number, show = false) {
     const s = this.slot.get(tree);
     if (s === undefined) return;
-    const mesh = this.near.meshes[s >> 16];
+    const mesh = this.sets[0].meshes[s >> 16];
+    if (!mesh) return;
     mesh.setMatrixAt(s & 65535, show ? this.matrix(tree, _m) : _zero);
     mesh.instanceMatrix.needsUpdate = true;
   }
@@ -181,7 +247,7 @@ export class TreeRenderer {
   /** World box of a near tree's model, its crown pulled in a little at the sides. */
   private bounds(i: number, out: THREE.Box3) {
     const L = this.trees;
-    const g = this.near.geos[L.kind[i] * TREE_VARIANTS + L.variant[i]];
+    const g = this.geo(0, L.kind[i] * TREE_VARIANTS + L.variant[i]);
     out.copy(g.boundingBox!).applyMatrix4(this.matrix(i, _m));
     const sx = (out.max.x - out.min.x) * 0.1;
     const sz = (out.max.z - out.min.z) * 0.1;
@@ -235,10 +301,9 @@ export class TreeRenderer {
 
   private makeGhost(i: number): Ghost {
     const L = this.trees;
-    const geo = this.near.geos[L.kind[i] * TREE_VARIANTS + L.variant[i]];
-    const k = this.tint(i);
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false, opacity: 1 });
-    mat.color.setScalar(k);
+    const geo = this.geo(0, L.kind[i] * TREE_VARIANTS + L.variant[i]);
+    const mat = treeMaterial({ transparent: true, depthWrite: false, opacity: 1 });
+    mat.color.setScalar(this.tint(i));
     // a depth pass first, so only the tree's front leaves blend over the hero (no inner faces)
     const depth = new THREE.Mesh(geo, this.ghostDepthMat);
     const color = new THREE.Mesh(geo, mat);
@@ -262,8 +327,8 @@ export class TreeRenderer {
   }
 
   dispose() {
-    for (const set of [this.near, this.mid, this.far, this.proxy]) for (const m of set.meshes) m.dispose();
-    for (const set of [this.near, this.mid, this.far]) for (const g of set.geos) g.dispose();
+    for (const set of [...this.sets, this.proxy]) for (const m of set.meshes) m?.dispose();
+    for (const g of this.geos.values()) g.dispose();
     for (const g of this.ghosts) (g.color.material as THREE.Material).dispose();
     this.mat.dispose();
     this.shadowMat.dispose();

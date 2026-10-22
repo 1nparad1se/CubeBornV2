@@ -49,6 +49,10 @@ export interface Settings {
   antiAliasing: AntiAliasing;
   textures: Level3;
   postProcessing: boolean;
+  /** Distance fog: on or off, how thick (0..1) and how far from the camera it begins (0..1). */
+  fog: boolean;
+  fogDensity: number;
+  fogStart: number;
   /** 0..1 */
   screenShake: number;
   // gameplay
@@ -109,6 +113,9 @@ export function defaultSettings(): Settings {
     fpsLimit: 0,
     quality: 'high',
     ...QUALITY_PRESETS.high,
+    fog: true,
+    fogDensity: 0.5,
+    fogStart: 0.5,
     screenShake: 1,
     damageNumbers: true,
     showFps: false,

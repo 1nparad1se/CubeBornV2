@@ -36,7 +36,7 @@ const SECTIONS: { id: Section; icon: string; ru: string; en: string }[] = [
 /** Settings each section owns ("По умолчанию" resets only these). */
 const SECTION_KEYS: Record<Section, (keyof Settings)[]> = {
   screen: ['displayMode', 'resolution', 'vsync', 'fpsLimit', 'uiScale'],
-  graphics: ['quality', 'shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing'],
+  graphics: ['quality', 'shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing', 'fog', 'fogDensity', 'fogStart'],
   game: ['cameraZoom', 'screenShake', 'damageNumbers', 'showFps', 'showHints', 'autoPause'],
   audio: ['master', 'music', 'sfx', 'ambient', 'ui'],
   controls: ['keybinds', 'swapMouse', 'invertWheel'],
@@ -341,6 +341,10 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
             { id: 'far', name: tr('Далеко', 'Far') },
             { id: 'max', name: tr('Макс.', 'Max') },
           ], () => st.viewDistance, sub('viewDistance')),
+          group(tr('Туман', 'Fog')),
+          toggle(tr('Туман', 'Fog'), () => st.fog, (v) => (st.fog = v), tr('Даль плавно растворяется в дымке. Без тумана видно до края дальности прорисовки.', 'The distance fades into haze. Without fog you see out to the view distance.')),
+          slider(tr('Плотность тумана', 'Fog density'), () => st.fogDensity, (v) => (st.fogDensity = v), { hint: tr('Насколько быстро даль уходит в дымку.', 'How quickly the distance fades.') }),
+          slider(tr('Начало тумана', 'Fog start'), () => st.fogStart, (v) => (st.fogStart = v), { hint: tr('С какого расстояния появляется дымка: меньше — ближе к герою.', 'How far away the haze begins: lower is closer.') }),
           seg(tr('Сглаживание', 'Anti-aliasing'), [
             { id: 'off', name: off() },
             { id: 'msaa', name: 'MSAA' },

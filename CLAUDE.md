@@ -5,7 +5,7 @@ Read this before changing the game. It holds the decisions the owner has already
 ## What the game is
 - A browser RPG in a Minecraft-like cubic style, built with TypeScript, Three.js and Vite.
 - Current stage:
-  - the open world «Дикие земли», 2000×2000 blocks (`src/world/wild.ts`): an irregular continent with mountain ranges, rivers, lakes, waterfalls, climate zones and forests of 8 tree species; the three training dummies stand on a clearing at the spawn;
+  - the open world «Дикие земли», 2000×2000 blocks (`src/world/wild.ts`): an irregular continent with low rounded mountain ranges (about 50 blocks), gentle hills, rivers, lakes, waterfalls, swamps, climate zones, roads and paths, 18 tree species and 20 bush species; the three training dummies stand on a clearing at the spawn;
   - the 100×100 training meadow stays for the tests and the menu backdrop;
   - only the Human race;
   - 7 weapons plus a shield, and 3 armor sets (magic, light, heavy) of 4 pieces each;
@@ -31,7 +31,12 @@ Read this before changing the game. It holds the decisions the owner has already
 - Grass and bushes are decor: no wind (they stand still), they only bend away from the hero, they never block movement.
 - See-through only where it helps: a tree that really stands between the camera and the hero fades to half see-through and back (smoothly); ground that hides the hero (a cliff, a hill) opens a see-through window around the hero only. Nothing else turns see-through. The camera itself never sits inside the ground or a tree crown.
 - World generation follows cause and effect: ranges shape the relief, the relief steers the rivers (always downhill to the sea), water and climate (temperature by latitude and height, rain from the west wind with rain shadows) choose biomes, blocks and trees. Keep it that way; `tools/tests/wild.ts` checks it.
-- Trees are solid at the trunk (one block); crowns are visual. Near models use 1/6-block leaf and trunk cubes and 1/8-block branch cubes (ragged crowns with gaps, still cubic); keep the species heights. Ground blocks: grass kinds, snow, gravel, clay, basalt, tuff, moss_stone, ice, sandstone, sand, stone.
+- Trees are solid at the trunk (one block); crowns are visual. Near models use 1/6-block leaf and trunk cubes and 1/8-block branch cubes (ragged crowns with gaps, still cubic); keep the species heights. Trees are never one flat colour: the tree material paints a 1/16-block pixel texture (leaves, bark, rings) over the faces. Detail steps down 1/6 → 1/3 → 1/2 → 1 block at 18 / 34 / 56 blocks, all from one shape description.
+- Ground blocks live in `src/world/blocks.ts`: the 46 reference blocks plus 10 mixed blocks for the transitions, each a multi-colour pixel pattern. Borders between grounds use the mixed blocks; the choice of block follows cause and effect (rock by slope and range, litter by the tree above it, silt under water).
+- Relief stays gentle: ranges about 40–50 blocks over the sea, few whole-block steps (the test checks it).
+- Bushes (`src/render/bushModels.ts`): 20 voxel species, mostly very small (0.15) and small (0.3 block), about a third medium (0.5); decor like the grass.
+- Roads and paths (`src/world/roads.ts`) join places along the easiest ways with smooth curves; their surface follows the land they cross.
+- Fog is a player setting (on/off, density, start); keep distant things fading into it rather than popping.
 - Water is a see-through layer over a real bed (`src/render/water.ts`): the deeper, the darker and less see-through. Nine kinds (plain, deep, shallow, rapids, waterfall, calm lake, swamp, sea, frozen); no glossy highlights. Banks never lie below the water beside them.
 - Jumps: the hero lands on a block as soon as the feet reach its top; paths may climb one block with a jump and two with a double jump, never more.
 

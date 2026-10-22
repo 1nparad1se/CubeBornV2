@@ -41,7 +41,7 @@ export function waterBody(name: string): number {
 /** Ground tile under each kind of water (a name the map has, or null). */
 export function bedTileName(name: string, names: string[]): string | null {
   const body = waterBody(name);
-  const want = body === WATER.sea ? ['sand', 'gravel'] : body === WATER.lake ? ['sand', 'clay', 'gravel'] : body === WATER.swamp ? ['clay', 'grass_lush'] : body === WATER.fast ? ['stone', 'gravel'] : ['gravel', 'sand'];
+  const want = body === WATER.sea ? ['sand', 'gravel'] : body === WATER.lake ? ['silt', 'sand', 'clay'] : body === WATER.swamp ? ['swamp_mud', 'clay'] : body === WATER.fast ? ['stone', 'gravel'] : ['silt', 'gravel', 'sand'];
   for (const w of want) if (names.includes(w)) return w;
   return names.find((n) => /sand|gravel|stone|dirt/.test(n)) ?? null;
 }

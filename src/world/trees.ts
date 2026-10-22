@@ -12,9 +12,21 @@ export const TREE = {
   fruit: 5,
   small: 6,
   pine: 7,
+  // deserts and dry plains
+  joshua: 8,
+  ironwood: 9,
+  paloVerde: 10,
+  doumPalm: 11,
+  quiver: 12,
+  // swamps and wet woods
+  cypress: 13,
+  mangrove: 14,
+  tupelo: 15,
+  mossy: 16,
+  swampWillow: 17,
 } as const;
 
-export const TREE_KINDS = 8;
+export const TREE_KINDS = 18;
 /** Shape variants per species (height, trunk and crown differ); instances add scale and turn. */
 export const TREE_VARIANTS = 4;
 
@@ -36,6 +48,16 @@ export const TREE_SPECS: TreeSpec[] = [
   { name: 'Фруктовое дерево', height: 4, heightStep: 0.35, trunk: 1 },
   { name: 'Небольшое дерево', height: 2.8, heightStep: 0.35, trunk: 1 },
   { name: 'Сосна обыкновенная высокая', height: 12, heightStep: 1.3, trunk: 1 },
+  { name: 'Дерево Джошуа', height: 5, heightStep: 0.5, trunk: 1 },
+  { name: 'Железное дерево', height: 4.5, heightStep: 0.4, trunk: 1 },
+  { name: 'Пало-верде', height: 4.5, heightStep: 0.4, trunk: 1 },
+  { name: 'Ветвистая пальма дум', height: 7, heightStep: 0.8, trunk: 1 },
+  { name: 'Колчанное дерево', height: 4.2, heightStep: 0.25, trunk: 2 },
+  { name: 'Болотный кипарис', height: 9, heightStep: 1, trunk: 2 },
+  { name: 'Мангровое дерево', height: 5.5, heightStep: 0.5, trunk: 1 },
+  { name: 'Болотный тупело', height: 7.5, heightStep: 0.7, trunk: 2 },
+  { name: 'Дерево со свисающим мхом', height: 7, heightStep: 0.6, trunk: 2 },
+  { name: 'Болотная ива', height: 5.5, heightStep: 0.5, trunk: 2 },
 ];
 
 /** Height (blocks) of a species' variant before the instance scale. */

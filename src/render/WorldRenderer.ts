@@ -4,6 +4,7 @@ import { CELL, isWater, type Terrain } from '../game/Terrain';
 import { hash2, noise2 } from '../core/Rng';
 import { ATLAS_VARIANTS, BUSH_TOP, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_BUSH, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { bushSpots } from './flora';
+import { BUSH, BUSH_SIZES, bushGeometry } from './bushModels';
 import { GLSL_NOISE } from './glsl';
 import { GLSL_WATER, bedTileName, waterGeometry, waterMaterial, waterTextures } from './water';
 
@@ -57,6 +58,9 @@ interface FoliageRule {
   /** Chance per cell of a bush (wild world), and which bush sprites. */
   bush?: number;
   bushes?: SpriteW;
+  /** Chance per cell of a small voxel bush (render/bushModels BUSH kinds) and which kinds. */
+  shrub?: number;
+  shrubs?: SpriteW;
 }
 
 const FLOWERS: SpriteW = [[SPRITE.poppy, 3], [SPRITE.dandelion, 3], [SPRITE.cornflower, 2], [SPRITE.bluet, 3], [SPRITE.tulip, 1.5], [SPRITE.daisy, 2.5], [SPRITE.allium, 1]];
@@ -83,23 +87,78 @@ const TRAIL_FADE = 1.6;
  * The wild world's grounds: meadow grasses (with bushes, shrubs on the dry side), cold grass with
  * ferns, and sparse dry stems, tufts or dead bushes on snow, sand, gravel and rock.
  */
-const LEAFY: SpriteW = [[SPRITE.bush, 6], [SPRITE.berryBush, 1]];
+const B = BUSH;
+/** Voxel bushes per landscape (render/bushModels). */
+const GREEN_SHRUBS: SpriteW = [[B.forest, 5], [B.clover, 3], [B.meadow, 3], [B.strawberry, 2], [B.fern, 1], [B.ivy, 1]];
+const FOREST_SHRUBS: SpriteW = [[B.forest, 3], [B.blueberry, 3], [B.fern, 4], [B.ivy, 2], [B.mossHummock, 2], [B.strawberry, 1]];
+const DESERT_SHRUBS: SpriteW = [[B.wormwood, 3], [B.thorn, 3], [B.sandBush, 3], [B.succulent, 2], [B.desertFlower, 2], [B.tumbleweed, 1]];
+const WINTER_SHRUBS: SpriteW = [[B.snowy, 4], [B.dwarfConifer, 3], [B.heather, 2], [B.lingonberry, 2]];
+const SWAMP_SHRUBS: SpriteW = [[B.tussock, 5], [B.creeper, 3], [B.mossHummock, 1]];
+const DRY: SpriteW = [[SPRITE.dryGrass, 3], [SPRITE.shortGrass, 1]];
+const SNOWY: FoliageRule = { density: 0.15, sprites: [[SPRITE.dryGrass, 2], [SPRITE.shortGrass, 1]], tint: 0xb8c4b8, shrub: 0.03, shrubs: WINTER_SHRUBS };
+const DESERT: FoliageRule = { density: 0.05, sprites: [[SPRITE.dryGrass, 3], [SPRITE.deadBush, 1]], shrub: 0.02, shrubs: DESERT_SHRUBS };
+const FOREST_FLOOR: FoliageRule = { density: 0.5, sprites: [[SPRITE.fern, 3], [SPRITE.grass, 3], [SPRITE.shortGrass, 2], [SPRITE.mushroom, 0.4]], tint: 0x5e9a3a, shrub: 0.05, shrubs: FOREST_SHRUBS };
+const SWAMPY: FoliageRule = { density: 1.2, sprites: [[SPRITE.sedge, 4], [SPRITE.tallGrass, 3], [SPRITE.thickGrass, 2], [SPRITE.grass, 2]], tint: 0x5a8a34, shrub: 0.05, shrubs: SWAMP_SHRUBS };
+const BARE: FoliageRule = { density: 0.05, sprites: [[SPRITE.shortGrass, 1]], tint: 0x7a9a50 };
 const WILD_GROUNDS: Record<string, FoliageRule> = {
-  grass: { ...MEADOW_GROUNDS.grass, bush: 0.02, bushes: LEAFY },
-  grass2: { ...MEADOW_GROUNDS.grass2, bush: 0.015, bushes: LEAFY },
-  grass_lush: { ...MEADOW_GROUNDS.grass_lush, bush: 0.03, bushes: LEAFY },
-  grass_sun: { ...MEADOW_GROUNDS.grass_sun, bush: 0.01, bushes: [[SPRITE.bush, 2], [SPRITE.shrub, 1]] },
-  grass_dry: { ...MEADOW_GROUNDS.grass_dry, density: 0.9, bush: 0.025, bushes: [[SPRITE.shrub, 4], [SPRITE.deadBush, 1]] },
-  grass_clover: MEADOW_GROUNDS.grass_clover,
-  grass_cold: { density: 1.5, sprites: [[SPRITE.grass, 36], [SPRITE.tallGrass, 18], [SPRITE.fern, 14], [SPRITE.shortGrass, 10], [SPRITE.sedge, 6], [SPRITE.bluet, 1]], bush: 0.015, bushes: LEAFY },
-  snow: { density: 0.2, sprites: [[SPRITE.dryGrass, 2], [SPRITE.shortGrass, 1]], tint: 0xb8c4b8 },
-  sand: { density: 0.05, sprites: [[SPRITE.dryGrass, 3], [SPRITE.deadBush, 1]] },
+  grass: { ...MEADOW_GROUNDS.grass, shrub: 0.03, shrubs: GREEN_SHRUBS },
+  grass2: { ...MEADOW_GROUNDS.grass2, shrub: 0.025, shrubs: GREEN_SHRUBS },
+  grass_lush: { ...MEADOW_GROUNDS.grass_lush, shrub: 0.04, shrubs: FOREST_SHRUBS },
+  grass_sun: { ...MEADOW_GROUNDS.grass_sun, shrub: 0.02, shrubs: GREEN_SHRUBS },
+  grass_dry: { ...MEADOW_GROUNDS.grass_dry, density: 0.9, shrub: 0.025, shrubs: [[B.wormwood, 2], [B.sandBush, 2], [B.thorn, 1], [B.forest, 1]] },
+  grass_clover: { ...MEADOW_GROUNDS.grass_clover, shrub: 0.02, shrubs: [[B.clover, 3], [B.meadow, 2], [B.strawberry, 1]] },
+  grass_cold: { density: 1.5, sprites: [[SPRITE.grass, 36], [SPRITE.tallGrass, 18], [SPRITE.fern, 14], [SPRITE.shortGrass, 10], [SPRITE.sedge, 6], [SPRITE.bluet, 1]], shrub: 0.03, shrubs: [[B.lingonberry, 2], [B.dwarfConifer, 1], [B.blueberry, 2], [B.heather, 1]] },
+  // mixed blocks: grass where the block has it, the other side's plants where it does not
+  grass_dirt: { density: 0.9, sprites: MEADOW, shrub: 0.02, shrubs: GREEN_SHRUBS },
+  grass_stone: { density: 0.6, sprites: TUFTS, tint: 0x6aa040, shrub: 0.015, shrubs: [[B.forest, 2], [B.mossHummock, 1]] },
+  grass_sand: { density: 0.6, sprites: [[SPRITE.grass, 3], [SPRITE.dryGrass, 2], [SPRITE.shortGrass, 2]], shrub: 0.015, shrubs: [[B.sandBush, 2], [B.forest, 1]] },
+  mud_grass: SWAMPY,
+  dirt_moss: { ...FOREST_FLOOR, density: 0.9 },
+  stone_moss: { density: 0.4, sprites: [[SPRITE.fern, 2], [SPRITE.shortGrass, 2]], tint: 0x5e9a3a, shrub: 0.02, shrubs: [[B.mossHummock, 2], [B.fern, 1]] },
+  // earth and litter
+  dirt: { density: 0.25, sprites: TUFTS, tint: 0x6aa040, shrub: 0.01, shrubs: GREEN_SHRUBS },
+  dirt_wet: { density: 0.5, sprites: [[SPRITE.sedge, 2], [SPRITE.grass, 2]], tint: 0x5a9a3a, shrub: 0.02, shrubs: SWAMP_SHRUBS },
+  dirt_dry: { density: 0.15, sprites: DRY, tint: 0xa4a050, shrub: 0.015, shrubs: DESERT_SHRUBS },
+  dirt_stony: { density: 0.3, sprites: TUFTS, tint: 0x6a9a40, shrub: 0.015, shrubs: [[B.thorn, 1], [B.forest, 2]] },
+  chernozem: FOREST_FLOOR,
+  humus: FOREST_FLOOR,
+  forest_litter: FOREST_FLOOR,
+  leaf_litter: FOREST_FLOOR,
+  dirt_roots: FOREST_FLOOR,
+  needle_litter: { ...FOREST_FLOOR, density: 0.3, shrubs: [[B.blueberry, 3], [B.fern, 2], [B.lingonberry, 1], [B.mossHummock, 1]] },
+  peat: SWAMPY,
+  mud: { ...SWAMPY, density: 0.4 },
+  swamp_mud: { ...SWAMPY, density: 0.5 },
+  dirt_pebbles: { density: 0.2, sprites: TUFTS, tint: 0x6aa040 },
+  // the hot dry lands
+  sand: DESERT,
+  red_sand: DESERT,
+  sand_stony: DESERT,
+  cracked_earth: { ...DESERT, density: 0.03 },
+  dry_clay: DESERT,
+  sand_clay: DESERT,
+  sand_stone: DESERT,
   sandstone: { density: 0.02, sprites: [[SPRITE.deadBush, 1]] },
+  // cold and high
+  snow: SNOWY,
+  snow_loose: SNOWY,
+  snow_deep: { ...SNOWY, density: 0.05, shrub: 0.015 },
+  snow_dirty: SNOWY,
+  snow_stony: { ...SNOWY, shrubs: [[B.dwarfConifer, 2], [B.snowy, 1]] },
+  snow_dirt: { ...SNOWY, density: 0.3 },
+  frozen_dirt: { ...SNOWY, density: 0.3 },
+  // rock
   gravel: { density: 0.25, sprites: [[SPRITE.shortGrass, 3], [SPRITE.dryGrass, 1]], tint: 0x8aa860 },
+  dirt_gravel: { density: 0.35, sprites: TUFTS, tint: 0x6aa040 },
   clay: { density: 0.6, sprites: TUFTS, tint: 0x6aa040 },
-  moss_stone: { density: 0.5, sprites: [[SPRITE.fern, 2], [SPRITE.shortGrass, 2], [SPRITE.grass, 1]], tint: 0x5e9a3a },
+  moss_stone: { density: 0.5, sprites: [[SPRITE.fern, 2], [SPRITE.shortGrass, 2], [SPRITE.grass, 1]], tint: 0x5e9a3a, shrub: 0.02, shrubs: [[B.mossHummock, 2]] },
+  stone_lichen: { density: 0.2, sprites: [[SPRITE.shortGrass, 1]], tint: 0x8aa850 },
   tuff: { density: 0.08, sprites: [[SPRITE.dryGrass, 1]], tint: 0x9aa060 },
-  stone: { density: 0.06, sprites: [[SPRITE.shortGrass, 1]], tint: 0x7a9a50 },
+  stone: BARE,
+  andesite: BARE,
+  granite: BARE,
+  limestone: BARE,
+  stone_snow: { ...SNOWY, density: 0.05 },
 };
 
 function foliageRule(gen: string, tile: string): FoliageRule | null {
@@ -849,6 +908,28 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         );
     };
     this.disposables.push(cross, tri, tex, mat);
+    // voxel bushes: merged per chunk; they bend away from the hero like the grass
+    const shrubMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    shrubMat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTrail = this.flora.uTrail;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>\nuniform vec4 uTrail[${TRAIL}];\nattribute vec3 aBase;\nattribute float aH;`)
+        .replace(
+          '#include <begin_vertex>',
+          `#include <begin_vertex>
+vec2 push = vec2(0.0);
+for (int i = 0; i < ${TRAIL}; i++) {
+  vec2 rel = aBase.xz - uTrail[i].xy;
+  float d = length(rel);
+  push += rel / max(d, 0.06) * (1.0 - smoothstep(0.2, 0.9, d)) * uTrail[i].z;
+}
+float pl = length(push);
+if (pl > 1.0) push /= pl;
+// stiffer than grass: the top leans a little, the root stays
+transformed += vec3(push.x * 0.22, -pl * 0.06, push.y * 0.22) * aH * aH;`,
+        );
+    };
+    this.disposables.push(shrubMat);
     type F = { x: number; y: number; z: number; s: number; sp: number; c: number; a: number };
     const DC = 32;
     const per = Math.ceil(n / DC);
@@ -862,7 +943,8 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         const bi = Math.floor(b.z / DC) * per + Math.floor(b.x / DC);
         buckets[bi].push({ x: b.x, y: t.groundY(b.x, b.z) - 0.04, z: b.z, s: b.s, sp: b.sprite, c: leaf, a: r(2) });
       }
-    const scan = (put: (f: F) => void, x0: number, z0: number) => {
+    type S = { x: number; y: number; z: number; kind: number; v: number; s: number; turn: number };
+    const scan = (put: (f: F) => void, x0: number, z0: number, shrub?: (b: S) => void) => {
     for (let z = z0; z < Math.min(n, z0 + DC); z++)
       for (let x = x0; x < Math.min(n, x0 + DC); x++) {
         const i = z * n + x;
@@ -900,6 +982,14 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
           const fz = z + 0.3 + r(4) * 0.4;
           put({ x: fx, y: t.groundY(fx, fz) - 0.04, z: fz, s: 0.85 + r(5) * 0.4, sp, c: leaf, a: r(6) });
         }
+        // small voxel bushes among the grass: mostly very small and small ones, a third medium
+        if (shrub && rule.shrub && rule.shrubs && hash2(x, z, 93) < rule.shrub * (0.5 + q * 0.5)) {
+          const r = (a: number) => hash2(x * 7 + 3, z * 5 + 1, a);
+          const fx = x + 0.25 + r(3) * 0.5;
+          const fz = z + 0.25 + r(4) * 0.5;
+          const sz = r(5);
+          shrub({ x: fx, y: t.groundY(fx, fz), z: fz, kind: pickSprite(rule.shrubs, r(1)), v: r(2) < 0.5 ? 0 : 1, s: BUSH_SIZES[sz < 0.35 ? 0 : sz < 0.7 ? 1 : 2] * (0.9 + r(6) * 0.2), turn: r(7) * Math.PI * 2 });
+        }
         // a fringe of tall grass along cliff rims, hanging over the edge
         if (e && rule.sprites.some(([sp]) => sp === SPRITE.grass) && q > 0.5) {
           const lvl = this.level;
@@ -925,7 +1015,9 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
     const rot = new THREE.Matrix4();
     buckets.forEach((decorList, bi) => this.defer(((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC, () => {
       const all = decorList.slice();
-      scan((f) => all.push(f), (bi % per) * DC, Math.floor(bi / per) * DC);
+      const shrubs: S[] = [];
+      scan((f) => all.push(f), (bi % per) * DC, Math.floor(bi / per) * DC, (b) => shrubs.push(b));
+      if (shrubs.length) this.place(this.shrubMesh(shrubs, shrubMat), ((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC);
       // grass on two crossed planes, bushes on three (one instanced draw each)
       for (const bush of [false, true]) {
         const list = all.filter((f) => SPRITE_BUSH.has(f.sp) === bush);
@@ -950,6 +1042,81 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
         this.place(mesh, ((bi % per) + 0.5) * DC, (Math.floor(bi / per) + 0.5) * DC);
       }
     }));
+  }
+
+  private shrubGeos = new Map<number, THREE.BufferGeometry>();
+
+  /** The bushes of one chunk merged into one mesh (one draw), with their roots for the bending. */
+  private shrubMesh(list: { x: number; y: number; z: number; kind: number; v: number; s: number; turn: number }[], mat: THREE.Material) {
+    const geos = list.map((b) => {
+      const key = b.kind * 4 + b.v;
+      let g = this.shrubGeos.get(key);
+      if (!g) {
+        g = bushGeometry(b.kind, b.v);
+        this.shrubGeos.set(key, g);
+        this.disposables.push(g);
+      }
+      return g;
+    });
+    let nv = 0;
+    let ni = 0;
+    for (const g of geos) {
+      nv += g.attributes.position.count;
+      ni += g.index!.count;
+    }
+    const pos = new Float32Array(nv * 3);
+    const nor = new Float32Array(nv * 3);
+    const col = new Float32Array(nv * 3);
+    const base = new Float32Array(nv * 3);
+    const hgt = new Float32Array(nv);
+    const idx = new Uint32Array(ni);
+    let v0 = 0;
+    let i0 = 0;
+    list.forEach((b, k) => {
+      const g = geos[k];
+      const P = g.attributes.position.array as Float32Array;
+      const N = g.attributes.normal.array as Float32Array;
+      const C = g.attributes.color.array as Float32Array;
+      const I = g.index!.array;
+      const top = Math.max(0.05, g.boundingBox!.max.y);
+      const c = Math.cos(b.turn);
+      const sn = Math.sin(b.turn);
+      // each bush a shade lighter or darker
+      const tint = 0.9 + hash2(Math.floor(b.x * 13), Math.floor(b.z * 13), 7) * 0.2;
+      for (let i = 0; i < P.length / 3; i++) {
+        const x = P[i * 3];
+        const y = P[i * 3 + 1];
+        const z = P[i * 3 + 2];
+        const o = (v0 + i) * 3;
+        pos[o] = b.x + (x * c - z * sn) * b.s;
+        pos[o + 1] = b.y + y * b.s;
+        pos[o + 2] = b.z + (x * sn + z * c) * b.s;
+        nor[o] = N[i * 3] * c - N[i * 3 + 2] * sn;
+        nor[o + 1] = N[i * 3 + 1];
+        nor[o + 2] = N[i * 3] * sn + N[i * 3 + 2] * c;
+        col[o] = C[i * 3] * tint;
+        col[o + 1] = C[i * 3 + 1] * tint;
+        col[o + 2] = C[i * 3 + 2] * tint;
+        base[o] = b.x;
+        base[o + 1] = b.y;
+        base[o + 2] = b.z;
+        hgt[v0 + i] = y / top;
+      }
+      for (let j = 0; j < I.length; j++) idx[i0 + j] = I[j] + v0;
+      v0 += P.length / 3;
+      i0 += I.length;
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    g.setAttribute('aBase', new THREE.BufferAttribute(base, 3));
+    g.setAttribute('aH', new THREE.BufferAttribute(hgt, 1));
+    g.setIndex(new THREE.BufferAttribute(idx, 1));
+    g.computeBoundingSphere();
+    const m = new THREE.Mesh(g, mat);
+    m.receiveShadow = true;
+    return m;
   }
 
   /** Hides block/decor chunks farther than radius from the camera target. */

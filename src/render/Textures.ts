@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { hash2 } from '../core/Rng';
+import { BLOCKS, type BlockLook } from '../world/blocks';
 
 /** Small grayscale "pixel" texture applied to every voxel face for a crafted block look. */
 export function makeBlockTexture(px = 8): THREE.DataTexture {
@@ -352,6 +353,11 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
     img.data[i + 3] = 255;
   };
   tileNames.forEach((name, ti) => {
+    const look = BLOCKS[name];
+    if (look) {
+      paintBlock(look, ti, put, blocks);
+      return;
+    }
     const colors = tiles[name] ?? [0x777777];
     const fam = groundFamily(name);
     const pat = (fam === 'grass' && GRASS_VARIANT[name]) || PATTERN[fam];
@@ -408,6 +414,55 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/**
+ * Atlas column of a block with its own look (world/blocks.ts): its pattern on the top variants;
+ * down the sides either the same block (darker deeper) or earth under a ragged top layer.
+ */
+function paintBlock(look: BlockLook, ti: number, put: (ti: number, row: number, x: number, y: number, hex: number, m: number) => void, blocks: Record<string, number[]>) {
+  const c = look.colors;
+  for (let v = 0; v < ATLAS_VARIANTS; v++) {
+    const f = look.pat(11 + ti * 7 + v * 131);
+    for (let y = 0; y < TILE_PX; y++)
+      for (let x = 0; x < TILE_PX; x++) {
+        const [ci, m] = f(x, y);
+        put(ti, v, x, y, c[ci], m);
+      }
+  }
+  const top = look.pat(17 + ti * 7);
+  if (look.side === 'self') {
+    const rows: [number, number][] = [[ROW_RIM, 0.96], [ROW_SOIL, 0.92], [ROW_SOIL + 1, 0.9], [ROW_STONE, 0.8]];
+    rows.forEach(([row, k], r) => {
+      const f = look.pat(41 + ti * 3 + r * 17);
+      for (let y = 0; y < TILE_PX; y++)
+        for (let x = 0; x < TILE_PX; x++) {
+          const [ci, m] = f(x, y);
+          put(ti, row, x, y, c[ci], m * k);
+        }
+    });
+    return;
+  }
+  // a top layer over earth: the layer hangs a few ragged pixels over the side
+  const soil = look.soil ?? blocks.soil?.[0] ?? 0x7a5636;
+  const hang0 = look.hang ?? 2;
+  for (let x = 0; x < TILE_PX; x++) {
+    const hang = hang0 + Math.floor(hash2(x, 0, 29 + ti) * 2.2) - (hash2(x, 1, 29 + ti) > 0.85 ? 1 : 0);
+    const sp = PATTERN.dirt(23 + ti);
+    for (let y = 0; y < TILE_PX; y++) {
+      if (y < hang) {
+        const [ci, m] = top(x, y);
+        put(ti, ROW_RIM, x, y, c[ci], m * (y === hang - 1 ? 0.88 : 1));
+      } else put(ti, ROW_RIM, x, y, soil, sp(x, y) * (y === hang ? 0.84 : 1));
+    }
+  }
+  for (let r = 0; r < 2; r++) {
+    const p = PATTERN.dirt(41 + ti * 3 + r * 17);
+    for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, ROW_SOIL + r, x, y, soil, p(x, y));
+  }
+  const deep = PATTERN.rock(53 + ti);
+  const stone = blocks.cliff?.[0] ?? 0x80848a;
+  for (let y = 0; y < TILE_PX; y++) for (let x = 0; x < TILE_PX; x++) put(ti, ROW_STONE, x, y, stone, deep(x, y));
 }
 
 /** Foliage sprites (index into makeFoliageAtlas). Grass sprites are grey and tinted per map. */

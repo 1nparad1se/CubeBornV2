@@ -6,6 +6,7 @@
 import { BIOME, SEA, WILD_SIZE, generateWild } from '../../src/world/wild';
 import { TREE, TREE_KINDS, TREE_SPECS } from '../../src/world/trees';
 import { CELL } from '../../src/game/Terrain';
+import { BLOCK_ORDER } from '../../src/world/blocks';
 import { findPath } from '../../src/game/arpg/Path';
 import { World } from '../../src/rpg/World';
 import { GameClock } from '../../src/game/GameClock';
@@ -58,12 +59,26 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   let count = 0;
   let peak = 0;
   for (let k = 0; k < n * n; k++)
-    if (!water(t.cell[k]) && top[k] > SEA + 35) {
+    if (!water(t.cell[k]) && top[k] > SEA + 22) {
       high[k] = 1;
       count++;
       peak = Math.max(peak, top[k]);
     }
-  ok(count > 20000 && peak > SEA + 60, `mountains: ${count} blocks above ${SEA + 35}, peaks up to ${peak}`);
+  ok(count > 20000 && peak > SEA + 38 && peak < SEA + 60, `mountains: ${count} blocks above ${SEA + 22}, peaks up to ${peak} (low, rounded ranges)`);
+  // a gentle land: most neighbouring blocks are level or a quarter step apart, few whole blocks
+  let pairs = 0;
+  let whole = 0;
+  let sum = 0;
+  for (let z = 1; z < n - 1; z += 2)
+    for (let x = 1; x < n - 1; x += 2) {
+      const k = z * n + x;
+      if (t.cell[k] !== CELL.floor || t.cell[k + 1] !== CELL.floor) continue;
+      const d = Math.abs(top[k] - top[k + 1]);
+      pairs++;
+      sum += d;
+      if (d >= 1) whole++;
+    }
+  ok(whole / pairs < 0.05 && sum / pairs < 0.2, `gentle relief: ${((whole / pairs) * 100).toFixed(1)} % whole-block steps, ${(sum / pairs).toFixed(2)} blocks on average`);
   // the biggest ranges are elongated: their extent is long compared with their area
   const seen = new Uint8Array(n * n);
   const ranges: { area: number; len: number }[] = [];
@@ -231,7 +246,11 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   const names = new Set<string>();
   for (let k = 0; k < n * n; k += 3) names.add(t.tileNames[t.tile[k]]);
   const want = ['snow', 'gravel', 'clay', 'basalt', 'tuff', 'moss_stone', 'ice', 'sandstone', 'sand'];
-  ok(want.every((b) => names.has(b)), `all nine new ground blocks are used (${want.filter((b) => !names.has(b)).join(', ') || 'none missing'})`);
+  ok(want.every((b) => names.has(b)), `the earlier ground blocks are used (${want.filter((b) => !names.has(b)).join(', ') || 'none missing'})`);
+  const all = new Set<string>();
+  for (let k = 0; k < n * n; k++) all.add(t.tileNames[t.tile[k]]);
+  const missing = BLOCK_ORDER.filter((b) => !all.has(b));
+  ok(missing.length === 0, `all ${BLOCK_ORDER.length} reference blocks (46 and the mixed ones) are used (${missing.join(', ') || 'none missing'})`);
 }
 
 // ---------------------------------------------------------------- trees
@@ -239,7 +258,24 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   const T = w.trees;
   const kinds = new Array(TREE_KINDS).fill(0);
   for (let i = 0; i < T.count; i++) kinds[T.kind[i]]++;
-  ok(T.count > 20000 && kinds.every((c) => c > 300), `${T.count} trees of all eight species (${TREE_SPECS.map((s, i) => `${s.name} ${kinds[i]}`).join(', ')})`);
+  ok(T.count > 20000 && kinds.slice(0, 8).every((c) => c > 300) && kinds.every((c) => c > 10), `${T.count} trees of all ${TREE_KINDS} species (${TREE_SPECS.map((s, i) => `${s.name} ${kinds[i]}`).join(', ')})`);
+  // desert trees in the deserts, swamp trees by the swamps and wet shores
+  let dryN = 0;
+  let dryOk = 0;
+  let wetN = 0;
+  let wetOk = 0;
+  for (let i = 0; i < T.count; i++) {
+    const kd = T.kind[i];
+    const ci = Math.min(w.coarse.m - 1, Math.floor(T.z[i] / 4)) * w.coarse.m + Math.min(w.coarse.m - 1, Math.floor(T.x[i] / 4));
+    if (kd >= TREE.joshua && kd <= TREE.quiver) {
+      dryN++;
+      if (w.coarse.rain[ci] < 0.35) dryOk++;
+    } else if (kd >= TREE.cypress) {
+      wetN++;
+      if (w.coarse.rain[ci] > 0.45) wetOk++;
+    }
+  }
+  ok(dryOk / dryN > 0.9 && wetOk / wetN > 0.9, `desert trees grow in dry land (${dryOk}/${dryN}), swamp trees in wet land (${wetOk}/${wetN})`);
   const { m, biome, temp, rain } = w.coarse;
   const at = (i: number) => Math.min(m - 1, Math.floor(T.z[i] / 4)) * m + Math.min(m - 1, Math.floor(T.x[i] / 4));
   // willows by the water
@@ -287,6 +323,33 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   const dense = vals.filter((v) => v > avg * 2).length;
   const sparse = vals.filter((v) => v < avg * 0.3).length;
   ok(dense > 20 && sparse > 20, `forest massifs and open land (${dense} dense and ${sparse} sparse squares of 64 blocks)`);
+}
+
+// ---------------------------------------------------------------- roads and paths
+{
+  const roadTiles = new Set(['dirt_packed', 'dirt_pebbles', 'gravel', 'cobble_overgrown', 'sand_packed', 'snow_packed', 'mud', 'dirt_gravel', 'sand_stony', 'snow_dirty', 'dirt', 'grass_dirt']);
+  ok(w.stats.roadCells > 15000, `roads and paths: ${w.stats.roadCells} blocks`);
+  // a road leaves the spawn: road blocks within reach of it
+  let near = 0;
+  for (let z = Math.floor(w.spawn.z) - 60; z < w.spawn.z + 60; z++)
+    for (let x = Math.floor(w.spawn.x) - 60; x < w.spawn.x + 60; x++) if (t.tileNames[t.tile[z * n + x]] === 'dirt_packed') near++;
+  ok(near > 50, `a road starts near the spawn (${near} blocks of packed earth within 60)`);
+  // roads are walked: along a road the ground never steps more than half a block
+  let steps = 0;
+  let steep = 0;
+  for (let z = 1; z < n - 1; z++)
+    for (let x = 1; x < n - 1; x++) {
+      const k = z * n + x;
+      const a = t.tileNames[t.tile[k]];
+      if (a !== 'dirt_packed' && a !== 'sand_packed' && a !== 'snow_packed' && a !== 'cobble_overgrown') continue;
+      for (const o of [1, n]) {
+        const j = k + o;
+        if (t.cell[j] !== CELL.floor || !roadTiles.has(t.tileNames[t.tile[j]])) continue;
+        steps++;
+        if (Math.abs(top[k] - top[j]) > 0.5) steep++;
+      }
+    }
+  ok(steep / steps < 0.01, `roads are gentle: ${steep} of ${steps} road steps over half a block`);
 }
 
 // ---------------------------------------------------------------- spawn
