@@ -1,4 +1,7 @@
+import '../../ui/theme.css';
 import './rpg2.css';
+import { pxIcon, pxIconUrl } from '../../ui/pixelIcons';
+import { MAX_LEVEL, xpForLevel } from '../growth/levels';
 import { h } from '../../ui/dom';
 import { Minimap } from '../../ui/Minimap';
 import type { World } from '../../rpg/World';
@@ -18,26 +21,35 @@ function shortName(id: string): string {
 }
 
 /**
- * HUD of the RPG test scene («Экраны и визуальный стиль»): HP / MP / ST, XP and level, combat
- * indicator and movement state (top left), the round minimap and the game time (top right), six
- * empty skill slots and the F1–F3 potion slots (bottom). Writes to the DOM only on change.
+ * HUD of the RPG test scene, laid out as the owner's mockup hud-07: portrait, name, level and the
+ * HP / MP / ST bars with combat and movement state (top left); the round minimap and the game time
+ * with a sun or moon (top right); the weapon card with the swap key (bottom left); six skill slots
+ * with pixel icons over the XP bar and the F1–F3 potions (bottom centre); short key hints (bottom
+ * right). Writes to the DOM only on change.
  */
 export class SceneHud {
   readonly root: HTMLElement;
-  readonly minimap = new Minimap();
+  readonly minimap = new Minimap(184);
   private name = h('span');
   private lvl = h('small');
   private bars: Record<'hp' | 'mp' | 'st' | 'xp', { el: HTMLElement; fill: HTMLElement; text: HTMLElement }>;
   private tags: Record<string, HTMLElement> = {};
-  private time = h('div.r2-time.r2-panel');
+  private timeText = h('span');
+  private timeIco = pxIcon('sun', 28);
+  private time = h('div.r2-time.r2-panel', this.timeIco, this.timeText);
+  private xpText = h('em');
+  private weaponIco = pxIcon('sword', 44);
+  private weaponName = h('b');
+  private weaponKey = h('small');
   private dodgeBar = h('i.r2-dodge');
   private help = h('div.r2-help.r2-panel');
+  private helpFull = h('div.r2-help-full');
   private toastEl = h('div.r2-toast.r2-panel');
   private toastT = 0;
   private last: Record<string, string> = {};
   private skillKeys: HTMLElement[] = [];
-  private skillSlots: { el: HTMLElement; name: HTMLElement; cd: HTMLElement; cdText: HTMLElement }[] = [];
-  private weaponEl = h('div.r2-weapon.r2-panel');
+  private skillSlots: { el: HTMLElement; name: HTMLElement; ico: HTMLElement; cd: HTMLElement; cdText: HTMLElement }[] = [];
+  private weaponEl = h('div.r2-weapon.r2-panel', this.weaponIco, h('div', this.weaponName, this.weaponKey));
   private chargeEl = h('div.r2-charge', h('i'));
   private targetEl = h('div.r2-target.r2-panel.hidden');
   /** Stage 4/5: counts and names of the potions chosen for F1–F3 (D199: no automatic size swap). */
@@ -59,42 +71,53 @@ export class SceneHud {
     const bar = (cls: string, label: string) => {
       const fill = h('i');
       const text = h('em');
-      return { el: h('div.r2-bar.' + cls, fill, label ? h('b', label) : null, text), fill, text };
+      const el = h('div.r2-bar.' + cls, fill);
+      const row = label ? h('div.r2-resrow.rr-' + cls, pxIcon(cls, 24), h('div.r2-rescol', h('div.r2-reslab', h('b', label), text), el)) : el;
+      return { el, row, fill, text };
     };
     const hp = bar('hp', 'HP');
     const mp = bar('mp', 'MP');
     const st = bar('st', 'ST');
     const xp = bar('xp', '');
+    xp.el.append(h('b', 'XP'), this.xpText);
     this.bars = { hp, mp, st, xp };
     const tag = (id: string, text: string) => (this.tags[id] = h('span.r2-tag', text));
-    const skills = h('div.r2-slots.r2-panel');
+    const skills = h('div.r2-slots');
     for (let i = 0; i < 6; i++) {
       const k = h('kbd', String(i + 1));
       this.skillKeys.push(k);
       const name = h('span.r2-sname');
+      const ico = h('i.r2-sico.px-ico');
       const cd = h('i.r2-cd');
       const cdText = h('b.r2-cdt');
-      const el = h('div.r2-slot', { title: 'Пустая ячейка умения' }, name, cd, cdText, k);
-      this.skillSlots.push({ el, name, cd, cdText });
+      const el = h('div.r2-slot', { title: 'Пустая ячейка умения' }, ico, name, cd, cdText, k);
+      this.skillSlots.push({ el, name, ico, cd, cdText });
       skills.append(el);
     }
     const pots = h('div.r2-slots.r2-panel');
     const potColors = ['#d23a2a', '#3a6ad2', '#d2a82a'];
+    const potIcons = ['potion-hp', 'potion-mp', 'potion-st'];
     const potNames = ['Зелье HP (пусто)', 'Зелье MP (пусто)', 'Зелье ST (пусто)'];
     for (let i = 0; i < 3; i++) {
       const k = h('kbd', 'F' + (i + 1));
       this.potKeys.push(k);
       const n = h('span.r2-potn', '0');
       this.potCounts.push(n);
-      const slot = h('div.r2-slot.pot', { title: potNames[i], style: `--pc:${potColors[i]}` }, k, n);
+      const slot = h('div.r2-slot.pot', { title: potNames[i], style: `--pc:${potColors[i]}` }, pxIcon(potIcons[i], 40, 'r2-potico'), k, n);
       this.potSlots.push(slot);
       pots.append(slot);
     }
     this.root = h(
       'div.r2.r2-hud.hidden',
-      h('div.r2-res.r2-panel', h('div.r2-name', this.name, this.lvl), hp.el, mp.el, st.el, xp.el, h('div.r2-state', tag('fight', 'Вне боя'), tag('move', 'Бег'), tag('sprint', 'Спринт'), tag('air', 'На земле'), tag('dodge', 'Уклонение'))),
+      h(
+        'div.r2-res.r2-panel',
+        h('div.r2-portrait', pxIcon('hero', 72)),
+        h('div.r2-resmain', h('div.r2-name', this.name, this.lvl), hp.row, mp.row, st.row),
+      ),
+      h('div.r2-state', tag('fight', 'Вне боя'), tag('move', 'Бег'), tag('sprint', 'Спринт'), tag('air', 'На земле'), tag('dodge', 'Уклонение')),
       h('div.r2-tr', this.minimap.root, this.time),
-      h('div.r2-bottom', h('div.r2-col', this.chargeEl, this.weaponEl, skills), pots),
+      h('div.r2-bottom', h('div.r2-col', this.chargeEl, h('div.r2-skillbar.r2-panel', skills, xp.el)), pots),
+      this.weaponEl,
       this.targetEl,
       this.help,
       h('div.r2-cross'),
@@ -117,7 +140,10 @@ export class SceneHud {
     this.potKeys[1].textContent = codeName(b.potionMp[0]);
     this.potKeys[2].textContent = codeName(b.potionSt[0]);
     const k = (a: keyof ControlBinds) => h('kbd', codeName(b[a][0]));
-    this.help.replaceChildren(
+    const key = (a: keyof ControlBinds, label: string) => h('div', h('kbd', codeName(b[a][0])), ` — ${label}`);
+    this.weaponKey.replaceChildren(h('kbd', codeName(b.weaponSwap[0])), ' — сменить оружие');
+    this.help.replaceChildren(key('inventory', 'Инвентарь'), key('map', 'Карта'), h('div', h('kbd', 'Esc'), ' — Пауза'), this.helpFull);
+    this.helpFull.replaceChildren(
       h('div', k('moveF'), k('moveL'), k('moveB'), k('moveR'), ' — движение, мышь — обзор, ', k('attack'), ' — атака'),
       h('div', k('jump'), ' — прыжок (ещё раз в воздухе), ', k('dodge'), ' — уклонение'),
       h('div', k('block'), ' — блок (меч) / прицел (лук) / заряд (посох), ', k('weaponSwap'), ' — смена оружия, ', k('skill1'), '–', k('skill6'), ' — умения'),
@@ -153,11 +179,16 @@ export class SceneHud {
     res('hp', hero.hp, hero.maxHp);
     res('mp', hero.mp, hero.maxMp);
     res('st', hero.st, hero.maxSt);
-    // XP: the level table arrives in stage 3; the bar shows the stored value only
-    const xs = `XP ${hero.progress.xp}`;
+    // XP inside the current level (the level table of stage 3)
+    const lvl = hero.progress.level;
+    const x0 = xpForLevel(lvl);
+    const x1 = lvl >= MAX_LEVEL ? x0 : xpForLevel(lvl + 1);
+    const into = Math.max(0, hero.progress.xp - x0);
+    const xs = lvl >= MAX_LEVEL ? `${hero.progress.xp}` : `${into} / ${x1 - x0}`;
     this.set('xp', xs, () => {
-      this.bars.xp.fill.style.width = '0%';
-      this.bars.xp.el.title = xs;
+      this.bars.xp.fill.style.width = lvl >= MAX_LEVEL ? '100%' : `${Math.min(100, (into / Math.max(1, x1 - x0)) * 100)}%`;
+      this.xpText.textContent = xs;
+      this.bars.xp.el.title = `Опыт: ${hero.progress.xp}`;
     });
     const fight = hero.inCombat ? `В бою ${Math.ceil(hero.combatLeft)} с` : 'Вне боя';
     this.set('fight', fight, () => {
@@ -176,7 +207,12 @@ export class SceneHud {
     });
     this.dodgeBar.style.width = `${Math.round((1 - m.dodgeCd / DODGE.cooldown) * 100)}%`;
     const tl = time.label;
-    this.set('time', tl, () => (this.time.textContent = tl));
+    this.set('time', tl, () => {
+      this.timeText.textContent = tl;
+      const hh = Number((/(\d+):\d+$/.exec(tl) ?? ['', '12'])[1]);
+      const night = hh < 5 || hh >= 21;
+      this.timeIco.style.backgroundImage = `url(${pxIconUrl(night ? 'moon-night' : 'sun')})`;
+    });
     this.minimap.yaw = yaw;
     this.minimap.draw(w);
     if (this.toastT > 0) {
@@ -189,8 +225,12 @@ export class SceneHud {
   updateCombat(c: CombatSystem, aim: Aim) {
     const w = c.weapon;
     const mode = c.blocking ? ' · блок' : c.aiming ? ' · прицел' : c.charge !== null ? ' · заряд' : '';
-    const ws = `${FAMILY_NAME[c.family]}: ${w.name}${mode}`;
-    this.set('weapon', ws, () => (this.weaponEl.textContent = ws));
+    const ws = `${w.name}${mode}`;
+    this.set('weapon', ws, () => {
+      this.weaponName.textContent = ws;
+      this.weaponEl.title = `${FAMILY_NAME[c.family]}: ${w.name}`;
+      this.weaponIco.style.backgroundImage = `url(${pxIconUrl(c.family)})`;
+    });
     const ch = c.charge === null ? -1 : Math.round(c.charge * 100);
     this.set('charge', String(ch), () => {
       this.chargeEl.classList.toggle('on', ch >= 0);
@@ -207,13 +247,14 @@ export class SceneHud {
       const key = `${id}|${prob}|${cd > 0 ? cd.toFixed(1) : ''}`;
       this.set('slot' + i, key, () => {
         sl.name.textContent = id ? shortName(id) : '';
+        sl.ico.style.backgroundImage = id ? `url(${pxIconUrl(id)})` : '';
         sl.el.classList.toggle('dim', !!id && !!prob);
         sl.el.classList.toggle('filled', !!id);
         const sk = id ? SKILL_BY_ID[id] : undefined;
         const sp = id ? SPELL_BY_ID[id] : undefined;
         sl.el.title = !id ? 'Пустая ячейка умения' : `${abilityName(id)} — ${sk ? `${sk.st} ST` : `${sp!.mp} MP`}, откат ${sk?.cd ?? sp!.cd} с${prob ? ` (${prob.toLowerCase()})` : ''}`;
         sl.cd.style.height = cd > 0 ? `${Math.min(100, (cd / full) * 100)}%` : '0';
-        sl.cdText.textContent = cd > 0 ? (cd >= 10 ? String(Math.ceil(cd)) : cd.toFixed(1).replace('.', ',')) : '';
+        sl.cdText.textContent = cd > 0 ? (cd >= 10 ? String(Math.ceil(cd)) : cd.toFixed(1).replace('.', ',')) + ' с' : '';
       });
     }
     const t = c.target(aim.target);
@@ -225,10 +266,10 @@ export class SceneHud {
         const d = enemyDef(t.enemy);
         const pct = Math.max(0, (t.enemy.hp / d.hp) * 100);
         this.targetEl.replaceChildren(
-          h('div.r2-tname', `${d.name}`, h('small', ` ур. ${d.level}${d.rank === 'mini' ? ' · мини-босс' : ''}`)),
+          h('div.r2-tname', pxIcon(d.model === 'human' ? 'bandit' : 'wolf', 28), `${d.name}`, h('small', ` ур. ${d.level}${d.rank === 'mini' ? ' · мини-босс' : ''}`)),
           h('div.r2-bar.hp', h('i', { style: `width:${pct}%` }), h('em', `${Math.ceil(t.enemy.hp)} / ${d.hp}`)),
         );
-      } else this.targetEl.replaceChildren(h('div.r2-tname', t.name, h('small', ' учебная цель')));
+      } else this.targetEl.replaceChildren(h('div.r2-tname', pxIcon('dummy', 28), t.name, h('small', ' учебная цель')));
     });
   }
 

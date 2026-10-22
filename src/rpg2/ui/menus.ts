@@ -1,6 +1,10 @@
+import '../../ui/theme.css';
 import './rpg2.css';
 import { h } from '../../ui/dom';
 import type { PauseManager } from '../pause';
+
+/** Windows drawn as a centred framed column instead of a full screen. */
+const COMPACT = new Set(['pause', 'entry', 'death', 'confirm', 'loadError']);
 
 /**
  * Full-screen windows of the RPG test scene. Every window goes through the PauseManager (D026):
@@ -17,11 +21,31 @@ export class SceneMenus {
     return this.layers.has(id);
   }
 
-  /** Opens (or rebuilds) a window drawn here. */
+  /**
+   * Opens (or rebuilds) a window drawn here, in the screen layout of the owner's mockups
+   * (docs/references/hud): most windows fill the screen — back button, the window's first heading
+   * as a big title, the CUBEBORN mark, the framed body, «Esc — Назад» and «Мир на паузе» below;
+   * the pause, entry, death and confirmation windows stay a centred framed column (hud-05).
+   */
   show(id: string, body: HTMLElement, onClose: (() => void) | null = null) {
     const old = this.layers.get(id);
     old?.el?.remove();
-    const el = h('div.r2.r2-menu.r2-menu-' + id, h('div.r2-win.r2-panel', body));
+    const compact = COMPACT.has(id);
+    const win = h('div.r2-win.r2-panel', body);
+    let el: HTMLElement;
+    if (compact) {
+      el = h('div.r2.r2-menu.r2-compact.r2-menu-' + id, h('div.cb-logo.small.r2-cornerlogo', 'CUBEBORN'), win);
+    } else {
+      const title = body.querySelector('h1');
+      const head = h('div.r2-head', h('button.cb-back', { title: 'Esc — Назад', onclick: () => this.close(id) }), title ? h('h1.cb-title', title.textContent ?? '') : null, h('div.cb-logo.small.r2-headlogo', 'CUBEBORN'));
+      title?.remove();
+      el = h(
+        'div.r2.r2-menu.r2-screen.r2-menu-' + id,
+        head,
+        win,
+        h('div.r2-foot', h('button.r2-escback', { onclick: () => this.close(id) }, h('kbd', 'Esc'), ' — Назад'), h('span.cb-paused', 'Мир на паузе')),
+      );
+    }
     this.parent.appendChild(el);
     this.layers.set(id, { el, onClose });
     this.pause.open(id);

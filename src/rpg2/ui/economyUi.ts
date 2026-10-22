@@ -17,6 +17,11 @@ import {
 import type { EconomyWorld } from '../economy/world';
 import { filterBar, type InvFilter } from './growthUi';
 import type { SceneMenus } from './menus';
+import { iconForKey, pxIcon } from '../../ui/pixelIcons';
+
+/** Pixel portraits of the merchants and the icons of what they teach. */
+const MERCHANT_FACE: Partial<Record<MerchantId, string>> = { smith: 'npc-smith', alchemist: 'npc-mira', cook: 'npc-cook', hunter: 'npc-hunter', supplier: 'npc-supplier' };
+const TEACH_ICON: Partial<Record<string, string>> = { smith: 'anvil', alchemist: 'alchemy', cook: 'cauldron', hunter: 'knife', supplier: 'pickaxe' };
 
 /** What the stage 4 windows borrow from the scene. */
 export interface EconomyHost {
@@ -89,10 +94,15 @@ export class EconomyScreens {
     else if (f.sort === 'rarity') out.sort((a, b) => rarity(b) - rarity(a));
     return out;
   }
+  /** Stack name with its pixel icon (materials, consumables). */
+  private sname(key: string): HTMLElement {
+    return h('span.r2-gname', pxIcon(iconForKey(key), 32, 'r2-gico'), h('b', stackName(key)));
+  }
   private itemLine(it: Item): HTMLElement {
     const r = RARITY[it.rarity];
     return h(
       'div',
+      pxIcon(iconForKey(it.tpl), 32, 'r2-gico'),
       h('b', { style: `color:${r.color}` }, itemName(it)),
       isGear(it.tpl) ? h('small', ` ${r.name}`) : null,
       it.upgrade ? h('small', ` · ${upgradeName(it.tpl, it.upgrade)}`) : null,
@@ -123,7 +133,7 @@ export class EconomyScreens {
         }
       }
       const stacks = Math.ceil(n / STACK_MAX);
-      return h('div.r2-goods', h('span', h('b', stackName(k)), h('small', ` · ${CAT_NAME[stackCat(k)]}`)), h('span', `${n}${stacks > 1 ? ` (${stacks} стака по ${STACK_MAX})` : ''}`), btns);
+      return h('div.r2-goods', h('span', this.sname(k), h('small', ` · ${CAT_NAME[stackCat(k)]}`)), h('span', `${n}${stacks > 1 ? ` (${stacks} стака по ${STACK_MAX})` : ''}`), btns);
     });
     const tools = g.items.filter((i) => !isGear(i.tpl) && matches(f, itemCat(i), itemName(i)));
     const toolRows = this.sortEntries(tools, itemName, itemBuyPrice, () => 0, f).map((it) =>
@@ -169,7 +179,7 @@ export class EconomyScreens {
       q.el.value = String(e.qty);
       return h(
         'div.r2-goods',
-        h('span', h('b', stackName(e.key)), why ? h('div.r2-req.no', why) : null),
+        h('span', this.sname(e.key), why ? h('div.r2-req.no', why) : null),
         h('span', `×${e.qty}`),
         h('div.r2-item-btns', q.el, this.btn('Взять', why, () => take(q.get()), true)),
       );
@@ -184,7 +194,7 @@ export class EconomyScreens {
         keys.map((k) => {
           const q = qtyInput(g.stacks[k]);
           q.el.value = String(g.stacks[k]);
-          return h('div.r2-goods', h('b', stackName(k)), h('span', `×${g.stacks[k]}`), h('div.r2-item-btns', q.el, this.btn('Положить', null, () => {
+          return h('div.r2-goods', this.sname(k), h('span', `×${g.stacks[k]}`), h('div.r2-item-btns', q.el, this.btn('Положить', null, () => {
             const want = Math.min(q.get(), stackCount(g, k));
             const moved = putStack(g, box, k, want);
             this.s.toast(moved === want ? `Положено: ${stackName(k)} ×${moved}` : `Места хватило на ${moved} из ${want}; остальное осталось у вас`);
@@ -201,7 +211,8 @@ export class EconomyScreens {
     }
     const body = h(
       'div',
-      h('h1', title),
+      h('h1', 'Добыча и хранение'),
+      h('div.r2-npc', pxIcon(kind === 'chest' ? 'container' : 'wolf', 96, 'r2-npcface'), h('div', h('h2', title), h('div.r2-chips', h('span.r2-chip', pxIcon('container', 28), `Занято ${box.entries.length} / ${box.cap} слотов`), box.gold > 0 ? h('span.r2-chip', pxIcon('coins', 28), `Золото: ${box.gold}`) : null))),
       h('div.r2-sub', kind === 'chest' ? `Слоты: ${box.entries.length} / ${box.cap} · стак до ${STACK_MAX}` : footer ?? ''),
       h('div.r2-rule'),
       filterBar(f, again),
@@ -272,29 +283,32 @@ export class EconomyScreens {
         })
         .map((o) => {
           const it = m.gear[o.id];
-          const name = it ? this.itemLine(it) : h('b', offerName(c, o));
+          const gd0 = offerGoods(o);
+          const name = it ? this.itemLine(it) : h('span.r2-gname', pxIcon('stack' in gd0 ? iconForKey(gd0.stack) : iconForKey(o.id + (o.kind === 'rune' ? ' rune' : o.kind === 'tool' ? ' ' + offerName(c, o) : '')), 32, 'r2-gico'), h('b', offerName(c, o)));
           const left = m.stock[o.id] ?? 0;
           return row(name, `· в наличии ${left}${o.replenishes ? ' (пополняется)' : ''}`, o.unitBuyPrice, left, 'stack' in offerGoods(o), (q) => buyProblem(c, o.id, q), (q) => buy(c, o.id, q), 'Купить', `Куплено: ${offerName(c, o)}`);
         });
     } else if (tab === 'sell') {
       const keys = Object.keys(g.stacks).filter((k) => matches(f, stackCat(k), stackName(k)));
       list = [
-        ...keys.map((k) => row(h('b', stackName(k)), `· у вас ${g.stacks[k]}`, sellUnit(stackBuyPrice(k)), g.stacks[k], true, (q) => sellProblem(c, { stack: k }, q), (q) => sell(c, { stack: k }, q), 'Продать', `Продано: ${stackName(k)}`)),
+        ...keys.map((k) => row(this.sname(k), `· у вас ${g.stacks[k]}`, sellUnit(stackBuyPrice(k)), g.stacks[k], true, (q) => sellProblem(c, { stack: k }, q), (q) => sell(c, { stack: k }, q), 'Продать', `Продано: ${stackName(k)}`)),
         ...g.items
           .filter((i) => matches(f, itemCat(i), itemName(i)))
           .map((it) => row(this.itemLine(it), isEquipped(g, it.uid) ? '· надето' : '', sellUnit(itemBuyPrice(it)), 1, false, (q) => sellProblem(c, { uid: it.uid }, q), (q) => sell(c, { uid: it.uid }, q), 'Продать', `Продано: ${itemName(it)}`)),
       ];
     } else {
       list = m.buyback.map((e: Entry, i) => {
-        const name = e.kind === 'item' ? this.itemLine(e.item) : h('b', stackName(e.key));
+        const name = e.kind === 'item' ? this.itemLine(e.item) : this.sname(e.key);
         return row(name, e.kind === 'stack' ? `· продано ${e.qty}` : '', buybackUnit(e), e.kind === 'stack' ? e.qty : 1, e.kind === 'stack', (q) => buybackProblem(c, i, q), (q) => buyBack(c, i, q), 'Выкупить', `Выкуплено: ${entryName(e)}`);
       });
     }
     const cyc = m.cycleLeft === null ? 'пополнение начнётся после первой покупки пополняемого товара' : `пополнение через ${Math.ceil(m.cycleLeft / 60)} мин активной игры`;
     const body = h(
       'div',
-      h('h1', `${MERCHANTS[id].name} · торговля`),
-      h('div.r2-sub', `Ваше золото: ${g.gold} · у торговца: ${m.wallet} зол. · ${cyc}`),
+      h('h1', 'Торговля'),
+      h('div.r2-npc', pxIcon(MERCHANT_FACE[id] ?? 'npc', 96, 'r2-npcface'), h('div', h('h2', MERCHANTS[id].name), h('div.r2-sub', `${MERCHANTS[id].role} · ${MERCHANTS[id].place}`)),
+        h('div.r2-chips', h('span.r2-chip', pxIcon('coins', 28), `Ваше золото: ${g.gold}`), h('span.r2-chip', pxIcon('coins', 28), `У торговца: ${m.wallet} зол.`))),
+      h('div.r2-sub', cyc),
       h('div.r2-rule'),
       h('div.r2-tabs', ([['buy', 'Купить'], ['sell', 'Продать'], ['buyback', `Выкуп (${m.buyback.length})`]] as const).map(([t, l]) => h('button.r2-btn.small' + (tab === t ? '.sel' : ''), { onclick: () => this.trade(id, t) }, l))),
       tab !== 'buyback' ? filterBar(f, again) : null,
@@ -313,14 +327,15 @@ export class EconomyScreens {
     const again = () => this.training(id);
     const body = h(
       'div',
-      h('h1', `${MERCHANTS[id as MerchantId].name} · обучение`),
-      h('div.r2-sub', `LP ${this.s.hero.progress.lp} · золото ${g.gold}`),
+      h('h1', 'Ремёсла и добыча'),
+      h('div.r2-npc', pxIcon(MERCHANT_FACE[id as MerchantId] ?? 'npc', 96, 'r2-npcface'), h('div', h('h2', `${MERCHANTS[id as MerchantId].name} · обучение`), h('div.r2-sub', `${MERCHANTS[id as MerchantId].role} · ${MERCHANTS[id as MerchantId].place}`)),
+        h('div.r2-chips', h('span.r2-chip.lp', pxIcon('lp', 28), `LP ${this.s.hero.progress.lp}`), h('span.r2-chip', pxIcon('coins', 28), `${g.gold}`))),
       h('div.r2-rule'),
       TEACHES[id].map((t) => {
         const p = trainProblem(c, id, t.id);
         return h(
           'div.r2-card',
-          h('div.r2-card-h', h('span', t.name), knows(g, t.id) ? h('span.r2-req.ok', 'изучено') : h('small', `${t.lp} LP · ${t.gold} зол.${t.attr ? ` · ${t.attr.toUpperCase()} ${t.threshold}` : ''}`)),
+          h('div.r2-card-h', pxIcon(TEACH_ICON[id] ?? 'book', 44, 'r2-cico'), h('span', t.name), knows(g, t.id) ? h('span.r2-req.ok', 'изучено') : h('small', `${t.lp} LP · ${t.gold} зол.${t.attr ? ` · ${t.attr.toUpperCase()} ${t.threshold}` : ''}`)),
           t.effect ? h('p', t.effect) : null,
           knows(g, t.id) ? null : this.btn('Изучить', p, () => this.act(train(this.ctxC(), id, t.id), `Изучено: ${t.name}`, again), true),
         );
@@ -342,7 +357,8 @@ export class EconomyScreens {
     const weapons = g.items.filter((i) => isGear(i.tpl) && /sword|bow|staff/.test(i.tpl));
     const body = h(
       'div',
-      h('h1', 'Бран · улучшение оружия'),
+      h('h1', 'Кузнечное улучшение'),
+      h('div.r2-npc', pxIcon('npc-smith', 96, 'r2-npcface'), h('div', h('h2', 'Бран · улучшение оружия'), h('div.r2-sub', 'Кузнец'))),
       h('div.r2-sub', `Золото ${g.gold} · уголь ${stackCount(g, 'coal')} · железо ${stackCount(g, 'iron')} · сталь ${stackCount(g, 'steel')} · укреплённые ${stackCount(g, 'alloy')}`),
       h('div.r2-rule'),
       weapons.length
@@ -379,7 +395,7 @@ export class EconomyScreens {
       const p = craftProblem(this.ctxC(), st, r.id, 1);
       return h(
         'div.r2-card',
-        h('div.r2-card-h', h('span', r.name), h('small', `${PROFESSION_NAME[r.profession]} ${'I'.repeat(r.tier)}`)),
+        h('div.r2-card-h', pxIcon(iconForKey(r.id), 44, 'r2-cico'), h('span', r.name), h('small', `${PROFESSION_NAME[r.profession]} ${'I'.repeat(r.tier)}`)),
         h('p', r.effect),
         need,
         res,
@@ -388,7 +404,8 @@ export class EconomyScreens {
     });
     const body = h(
       'div',
-      h('h1', STATION_NAME[st]),
+      h('h1', 'Изготовление'),
+      h('div.r2-npc', pxIcon(st === 'forge' ? 'anvil' : st === 'alchemy' ? 'alchemy' : 'cauldron', 96, 'r2-npcface'), h('div', h('h2', STATION_NAME[st]), h('div.r2-sub', 'Рабочее место'))),
       h('div.r2-sub', `Ступени: кузнечное дело ${g.crafts.smith}, алхимия ${g.crafts.alchemy}, кулинария ${g.crafts.cooking}`),
       h('div.r2-rule'),
       list,

@@ -12,6 +12,12 @@ import {
 } from '../story/quests';
 import { BESTIARY, BESTIARY_BY_ID, DESTINATIONS, POIS, SLEEP_HOURS, WAYSTONES, wakeAt, type StoryData } from '../story/world';
 import type { SceneMenus } from './menus';
+import { hasIcon, pxIcon } from '../../ui/pixelIcons';
+
+/** Pixel portrait of an NPC (generic face when it has none of its own). */
+const npcIcon = (id: string) => (hasIcon('npc-' + id) ? 'npc-' + id : 'npc');
+/** A dialogue answer line with its icon (mockup hud-18). */
+const ans = (ico: string, label: string, fn: () => void, title?: string) => h('button.r2-btn.r2-ans', { onclick: fn, title }, pxIcon(ico, 32), h('span', label));
 
 /** What the stage 5 windows borrow from the scene. */
 export interface StoryHost {
@@ -81,7 +87,7 @@ export class StoryScreens {
     // final turn-ins (the «?» lines) and their states
     for (const d of turnInsAt(c, npc)) {
       if (!isReady(c, d.id)) {
-        lines.push(h('div.r2-card', h('div.r2-card-h', h('span', `«${d.name}»`), h('small', 'в процессе')), this.objectives(d)));
+        lines.push(h('div.r2-card', h('div.r2-card-h', pxIcon('quest-active', 40, 'r2-cico'), h('span', `«${d.name}»`), h('small', 'в процессе')), this.objectives(d)));
         continue;
       }
       const go = (choice?: string) => {
@@ -95,7 +101,7 @@ export class StoryScreens {
       const reward = this.rewardText(d);
       lines.push(
         h('div.r2-card',
-          h('div.r2-card-h', h('span', `Сдать задание «${d.name}»`), h('small', reward)),
+          h('div.r2-card-h', pxIcon('mark-turnin', 40, 'r2-cico'), h('span', `Сдать задание «${d.name}»`), h('small', reward)),
           d.reward.choice
             ? h('div.r2-row', d.reward.choice.map((w) => this.btn(`Взять: ${WEAPON_NAMES[w] ?? w}`, turnInProblem(c, d.id, npc, w), () => go(w), true)))
             : this.btn('Сдать задание', turnInProblem(c, d.id, npc), () => go(), true),
@@ -121,7 +127,7 @@ export class StoryScreens {
     for (const d of offersOf(c, npc))
       lines.push(
         h('div.r2-card',
-          h('div.r2-card-h', h('span', `Задание: ${d.name}`), h('small', `${QUEST_TYPE[d.type]} · ${d.main ? 'основное' : 'побочное'}`)),
+          h('div.r2-card-h', pxIcon('mark-quest', 40, 'r2-cico'), h('span', `Задание: ${d.name}`), h('small', `${QUEST_TYPE[d.type]} · ${d.main ? 'основное' : 'побочное'}`)),
           h('p', `«${d.intro}»`),
           h('p.r2-note', `${this.rewardText(d)}`),
           this.btn('Принять', null, () => {
@@ -134,20 +140,19 @@ export class StoryScreens {
         ),
       );
     const svc: HTMLElement[] = [];
-    if (npc === 'arden' || npc === 'hira' || npc === 'alchemist') svc.push(this.btn(npc === 'alchemist' ? 'Характеристики и магия' : 'Обучение', null, () => this.s.service(npc, 'mentor')));
-    if (n.merchant) svc.push(this.btn('Торговля', null, () => this.s.service(npc, 'trade')));
-    if (TEACHES[npc as TeacherId]?.length) svc.push(this.btn(npc === 'alchemist' ? 'Алхимия и редкие травы' : 'Обучение ремеслу', null, () => this.s.service(npc, 'training')));
-    if (npc === 'smith') svc.push(this.btn('Улучшение оружия', null, () => this.s.service(npc, 'forge')));
+    if (npc === 'arden' || npc === 'hira' || npc === 'alchemist') svc.push(ans('book', npc === 'alchemist' ? 'Характеристики и магия' : 'Обучение', () => this.s.service(npc, 'mentor')));
+    if (n.merchant) svc.push(ans('coins', 'Торговля', () => this.s.service(npc, 'trade')));
+    if (TEACHES[npc as TeacherId]?.length) svc.push(ans(npc === 'alchemist' ? 'alchemy' : 'anvil', npc === 'alchemist' ? 'Алхимия и редкие травы' : 'Обучение ремеслу', () => this.s.service(npc, 'training')));
+    if (npc === 'smith') svc.push(ans('sword', 'Улучшение оружия', () => this.s.service(npc, 'forge')));
     const body = h(
       'div',
-      h('h1', n.name),
-      h('div.r2-sub', `${n.role} · ${n.place}`),
-      h('div.r2-rule'),
+      h('h1', 'Диалог'),
+      h('div.r2-npc', pxIcon(npcIcon(npc), 112, 'r2-npcface'), h('div', h('h2', n.name), h('div.r2-sub', `${n.role} · ${n.place}`))),
       h('p.r2-say', `«${this.answer || n.greeting}»`),
-      n.topics.length ? h('div.r2-row', n.topics.map(([q, a]) => h('button.r2-btn.small', { onclick: () => again(a) }, q))) : null,
+      h('div.r2-rule'),
+      h('h3', 'Ваш ответ'),
+      h('div.r2-answers', n.topics.map(([q, a]) => ans('chat', q, () => again(a))), svc, ans('exit', 'До встречи', () => this.s.menus.close('dialog'))),
       lines.length ? h('div', h('h3', 'Задания'), lines) : null,
-      svc.length ? h('div', h('h3', 'Услуги'), h('div.r2-row', svc)) : null,
-      h('button.r2-btn.small', { onclick: () => this.s.menus.close('dialog') }, 'До встречи'),
     );
     this.show('dialog', body);
   }
@@ -172,7 +177,7 @@ export class StoryScreens {
       const ready = isReady(c, d.id);
       return h(
         'div.r2-card',
-        h('div.r2-card-h', h('span', d.name), h('small', `${QUEST_TYPE[d.type]} · ${d.main ? 'основное' : 'побочное'} · ${npcName(d.npc)}`)),
+        h('div.r2-card-h', pxIcon(status === 'active' ? 'quest-active' : status === 'done' ? 'quest-done' : 'quest-failed', 44, 'r2-cico'), h('span', d.name), h('small', `${QUEST_TYPE[d.type]} · ${d.main ? 'основное' : 'побочное'} · ${npcName(d.npc)}`)),
         h('p', d.text),
         h('p.r2-note', d.direction),
         status === 'active' ? this.objectives(d) : null,
@@ -190,7 +195,7 @@ export class StoryScreens {
       'div',
       h('h1', 'Журнал'),
       h('div.r2-rule'),
-      h('div.r2-tabs', ([['active', 'Активные'], ['done', 'Выполненные'], ['failed', 'Проваленные']] as const).map(([t, l]) => h('button.r2-btn.small' + (tab === t ? '.sel' : ''), { onclick: () => this.journal(t) }, l))),
+      h('div.r2-tabs', ([['active', 'Активные', 'quest-active'], ['done', 'Выполненные', 'quest-done'], ['failed', 'Проваленные', 'quest-failed']] as const).map(([t, l, ico]) => h('button.r2-btn.small' + (tab === t ? '.sel' : ''), { onclick: () => this.journal(t) }, pxIcon(ico, 28, 'r2-tabico'), l))),
       list.length ? list : h('p.r2-note', 'Пусто.'),
       q.tokens.length ? h('div', h('h3', 'Предметы заданий'), q.tokens.map((t) => h('div', TOKEN_NAMES[t]))) : null,
       h('h3', 'История'),
@@ -317,7 +322,7 @@ export class StoryScreens {
             const rank = RANKS[b.rank];
             return h(
               'div.r2-card',
-              h('div.r2-card-h', h('span', b.name), h('small', full ? `уровень ${b.level} · ${rank?.name ?? b.rank}` : 'встречен')),
+              h('div.r2-card-h', pxIcon(/bandit|разбой/i.test(b.id + b.name) ? 'bandit' : /wolf|fang|волк|клык/i.test(b.id + b.name) ? 'wolf' : 'enemy', 52, 'r2-cico'), h('span', b.name), h('small', full ? `уровень ${b.level} · ${rank?.name ?? b.rank}` : 'встречен'), full ? pxIcon('check', 24) : pxIcon('eye', 24)),
               full
                 ? h('div',
                     h('div.r2-note', `HP ${b.hp} · броня ${b.armor} · RES ${b.res} · урон ${b.damage} (${b.damageType}) раз в ${String(b.interval).replace('.', ',')} с · ${b.xp} XP`),
@@ -340,16 +345,20 @@ export class StoryScreens {
     const { day, minutes } = this.s.clock();
     const body = h(
       'div',
-      h('h1', 'Кровать героя'),
+      h('h1', 'Сон'),
+      h('div.r2-npc', pxIcon('bed', 96, 'r2-npcface'), h('div', h('h2', 'Кровать героя'), h('div.r2-sub', 'Сон бесплатный'))),
       h('div.r2-sub', `Сейчас: день ${day + 1}, ${formatClock(minutes)}`),
       h('div.r2-rule'),
       SLEEP_HOURS.map((hr) => {
         const w = wakeAt(day, minutes, hr);
-        return this.btn(`Спать до ${String(hr).padStart(2, '0')}:00 — проснуться: день ${w.day + 1}, ${formatClock(w.minutes)}`, this.s.inCombat() ? 'Спать можно только вне боя' : null, () => {
+        const b = this.btn(`Спать до ${String(hr).padStart(2, '0')}:00 — проснуться: день ${w.day + 1}, ${formatClock(w.minutes)}`, this.s.inCombat() ? 'Спать можно только вне боя' : null, () => {
           const r = this.s.sleep(hr);
           if (r) return this.s.toast(r);
           this.s.menus.close('bed');
         });
+        b.classList.add('r2-ans');
+        b.prepend(pxIcon(hr >= 21 || hr < 5 ? 'moon-night' : 'sun', 32));
+        return b;
       }),
       h('p.r2-note', 'Сон полностью восстанавливает HP, MP и ST, завершает все перезарядки и снимает контроль. Таймеры возрождения, тел и автосохранения во сне не идут.'),
       h('button.r2-btn.small', { onclick: () => this.s.menus.close('bed') }, 'Отмена'),
@@ -365,7 +374,7 @@ export class StoryScreens {
     const body = h(
       'div',
       h('h1', w.name),
-      h('div.r2-sub', active ? 'Камень активирован.' : 'Камень не активирован.'),
+      h('div.r2-npc', pxIcon(active ? 'waystone' : 'waystone-off', 96, 'r2-npcface'), h('div', h('h2', 'Путевой камень'), h('div.r2-sub', active ? 'Камень активирован.' : 'Камень не активирован.'))),
       h('div.r2-rule'),
       active
         ? others.length

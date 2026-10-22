@@ -14,6 +14,7 @@ import { MAX_LEVEL, xpForLevel } from '../growth/levels';
 import { TALENTS, TIER_REQ, TREE_NAME, talentProblem, talentResetCost, type TreeId } from '../growth/talents';
 import { STAT_IDS, STAT_NAMES, type HeroState, type StatId } from '../hero';
 import type { SceneMenus } from './menus';
+import { pxIcon } from '../../ui/pixelIcons';
 
 /** What the stage 3 screens need from the scene. */
 export interface GrowthHost {
@@ -88,8 +89,33 @@ export class GrowthScreens {
     return { g: s.growth, hero: s.hero, learned: s.combat.data.learned, om: s.combat.data.om, inCombat: s.inCombat() };
   }
 
+  /** Side list of the hero windows (mockups hud-08…13): switches between them in place. */
+  private nav(id: string): HTMLElement {
+    const items: [string, string, string, () => void][] = [
+      ['character', 'hero', 'Персонаж', () => this.character()],
+      ['inventory', 'backpack', 'Инвентарь', () => this.inventory()],
+      ['dev-sword', 'book', 'Умения', () => this.development(this.devTab === 'bow' ? 'bow' : 'sword')],
+      ['dev-talents', 'trophy', 'Таланты', () => this.development('talents')],
+      ['dev-magic', 'mp', 'Магия', () => this.development('magic')],
+    ];
+    const cur = id === 'development' ? (this.devTab === 'talents' ? 'dev-talents' : this.devTab === 'magic' ? 'dev-magic' : 'dev-sword') : id;
+    return h(
+      'nav.r2-side',
+      items.map(([key, ico, label, open]) =>
+        h('button.r2-sidebtn' + (key === cur ? '.sel' : ''), {
+          onclick: () => {
+            if (key === cur) return;
+            this.s.menus.close(id);
+            open();
+          },
+        }, pxIcon(ico, 40), h('span', label)),
+      ),
+    );
+  }
+
   /** Rebuilds a window keeping its scroll position. */
   private show(id: string, body: HTMLElement) {
+    if (id === 'character' || id === 'inventory' || id === 'development') body = h('div.r2-split', this.nav(id), h('div.r2-splitmain', body));
     const old = document.querySelector(`.r2-menu-${id} .r2-win`) as HTMLElement | null;
     const top = old?.scrollTop ?? 0;
     this.s.menus.show(id, body);
@@ -114,7 +140,7 @@ export class GrowthScreens {
   character() {
     const { hero, growth: g, combat: c } = this.s;
     const p = hero.progress;
-    const kv = (k: string, v: string | number, title = '') => [h('span', { title }, k), h('b', String(v))];
+    const kv = (k: string, v: string | number, title = '', ico = '') => [h('span', { title }, ico ? pxIcon(ico, 22, 'r2-kvico') : null, k), h('b', String(v))];
     const next = p.level >= MAX_LEVEL ? '—' : `${p.xp - xpForLevel(p.level)} / ${xpForLevel(p.level + 1) - xpForLevel(p.level)}`;
     const w = c.weapon;
     const b = c.bonus;
@@ -129,15 +155,15 @@ export class GrowthScreens {
         kv('Уровень', p.level),
         kv('Опыт до следующего', next),
         kv('Всего опыта', p.xp),
-        kv('Очки обучения (LP)', p.lp),
-        kv('Очки талантов (ОТ)', p.tp),
-        kv('Золото', g.gold),
+        kv('Очки обучения (LP)', p.lp, '', 'lp'),
+        kv('Очки талантов (ОТ)', p.tp, '', 'ot'),
+        kv('Золото', g.gold, '', 'gold'),
         h('h3', 'Характеристики (обучаются у наставников)'),
-        STAT_IDS.map((s) => kv(STAT_NAMES[s], hero.stats[s], `Следующий пункт: ${statCost(hero.stats[s]).lp} LP + ${statCost(hero.stats[s]).gold} зол.`)),
+        STAT_IDS.map((s) => kv(STAT_NAMES[s], hero.stats[s], `Следующий пункт: ${statCost(hero.stats[s]).lp} LP + ${statCost(hero.stats[s]).gold} зол.`, s)),
         h('h3', 'Запасы'),
-        kv('Здоровье (HP)', `${Math.floor(hero.hp)} / ${hero.maxHp}`),
-        kv('Мана (MP)', `${Math.floor(hero.mp)} / ${hero.maxMp}`),
-        kv('Выносливость (ST)', `${Math.floor(hero.st)} / ${hero.maxSt}`),
+        kv('Здоровье (HP)', `${Math.floor(hero.hp)} / ${hero.maxHp}`, '', 'hp'),
+        kv('Мана (MP)', `${Math.floor(hero.mp)} / ${hero.maxMp}`, '', 'mp'),
+        kv('Выносливость (ST)', `${Math.floor(hero.st)} / ${hero.maxSt}`, '', 'st'),
         h('h3', 'Бой'),
         kv('Оружие', `${w.name} (${w.damage} × ${fmt(b.baseMul)}, ${fmt(w.aps * b.atkSpeed)} атак/с)`),
         kv('Множитель характеристики', `×${fmt(1 + hero.stats[w.attr] / 100)} (${w.attr.toUpperCase()})`),
@@ -149,10 +175,10 @@ export class GrowthScreens {
         (['sword', 'bow', 'staff'] as WeaponFamily[]).map((f) => {
           const m = masteryOf(c.data.om[f]);
           const nx = m >= 100 ? '' : ` · до ${m + 1}: ${masteryThreshold(m + 1) - c.data.om[f]} ОМ`;
-          return kv(FAMILY_NAME[f], `${m} — ${rankName(m)}${nx}`);
+          return kv(FAMILY_NAME[f], `${m} — ${rankName(m)}${nx}`, '', f);
         }),
         h('h3', 'Прочее'),
-        kv('Малые зелья HP', g.stacks.potionHP1 ?? 0),
+        kv('Малые зелья HP', g.stacks.potionHP1 ?? 0, '', 'potion-hp'),
         kv('Побеждено противников', c.data.kills),
       ),
       h('div', { style: 'margin-top:14px' }, h('button.r2-btn.small', { onclick: () => this.s.menus.close('character') }, 'Закрыть')),
@@ -237,7 +263,7 @@ export class GrowthScreens {
       const learned = c.learned.includes(sk.id);
       const card = h(
         'div.r2-card',
-        h('div.r2-card-h', h('b', sk.name), h('small', ` ${sk.st} ST · откат ${fmt(sk.cd)} с${sk.prep ? ` · подготовка ${fmt(sk.prep)} с` : ''}`), learned ? h('span.r2-req.ok', ' Изучено') : null),
+        h('div.r2-card-h', pxIcon(sk.id, 48, 'r2-cico'), h('b', sk.name), h('small', ` ${sk.st} ST · откат ${fmt(sk.cd)} с${sk.prep ? ` · подготовка ${fmt(sk.prep)} с` : ''}`), learned ? h('span.r2-req.ok', ' Изучено') : null),
         h('div', this.req(this.s.hero.stats[attr] >= sk.attr, `${attr.toUpperCase()} ${sk.attr}`), ' ', this.req(m >= sk.mastery, `мастерство ${sk.mastery}`), ' ', h('span.r2-req', `${sk.lp} LP + ${sk.gold} зол.`)),
       );
       if (!learned) {
@@ -267,7 +293,7 @@ export class GrowthScreens {
         const learned = c.learned.includes(sp.id);
         const card = h(
           'div.r2-card',
-          h('div.r2-card-h', h('b', `${ROMAN[sp.tier - 1]}. ${sp.name}`), h('small', ` ${sp.hits.join(' + ')} урона · ${sp.mp} MP · откат ${fmt(sp.cd)} с · подготовка ${fmt(sp.cast)} с · ${sp.range} м`), learned ? h('span.r2-req.ok', ' Изучено') : null),
+          h('div.r2-card-h', pxIcon(sp.id, 48, 'r2-cico'), h('b', `${ROMAN[sp.tier - 1]}. ${sp.name}`), h('small', ` ${sp.hits.join(' + ')} урона · ${sp.mp} MP · откат ${fmt(sp.cd)} с · подготовка ${fmt(sp.cast)} с · ${sp.range} м`), learned ? h('span.r2-req.ok', ' Изучено') : null),
           h('div', this.req(c.g.circles >= sp.tier, `круг ${ROMAN[sp.tier - 1]}`), ' ', this.req(this.s.hero.stats.int >= CIRCLES[sp.tier - 1].int, `INT ${CIRCLES[sp.tier - 1].int}`), ' ', this.req(m >= CIRCLES[sp.tier - 1].mastery, `мастерство ${CIRCLES[sp.tier - 1].mastery}`), ' ', h('span.r2-req', `${sp.lp} LP + ${sp.gold} зол.`)),
         );
         if (!learned) {
@@ -290,7 +316,7 @@ export class GrowthScreens {
         for (const t of TALENTS.filter((x) => x.tree === tree && x.branch === br)) {
           const has = c.g.talents.includes(t.id);
           const prob = has ? null : talentProblem(t.id, c.g.talents, p.level, p.tp, c.inCombat);
-          const node = h('div.r2-talent' + (has ? '.on' : prob ? '.off' : ''), h('b', `${ROMAN[t.tier - 1]}. ${t.name}`), h('div.r2-note', t.effect), h('small', `уровень ${TIER_REQ[t.tier].level}, в дереве ≥ ${TIER_REQ[t.tier].spent} ОТ · 1 ОТ`));
+          const node = h('div.r2-talent' + (has ? '.on' : prob ? '.off' : ''), pxIcon(({ phys: 'str', magic: 'ot', surv: 'hp' } as Record<string, string>)[tree] ?? 'star', 32, 'r2-tico'), h('b', `${ROMAN[t.tier - 1]}. ${t.name}`), h('div.r2-note', t.effect), h('small', `уровень ${TIER_REQ[t.tier].level}, в дереве ≥ ${TIER_REQ[t.tier].spent} ОТ · 1 ОТ`));
           if (!has) node.append(this.btn('Изучить', prob, () => this.s.menus.confirm(`Изучить «${t.name}» за 1 ОТ? Отменить можно только полным платным сбросом у наставника.`, () => this.act(learnTalent(this.ctx(), t.id), `Талант изучен: ${t.name}`, () => this.development('talents')))));
           col.append(node);
         }
@@ -313,7 +339,7 @@ export class GrowthScreens {
       content = h('div.r2-kv');
       for (const s of md.stats) {
         const k = statCost(this.s.hero.stats[s]);
-        content.append(h('span', `${STAT_NAMES[s]}: ${this.s.hero.stats[s]}`), h('span', h('small', `+1 за ${k.lp} LP + ${k.gold} зол. `), this.btn('+1', statProblem(c, id, s), () => this.act(trainStat(this.ctx(), id, s), `${STAT_NAMES[s]}: ${this.s.hero.stats[s] + 1}`, again), true)));
+        content.append(h('span', pxIcon(s, 22, 'r2-kvico'), `${STAT_NAMES[s]}: ${this.s.hero.stats[s]}`), h('span', h('small', `+1 за ${k.lp} LP + ${k.gold} зол. `), this.btn('+1', statProblem(c, id, s), () => this.act(trainStat(this.ctx(), id, s), `${STAT_NAMES[s]}: ${this.s.hero.stats[s] + 1}`, again), true)));
       }
     } else if (tab === 'learn') content = md.teaches === 'magic' ? this.magicView(c, id) : this.skillsView(c, md.teaches, id);
     else {
@@ -357,7 +383,7 @@ export class GrowthScreens {
       const el = h(
         'div.r2-item',
         { style: `border-color:${r.color}` },
-        h('div.r2-card-h', h('b', { style: `color:${r.color}` }, itemName(it)), h('small', ` ${r.name}`), it.fav ? h('span', ' ★') : null, worn ? h('span.r2-req.ok', ' Надето') : null, qi >= 0 ? h('span.r2-req', ` Tab ${qi + 1}`) : null),
+        h('div.r2-card-h', pxIcon(w ? (w.kind === 'greatsword' ? 'greatsword' : w.family) : a ? a.slot : 'material', 40, 'r2-cico'), h('b', { style: `color:${r.color}` }, itemName(it)), h('small', ` ${r.name}`), it.fav ? h('span', ' ★') : null, worn ? h('span.r2-req.ok', ' Надето') : null, qi >= 0 ? h('span.r2-req', ` Tab ${qi + 1}`) : null),
         h('div.r2-note', lines.join(' ')),
         it.affixes.map((x) => h('div.r2-affix', affixText(x))),
         w && it.rarity === 'legendary' ? h('div.r2-legend', `${LEGENDARY[w.kind].name}: ${LEGENDARY[w.kind].effect}`) : null,

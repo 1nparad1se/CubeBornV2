@@ -748,8 +748,10 @@ export function pxIcon(name: string, size = 32, cls = ''): HTMLElement {
 }
 
 /** Icon name for an RPG item template (weapon family, armor slot, tool, rune) or a stack key. */
+const RECIPE_ICON: Record<string, string> = { ingot1: 'iron', ingot2: 'steel', ingot3: 'alloy', armor1: 'helm', armor2: 'legs', armor3: 'helm', sword2: 'sword-steel' };
 export function iconForKey(key: string, hint?: { slot?: string; family?: string }): string {
   if (D[key]) return key;
+  if (RECIPE_ICON[key]) return RECIPE_ICON[key];
   if (hint?.family) return hint.family === 'greatsword' ? 'greatsword' : hint.family;
   if (hint?.slot) return hint.slot === 'weapon' ? 'sword' : hint.slot;
   const k = key.toLowerCase();
