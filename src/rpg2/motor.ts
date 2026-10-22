@@ -97,6 +97,10 @@ export class HeroMotor {
   stunLeft = 0;
   /** Movement slow 0..1 (one effect, D019); set by effects. */
   slow = 0;
+  /** Speed factor of the current combat state (block 50 %, aim / preparation 70 %; D166, D194, D195). */
+  moveMul = 1;
+  /** Sprint is not allowed now (block, aim, preparation). */
+  noSprint = false;
   /** Visual easing of steps (renderer adds it to y). */
   stepY = 0;
 
@@ -245,7 +249,7 @@ export class HeroMotor {
       }
     } else {
       let speed = this.mode === 'swim' ? SPEED.swim : this.walk ? SPEED.walk : SPEED.run;
-      if (this.mode === 'ground' && this.sprintArmed && moving && hero.st > 0) {
+      if (this.mode === 'ground' && this.sprintArmed && !this.noSprint && moving && hero.st > 0) {
         // D183: forward and front diagonals relative to the body only
         const cos = (ix * this.fx + iz * this.fz) / Math.max(1e-6, Math.hypot(ix, iz));
         const forward = cos >= Math.cos((SPRINT.maxAngleDeg * Math.PI) / 180);
@@ -253,7 +257,7 @@ export class HeroMotor {
         if (forward && (this.sprinting || hero.st >= SPRINT.minToStart)) sprintNow = true;
       }
       if (sprintNow) speed = SPEED.sprint;
-      speed *= slowMul;
+      speed *= slowMul * this.moveMul;
       const k = 1 - Math.exp(-30 * dt);
       this.vx += (ix * speed - this.vx) * k;
       this.vz += (iz * speed - this.vz) * k;
