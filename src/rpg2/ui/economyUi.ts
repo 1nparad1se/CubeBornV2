@@ -1,7 +1,7 @@
 import { h } from '../../ui/dom';
 import type { CombatSystem } from '../combat/system';
 import { isEquipped, type GrowthData } from '../growth/growth';
-import { RARITIES, RARITY, affixText, isGear, itemName, upgradeName, type Item, type Upgrade } from '../growth/items';
+import { RARITIES, RARITY, affixText, isGear, isRune, itemName, upgradeName, type Item, type Upgrade } from '../growth/items';
 import type { HeroState } from '../hero';
 import { putItem, putItemProblem, putStack, stackCount, takeAll, takeEntry, takeGold, trophyProblem, entryName, type Container, type Entry } from '../economy/bag';
 import { CAT_NAME, STACK_MAX, consumableDef, itemBuyPrice, itemCat, sellUnit, stackBuyPrice, stackCat, stackName, type GoodsCat } from '../economy/goods';
@@ -34,6 +34,9 @@ export interface EconomyHost {
   busy(): string | null;
   /** Opens the magic / stats mentor window of Мира (stage 3). */
   mentor(id: 'mira'): void;
+  /** Stage 5: why a rune cannot be used now, and its use (D066 / D067: reusable, closes the window). */
+  runeProblem?(tpl: string): string | null;
+  useRune?(tpl: string): void;
 }
 
 const HINT_TAKE_ALL = 'Переносит в инвентарь все доступные предметы и золото, включая скрытые фильтром. Трофеи без нужного ножа или ступени охоты остаются в теле.';
@@ -124,7 +127,9 @@ export class EconomyScreens {
     });
     const tools = g.items.filter((i) => !isGear(i.tpl) && matches(f, itemCat(i), itemName(i)));
     const toolRows = this.sortEntries(tools, itemName, itemBuyPrice, () => 0, f).map((it) =>
-      h('div.r2-goods', h('span', h('b', itemName(it)), h('small', ` · ${CAT_NAME[itemCat(it)]}`)), h('span', it.fav ? '★' : ''), h('div.r2-item-btns', this.btn(it.fav ? 'Снять отметку ★' : 'Избранное ★', null, () => { it.fav = !it.fav; again(); }))),
+      h('div.r2-goods', h('span', h('b', itemName(it)), h('small', ` · ${CAT_NAME[itemCat(it)]}`)), h('span', it.fav ? '★' : ''), h('div.r2-item-btns',
+        isRune(it.tpl) && this.s.useRune ? this.btn('Использовать', this.s.runeProblem?.(it.tpl) ?? null, () => this.s.useRune!(it.tpl)) : null,
+        this.btn(it.fav ? 'Снять отметку ★' : 'Избранное ★', null, () => { it.fav = !it.fav; again(); }))),
     );
     if (f.cat === 'gear') return h('div');
     return h(

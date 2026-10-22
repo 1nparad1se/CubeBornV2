@@ -28,10 +28,14 @@ import { XP_CAP, addXp } from './growth/levels';
 import { GrowthScreens } from './ui/growthUi';
 import { EconomyScreens } from './ui/economyUi';
 import { EconomyScene } from './economyScene';
-import { newEconomyWorld, type EconomyWorld } from './economy/world';
+import { STATION_SPOTS, newEconomyWorld, type EconomyWorld } from './economy/world';
 import { itemBuyPrice, MATERIAL_NAMES } from './economy/goods';
 import { addStack } from './economy/bag';
 import { useConsumable } from './economy/consumables';
+import { StoryScreens } from './ui/storyUi';
+import { StoryScene } from './storyScene';
+import { CAMPFIRE_RADIUS, DESTINATIONS, RUNE_DEST, wakeAt, newStory, type StoryData } from './story/world';
+import { stackName } from './economy/goods';
 
 /** What the RPG test scene borrows from the app. */
 export interface SceneHost {
@@ -76,6 +80,10 @@ export class TestScene {
   eworld: EconomyWorld = newEconomyWorld(this.growth);
   readonly eco: EconomyScreens;
   ecoScene!: EconomyScene;
+  /** Stage 5: quests, journal, bestiary, places, waystones, runes, map marks. */
+  story: StoryData = newStory();
+  readonly storyUi: StoryScreens;
+  storyScene!: StoryScene;
   readonly dev: boolean;
   private devPanel: HTMLElement | null = null;
   /** Intent of the current frame; edge presses are used by the first simulation step only. */
@@ -126,6 +134,34 @@ export class TestScene {
       nextUid: () => 'i' + this.growth.nextUid++,
       busy: () => this.consumableBusy(),
       mentor: (id) => this.screens.mentor(id),
+      runeProblem: (tpl) => this.storyScene?.travelProblem('rune', tpl, this.hero.inCombat) ?? null,
+      useRune: (tpl) => this.startTravel('rune', tpl),
+    });
+    this.storyUi = new StoryScreens({
+      get hero() { return self.hero; },
+      get growth() { return self.growth; },
+      get story() { return self.story; },
+      menus: this.menus,
+      inCombat: () => this.hero.inCombat,
+      toast: (t) => this.hud.toast(t),
+      changed: () => this.growthChanged(),
+      nextUid: () => 'i' + this.growth.nextUid++,
+      clock: () => ({ day: this.time.clock.days, minutes: this.time.clock.minutes }),
+      service: (npc, svc) => {
+        if (svc === 'mentor') return this.screens.mentor(npc === 'alchemist' ? 'mira' : (npc as MentorId));
+        if (svc === 'trade') return this.eco.trade(npc as never);
+        if (svc === 'training') return this.eco.training(npc as never);
+        return this.eco.forge();
+      },
+      questDone: () => {
+        if (this.save('event')) this.hud.toast('Автосохранение: задание выполнено');
+      },
+      sleep: (hr) => this.sleep(hr),
+      activateStone: (id) => this.storyScene.activateStone(id, this.hero.inCombat),
+      travel: (kind, dest) => this.startTravel(kind, dest),
+      heroPos: () => ({ x: this.motor.x, z: this.motor.z, yaw: this.host.renderer.rig.yaw }),
+      ground: (x, z) => this.site.ground.top(x, z),
+      get size() { return self.site.map.size; },
     });
     // D208 / D211: a menu stops sprint, drops queued presses and frees the cursor
     this.pause.onPause = () => {
@@ -137,6 +173,7 @@ export class TestScene {
       this.skillIdx = null;
       this.combat?.onMenu();
       this.ecoScene?.cancelGather();
+      this.storyScene?.cancelTravel('Перемещение отменено: открыто окно');
       this.intent = { ...NO_INTENT };
       this.input.releaseLock();
     };
@@ -175,6 +212,45 @@ export class TestScene {
       keyName: () => codeName(this.controls.binds.interact[0] ?? 'KeyE'),
       addObject: (o) => this.host.renderer.addRunObject(o),
       label: (t) => labelSprite(t),
+      openDialog: (npc) => this.storyUi.dialog(npc),
+      extraTargets: () => this.storyScene.targets(),
+      extraHint: (t, inCombat, k) => {
+        if (t.kind === 'npc') return inCombat ? `${t.name}: в бою разговор недоступен` : `${k} — говорить: ${t.name}`;
+        if (t.kind === 'bed') return inCombat ? 'Спать можно только вне боя' : `${k} — лечь спать`;
+        if (t.kind === 'stone') return inCombat ? `${t.name}: только вне боя` : `${k} — ${t.name}`;
+        return `${k} — осмотреть: ${t.name}`;
+      },
+      useExtra: (t, inCombat) => {
+        if (t.kind === 'arch') {
+          this.hud.toast(this.storyScene.examineArch());
+          return false;
+        }
+        if (inCombat) {
+          this.hud.toast(t.kind === 'npc' ? 'В бою разговор недоступен' : 'Только вне боя');
+          return false;
+        }
+        if (t.kind === 'npc') this.storyUi.dialog(t.id);
+        else if (t.kind === 'bed') this.storyUi.bed();
+        else this.storyUi.waystone(t.id);
+        return true;
+      },
+    }, this.host.root);
+    this.storyScene = new StoryScene({
+      get hero() { return self.hero; },
+      get growth() { return self.growth; },
+      get story() { return self.story; },
+      get motor() { return self.motor; },
+      get combat() { return self.combat; },
+      get ground() { return self.site.ground; },
+      forward: () => this.forward(),
+      clock: () => ({ day: this.time.clock.days, minutes: this.time.clock.minutes }),
+      toast: (t) => this.hud.toast(t),
+      addObject: (o) => this.host.renderer.addRunObject(o),
+      label: (t) => labelSprite(t),
+      teleport: (x, z) => this.placeHero(x, z),
+      eventSave: () => {
+        if (this.save('event')) this.hud.toast('Автосохранение: первый путевой камень');
+      },
     }, this.host.root);
     this.input.active = true;
     this.input.live = true;
@@ -217,6 +293,7 @@ export class TestScene {
     this.hud.dispose();
     this.devPanel?.remove();
     this.ecoScene?.dispose();
+    this.storyScene?.dispose();
     window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('visibilitychange', this.onBlur);
     if ((window as unknown as { rpg2?: TestScene }).rpg2 === this) delete (window as unknown as { rpg2?: TestScene }).rpg2;
@@ -266,6 +343,10 @@ export class TestScene {
     this.host.worldMap.draw(this.world);
     this.ecoScene.syncView();
     this.ecoScene.updateHint(this.pause.paused, this.hero.inCombat);
+    this.storyScene.updateMarkers();
+    this.storyScene.updateTrack(this.pause.paused);
+    const g = this.growth;
+    this.hud.setPotions((['hp', 'mp', 'st'] as const).map((k) => ({ name: stackName(g.potionSel[k]), count: g.stacks[g.potionSel[k]] ?? 0, cd: g.potionCd })));
   }
 
   /** Camera forward on the ground (unit x / z). */
@@ -279,7 +360,9 @@ export class TestScene {
     const pr = inp.takePresses();
     // window hotkeys (open full-screen menus: the world stops this frame)
     if (pr.has('inventory')) return this.toggleInventory(true);
-    if (pr.has('map')) return this.toggleMap(true);
+    if (pr.has('map')) return this.storyUi.map();
+    if (pr.has('journal')) return this.storyUi.journal();
+    if (pr.has('bestiary')) return this.storyUi.bestiary();
     if (pr.has('character')) return this.openCharacter();
     if (pr.has('progress')) return this.screens.development();
     if (pr.has('interact') && !this.ecoScene.gather && this.ecoScene.interact(this.hero.inCombat)) return;
@@ -293,7 +376,7 @@ export class TestScene {
     potion('potionSt', 'st');
     if (pr.has('quickSave')) this.quickSave();
     if (pr.has('quickLoad')) return this.quickLoad();
-    for (const a of ['journal', 'bestiary', 'trade', 'dialog'] as ControlAction[]) if (pr.has(a)) this.hud.toast(`«${actionName(a)}» — появится на следующих этапах`);
+    for (const a of ['trade', 'dialog'] as ControlAction[]) if (pr.has(a)) this.hud.toast(`«${actionName(a)}» — появится на следующих этапах`);
     if (pr.has('walkToggle')) {
       this.motor.walk = !this.motor.walk;
       this.hud.toast(this.motor.walk ? 'Ходьба' : 'Бег');
@@ -362,7 +445,11 @@ export class TestScene {
     const a = c.data.action;
     p.attack = a ? ({ weapon: null, t: a.t, dur: a.dur, hitAt: Math.min(1, a.hitAt / a.dur), done: a.t >= a.hitAt, dirX: a.dirX, dirZ: a.dirZ, seq: a.rec } as unknown as typeof p.attack) : null;
     this.syncWeapon();
-    hero.tick(dt, { campfire: false }, m.sprinting);
+    // D028: a campfire (the cooking stove) within 5 m out of combat: HP / MP regeneration ×5
+    const fire = STATION_SPOTS.find((x) => x.id === 'stove')!;
+    hero.tick(dt, { campfire: !hero.inCombat && Math.hypot(fire.x - m.x, fire.z - m.z) <= CAMPFIRE_RADIUS }, m.sprinting);
+    this.storyScene.tick();
+    this.storyScene.stepTravel(dt, { moving: Math.hypot(this.intent.moveX, this.intent.moveZ) > 0.01, attacking: c.counters.attacks !== attacks0 || !!c.data.action, inCombat: hero.inCombat });
     this.ecoScene.stepGather(dt, this.input.held('interact'), Math.hypot(this.intent.moveX, this.intent.moveZ) > 0.01 || m.mode !== 'ground' || m.dodging, c.counters.attacks !== attacks0 || !!c.data.action);
     this.ecoScene.tick(dt, (x, z) => this.canRespawnAt(x, z, 30));
     this.syncPlayer(dt);
@@ -463,6 +550,9 @@ export class TestScene {
     const top = this.pause.top;
     if (a === 'inventory' && top === 'inventory') this.toggleInventory(false);
     else if (a === 'map' && top === 'map') this.toggleMap(false);
+    else if (a === 'map' && top === 'map2') this.menus.close('map2');
+    else if (a === 'journal' && top === 'journal') this.menus.close('journal');
+    else if (a === 'bestiary' && top === 'bestiary') this.menus.close('bestiary');
     else if (a === 'character' && top === 'character') this.menus.close('character');
     else if (a === 'progress' && top === 'development') this.menus.close('development');
   }
@@ -659,12 +749,12 @@ export class TestScene {
 
   // ------------------------------------------------------------------ saves
   /** Writes the test playthrough (never for a dead hero, D047 / D213). */
-  save(kind: 'manual' | 'quick' | 'auto' | 'exit'): boolean {
+  save(kind: 'manual' | 'quick' | 'auto' | 'exit' | 'event'): boolean {
     if (this.hero.dead) {
       this.lastSave = 'Мёртвого героя сохранить нельзя.';
       return false;
     }
-    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data, growth: this.growth, world: this.eworld });
+    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data, growth: this.growth, world: this.eworld, story: this.story });
     const ok = writePlaythrough(s);
     this.lastSave = ok ? `Сохранено (${kind})` : 'Не удалось записать сохранение: браузер отказал в хранилище.';
     return ok;
@@ -705,7 +795,9 @@ export class TestScene {
     this.motor.loadSave(s.motor);
     this.growth = r.growth;
     this.eworld = r.world;
+    this.story = r.story;
     this.ecoScene?.cancelGather();
+    this.storyScene?.cancelTravel();
     this.installCombat(r.combat);
     this.world.player.attack = null;
     this.input.freeze();
@@ -749,7 +841,9 @@ export class TestScene {
     this.menus.closeAll();
     this.growth = newGrowth(start);
     this.eworld = newEconomyWorld(this.growth);
+    this.story = newStory();
     this.ecoScene?.cancelGather();
+    this.storyScene?.cancelTravel();
     this.hero = new HeroState();
     const t = new ActiveTime();
     this.time.seconds = 0;
@@ -764,6 +858,47 @@ export class TestScene {
     this.syncPlayer(0);
     this.host.renderer.snapTo(this.motor.x, this.motor.z);
     this.input.live = !this.pause.paused;
+  }
+
+  // ------------------------------------------------------------------ stage 5: travel and sleep
+  /** D069: the window closes first, then 5 s of standing still. */
+  startTravel(kind: 'stone' | 'rune', dest: string): string | null {
+    const p = this.storyScene.travelProblem(kind, dest, this.hero.inCombat);
+    if (p) {
+      this.hud.toast(p);
+      return p;
+    }
+    this.menus.closeAll();
+    const r = this.storyScene.startTravel(kind, dest, this.hero.inCombat);
+    if (r) this.hud.toast(r);
+    else this.hud.toast(kind === 'rune' ? `Руна: ${DESTINATIONS[RUNE_DEST[dest]].name} — 5 с подготовки` : 'Подготовка перемещения — 5 с');
+    return r;
+  }
+
+  /**
+   * D081–D083: sleep until the next occurrence of the hour. Full HP / MP / ST, every cooldown and the
+   * potion cooldown end, control effects are removed; active time, respawn, corpse and autosave
+   * timers do not advance (only the clock jumps).
+   */
+  sleep(hour: number): string | null {
+    if (this.hero.inCombat) return 'Спать можно только вне боя';
+    if (this.hero.dead) return 'Герой мёртв';
+    const c = this.time.clock;
+    const w = wakeAt(c.days, c.minutes, hour);
+    c.days = w.day;
+    c.minutes = w.minutes;
+    const hr = this.hero;
+    hr.hp = hr.maxHp;
+    hr.mp = hr.maxMp;
+    hr.st = hr.maxSt;
+    hr.clamp();
+    this.combat.data.cds = {};
+    this.combat.data.normalCd = 0;
+    this.growth.potionCd = 0;
+    this.motor.stunLeft = 0;
+    this.storyScene.cancelTravel();
+    this.hud.toast(`Вы проснулись: день ${w.day + 1}, ${String(hour).padStart(2, '0')}:00`);
+    return null;
   }
 
   /** D199: why consumables cannot be used right now. */
@@ -886,7 +1021,8 @@ export class TestScene {
   /** Replaces the combat system (new playthrough or a loaded record): the enemies of the arena are placed if missing. */
   private installCombat(data: CombatData) {
     const g = this.site.ground;
-    if (!data.enemies.length) data.enemies = arenaEnemies(g);
+    // the arena's enemies; ones added by a later stage (the stage 5 bandits) join an older record
+    for (const e of arenaEnemies(g)) if (!data.enemies.some((x) => x.uid === e.uid)) data.enemies.push(e);
     const wfx = this.world.fx;
     this.combat = new CombatSystem(g, this.hero, this.motor, () => this.world.dummies, {
       number: (x, z, v, crit, col) => wfx.number(x, z, v, crit, col),
@@ -911,6 +1047,7 @@ export class TestScene {
     };
     this.linkGrowth();
     this.combat.onKilled = (e) => this.ecoScene.onKilled(e);
+    this.combat.onCredited = (e) => this.storyScene.onCredited(e);
     if (this.view) this.view.root.parent?.remove(this.view.root);
     this.view = new CombatView(this.combat);
     this.host.renderer.addRunObject(this.view.root);
@@ -1138,6 +1275,11 @@ export class TestScene {
   /** Dev mode only: puts the hero on the ground at (x, z). */
   devTeleport(x: number, z: number) {
     if (!this.dev) return;
+    this.placeHero(x, z);
+  }
+
+  /** Puts the hero on the ground at (x, z) (dev teleport, waystones and runes). */
+  placeHero(x: number, z: number) {
     const s = this.motor.toSave();
     const y = this.site.ground.top(x, z);
     this.motor.loadSave({ ...s, x, z, y, vx: 0, vy: 0, vz: 0, mode: 'ground', fallTop: y, airJumpReady: true, dodge: null });

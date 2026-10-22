@@ -29,11 +29,16 @@ export interface EcoSceneHost {
   keyName(): string;
   addObject(o: THREE.Object3D): void;
   label(text: string): THREE.Sprite;
+  /** Stage 5: NPC dialogues (mentors and merchants talk first), and the extra story targets. */
+  openDialog(npc: string): void;
+  extraTargets(): Target[];
+  extraHint(t: Target, inCombat: boolean, key: string): string;
+  useExtra(t: Target, inCombat: boolean): boolean;
 }
 
 /** One thing the hero can use with E (D129: up to 3 m, no obstacle; D130: the nearest under the aim). */
 export interface Target {
-  kind: 'mentor' | 'merchant' | 'station' | 'chest' | 'corpse' | 'node';
+  kind: 'mentor' | 'merchant' | 'station' | 'chest' | 'corpse' | 'node' | 'npc' | 'bed' | 'stone' | 'arch';
   id: string;
   x: number;
   z: number;
@@ -185,6 +190,7 @@ export class EconomyScene {
     for (const c of CHEST_SPOTS) out.push({ kind: 'chest', id: c.id, x: c.x, z: c.z, name: c.name });
     for (const c of w.corpses) out.push({ kind: 'corpse', id: c.id, x: c.x, z: c.z, name: c.name });
     for (const n of NODE_SPOTS) if (w.nodes[n.id].stock > 0) out.push({ kind: 'node', id: n.id, x: n.x, z: n.z, name: SOURCE_BY_ID[n.src].name });
+    out.push(...this.s.extraTargets());
     return out;
   }
 
@@ -223,7 +229,7 @@ export class EconomyScene {
     if (!t) return '';
     switch (t.kind) {
       case 'mentor':
-        return inCombat ? `${t.name}: в бою обучение недоступно` : `${k} — обучение: ${t.name}`;
+        return inCombat ? `${t.name}: в бою разговор недоступен` : `${k} — говорить: ${t.name}`;
       case 'merchant':
         return inCombat ? `${t.name}: в бою торговля недоступна` : `${k} — говорить: ${t.name}`;
       case 'station':
@@ -239,6 +245,8 @@ export class EconomyScene {
         const p = gatherProblem(this.s.growth, n);
         return p ? `${t.name}: ${p}` : `${k} (удерживать) — собрать: ${t.name} · запас ${n.stock}`;
       }
+      default:
+        return this.s.extraHint(t, inCombat, k);
     }
   }
 
@@ -259,18 +267,17 @@ export class EconomyScene {
     switch (t.kind) {
       case 'mentor':
         if (inCombat) {
-          this.s.toast('Наставник не учит во время боя');
+          this.s.toast('В бою разговор недоступен');
           return false;
         }
-        if (t.id === 'mira') e.npc('alchemist');
-        else this.s.openMentor(t.id as MentorId);
+        this.s.openDialog(t.id === 'mira' ? 'alchemist' : t.id);
         return true;
       case 'merchant':
         if (inCombat) {
           this.s.toast('В бою торговля недоступна');
           return false;
         }
-        e.npc(t.id as MerchantId);
+        this.s.openDialog(t.id);
         return true;
       case 'station':
         if (inCombat) {
@@ -298,6 +305,8 @@ export class EconomyScene {
         this.lastHp = this.s.hero.hp;
         return false;
       }
+      default:
+        return this.s.useExtra(t, inCombat);
     }
   }
 

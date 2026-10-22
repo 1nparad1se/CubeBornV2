@@ -451,3 +451,12 @@
 .r2-goods .r2-item-btns { margin: 0; align-items: center; }
 .r2-total { font: 600 12px 'Rubik', sans-serif; color: var(--r2-dim); min-width: 70px; }
 @media (max-width: 640px) { .r2-goods { grid-template-columns: 1fr; } }
+.r2-potn { position: absolute; right: 3px; top: 2px; font: 700 12px 'Rubik', sans-serif; color: #fff; text-shadow: 1px 1px 0 #000; }
+.r2-slot.pot.empty { opacity: 0.45; }
+.r2-slot.pot.cd { filter: grayscale(0.6); }
+/* stage 5: dialogue, map, tracked quest, travel preparation */
+.r2-say { font-style: italic; padding: 8px 10px; border-left: 3px solid var(--r2-gold); margin: 6px 0 10px; }
+.r2-map { display: block; width: min(500px, 100%); height: auto; image-rendering: pixelated; border: 2px solid var(--r2-gold); cursor: crosshair; margin: 8px 0; }
+.r2-track { position: fixed; left: 12px; top: 186px; max-width: 280px; padding: 6px 10px; font: 13px 'Rubik', sans-serif; color: var(--r2-text); pointer-events: none; z-index: 4; }
+.r2-track b { display: block; color: var(--r2-gold); margin-bottom: 2px; }
+.r2-prep { position: fixed; left: 50%; bottom: 190px; transform: translateX(-50%); padding: 6px 12px; font: 600 14px 'Rubik', sans-serif; color: #7ad0ff; pointer-events: none; z-index: 5; }

@@ -40,7 +40,20 @@ export class SceneHud {
   private weaponEl = h('div.r2-weapon.r2-panel');
   private chargeEl = h('div.r2-charge', h('i'));
   private targetEl = h('div.r2-target.r2-panel.hidden');
+  /** Stage 4/5: counts and names of the potions chosen for F1–F3 (D199: no automatic size swap). */
+  setPotions(list: { name: string; count: number; cd: number }[]) {
+    list.forEach((p, i) => {
+      const t = String(p.count);
+      if (this.potCounts[i].textContent !== t) this.potCounts[i].textContent = t;
+      const title = `${p.name}: ${p.count}${p.cd > 0 ? ` · откат ${Math.ceil(p.cd)} с` : ''}`;
+      if (this.potSlots[i].title !== title) this.potSlots[i].title = title;
+      this.potSlots[i].classList.toggle('empty', p.count === 0);
+      this.potSlots[i].classList.toggle('cd', p.cd > 0);
+    });
+  }
   private potKeys: HTMLElement[] = [];
+  private potSlots: HTMLElement[] = [];
+  private potCounts: HTMLElement[] = [];
 
   constructor(parent: HTMLElement) {
     const bar = (cls: string, label: string) => {
@@ -71,7 +84,11 @@ export class SceneHud {
     for (let i = 0; i < 3; i++) {
       const k = h('kbd', 'F' + (i + 1));
       this.potKeys.push(k);
-      pots.append(h('div.r2-slot.pot', { title: potNames[i], style: `--pc:${potColors[i]}` }, k));
+      const n = h('span.r2-potn', '0');
+      this.potCounts.push(n);
+      const slot = h('div.r2-slot.pot', { title: potNames[i], style: `--pc:${potColors[i]}` }, k, n);
+      this.potSlots.push(slot);
+      pots.append(slot);
     }
     this.root = h(
       'div.r2.r2-hud.hidden',
