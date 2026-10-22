@@ -53,7 +53,7 @@ export const CONTROL_LIST: { id: ControlAction; name: string; group: string }[] 
 export function defaultBinds(): ControlBinds {
   return {
     moveF: ['KeyW'], moveB: ['KeyS'], moveL: ['KeyA'], moveR: ['KeyD'],
-    jump: ['Space'], dodge: ['ShiftLeft'], sprint: ['ControlLeft'], walkToggle: ['CapsLock'],
+    jump: ['Space'], dodge: ['ShiftLeft'], sprint: ['AltLeft'], walkToggle: ['CapsLock'],
     attack: ['Mouse0'], block: ['Mouse2'], interact: ['KeyE'], weaponSwap: ['Tab'],
     skill1: ['Digit1'], skill2: ['Digit2'], skill3: ['Digit3'], skill4: ['Digit4'], skill5: ['Digit5'], skill6: ['Digit6'],
     potionHp: ['F1'], potionMp: ['F2'], potionSt: ['F3'],
@@ -71,7 +71,8 @@ export interface ControlSettings {
 }
 
 export const CONTROLS_KEY = 'cubeborn.controls';
-export const CONTROLS_VERSION = 1;
+/** 2: the default sprint key moved from Ctrl to Alt (owner's decision); v1 binds with the old default are migrated. */
+export const CONTROLS_VERSION = 2;
 
 export function defaultControls(): ControlSettings {
   return { version: CONTROLS_VERSION, binds: defaultBinds(), sensitivity: 1, invertY: false };
@@ -91,6 +92,11 @@ export function fixControls(raw: unknown): ControlSettings {
       const v = r.binds[k];
       if (Array.isArray(v)) binds[k] = v.filter((c): c is string => typeof c === 'string' && !RESERVED.has(c)).slice(0, 2);
     }
+  // v1 → v2: sprint still on the old default Ctrl moves to Alt (a key the player chose stays)
+  if ((r.version ?? 1) < 2 && binds.sprint.length === 1 && binds.sprint[0] === 'ControlLeft') {
+    const taken = (Object.keys(binds) as ControlAction[]).some((k) => k !== 'sprint' && binds[k].includes('AltLeft'));
+    if (!taken) binds.sprint = ['AltLeft'];
+  }
   return {
     version: CONTROLS_VERSION,
     binds,

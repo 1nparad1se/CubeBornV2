@@ -69,6 +69,8 @@ export class SceneInput {
       else this.onMenuKey?.(e.code);
     });
     on(window, 'keyup', (e: KeyboardEvent) => {
+      // Alt is the default sprint key: stop the browser from focusing its menu bar on Alt release
+      if (this.active && (e.code === 'AltLeft' || e.code === 'AltRight')) e.preventDefault();
       this.down.delete(e.code);
       this.suppressed.delete(e.code);
       // Caps Lock on macOS sends keyup instead of a second keydown: count it as a press

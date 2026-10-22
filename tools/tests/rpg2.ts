@@ -423,7 +423,16 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
 // ------------------------------------------------------------------ controls (D211)
 {
   const b = defaultBinds();
-  ok(b.jump[0] === 'Space' && b.dodge[0] === 'ShiftLeft' && b.sprint[0] === 'ControlLeft' && b.walkToggle[0] === 'CapsLock' && b.potionHp[0] === 'F1' && b.attack[0] === 'Mouse0', 'default keys of the GDD');
+  ok(b.jump[0] === 'Space' && b.dodge[0] === 'ShiftLeft' && b.sprint[0] === 'AltLeft' && b.walkToggle[0] === 'CapsLock' && b.potionHp[0] === 'F1' && b.attack[0] === 'Mouse0', 'default keys (sprint on Alt by the owner)');
+  {
+    const v1 = { version: 1, binds: { ...defaultControls().binds, sprint: ['ControlLeft'] }, sensitivity: 1.4, invertY: false };
+    const m = fixControls(v1);
+    ok(m.binds.sprint[0] === 'AltLeft' && m.sensitivity === 1.4 && m.version === 2, 'v1 controls: the old Ctrl default moves to Alt');
+    const own = fixControls({ ...v1, binds: { ...v1.binds, sprint: ['KeyQ'] } });
+    ok(own.binds.sprint[0] === 'KeyQ', 'a sprint key chosen by the player stays');
+    const v2 = fixControls({ ...v1, version: 2 });
+    ok(v2.binds.sprint[0] === 'ControlLeft', 'Ctrl chosen after the change stays');
+  }
   const r = bind(b, 'jump', 'KeyW', false);
   ok(r.conflict === 'moveF' && !r.done && b.jump[0] === 'Space' && b.moveF[0] === 'KeyW', 'a conflict is reported and nothing changes without confirmation');
   const r2 = bind(b, 'jump', 'KeyW', true);
