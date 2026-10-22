@@ -439,3 +439,15 @@
 .r2-off { opacity: 0.55; }
 .r2-hint { position: fixed; left: 50%; bottom: 150px; transform: translateX(-50%); padding: 6px 12px; background: var(--r2-bg); border: 2px solid var(--r2-gold); font: 600 14px 'Rubik', sans-serif; color: var(--r2-text); pointer-events: none; z-index: 5; }
 @media (max-width: 640px) { .r2-trees, .r2-mods, .r2-equip, .r2-bag { grid-template-columns: 1fr; } }
+
+/* ---- stage 4: goods rows, filters, quantities, loot, trade, stations ---- */
+.r2-filter { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 6px; }
+.r2-input { background: rgba(20, 17, 12, 0.9); color: var(--r2-text); border: 2px solid #4a3d26; padding: 4px 6px; font: 500 13px 'Rubik', sans-serif; }
+.r2-filter .r2-input { flex: 1 1 160px; }
+.r2-qty { width: 58px; }
+.r2-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.r2-row .r2-btn { width: auto; margin: 0; }
+.r2-goods { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center; border-bottom: 1px solid #3a3020; padding: 5px 0; font: 400 13px 'Rubik', sans-serif; color: var(--r2-text); }
+.r2-goods .r2-item-btns { margin: 0; align-items: center; }
+.r2-total { font: 600 12px 'Rubik', sans-serif; color: var(--r2-dim); min-width: 70px; }
+@media (max-width: 640px) { .r2-goods { grid-template-columns: 1fr; } }

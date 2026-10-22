@@ -8,7 +8,7 @@ import {
   statCost, statProblem, totalArmor, trainStat, unequip, type GrowthData, type LearnCtx, type MentorId,
 } from '../growth/growth';
 import {
-  AFFIXES, ARMOR_BY_ID, LEGENDARY, RARITY, SLOT_NAME, UPGRADE, affixText, itemArmor, itemName, itemSlot, reqProblem, type EquipSlot, type Item,
+  AFFIXES, ARMOR_BY_ID, LEGENDARY, RARITIES, RARITY, SLOT_NAME, UPGRADE, affixText, isGear, itemArmor, itemName, itemSlot, reqProblem, upgradeName, type EquipSlot, type Item,
 } from '../growth/items';
 import { MAX_LEVEL, xpForLevel } from '../growth/levels';
 import { TALENTS, TIER_REQ, TREE_NAME, talentProblem, talentResetCost, type TreeId } from '../growth/talents';
@@ -26,6 +26,48 @@ export interface GrowthHost {
   toast(t: string): void;
   /** Equipment or talents changed: the scene updates the drawn gear, armor and maxima. */
   changed(): void;
+  /** Stage 4: the goods part of the inventory (materials, consumables, tools, runes) under the same filter. */
+  extraInventory?(f: InvFilter, again: () => void): HTMLElement | null;
+  /** Stage 4: buy price of an item, for sorting by price. */
+  itemPrice?(it: Item): number;
+}
+
+/** Inventory search, category filter and sort (stage 4, kept while the window is rebuilt). */
+export interface InvFilter {
+  q: string;
+  cat: 'all' | 'gear' | 'material' | 'consumable' | 'tool' | 'rune';
+  sort: 'order' | 'name' | 'price' | 'rarity';
+}
+export const INV_CATS: [InvFilter['cat'], string][] = [['all', 'Все'], ['gear', 'Экипировка'], ['material', 'Материалы'], ['consumable', 'Расходники'], ['tool', 'Инструменты'], ['rune', 'Руны']];
+export const INV_SORTS: [InvFilter['sort'], string][] = [['order', 'По порядку'], ['name', 'По названию'], ['price', 'По цене'], ['rarity', 'По редкости']];
+
+/** Search field, category and sort selectors; `on` rebuilds the window. */
+export function filterBar(f: InvFilter, on: () => void): HTMLElement {
+  const q = document.createElement('input');
+  q.className = 'r2-input';
+  q.placeholder = 'Поиск по названию';
+  q.value = f.q;
+  q.oninput = () => {
+    f.q = q.value;
+    on();
+    const nq = document.querySelector('.r2-filter input') as HTMLInputElement | null;
+    if (nq) {
+      nq.focus();
+      nq.setSelectionRange(nq.value.length, nq.value.length);
+    }
+  };
+  const sel = <T extends string>(opts: [T, string][], v: T, set: (x: T) => void) => {
+    const s = document.createElement('select');
+    s.className = 'r2-select';
+    for (const [k, l] of opts) s.append(new Option(l, k));
+    s.value = v;
+    s.onchange = () => {
+      set(s.value as T);
+      on();
+    };
+    return s;
+  };
+  return h('div.r2-filter', q, sel(INV_CATS, f.cat, (x) => (f.cat = x)), sel(INV_SORTS, f.sort, (x) => (f.sort = x)));
 }
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V'];
@@ -39,6 +81,7 @@ const fmt = (n: number) => String(Math.round(n * 100) / 100).replace('.', ',');
  */
 export class GrowthScreens {
   constructor(private s: GrowthHost) {}
+  readonly inv: InvFilter = { q: '', cat: 'all', sort: 'order' };
 
   private ctx(): LearnCtx {
     const s = this.s;
@@ -109,7 +152,7 @@ export class GrowthScreens {
           return kv(FAMILY_NAME[f], `${m} — ${rankName(m)}${nx}`);
         }),
         h('h3', 'Прочее'),
-        kv('Малые зелья HP', g.potions.hpSmall),
+        kv('Малые зелья HP', g.stacks.potionHP1 ?? 0),
         kv('Побеждено противников', c.data.kills),
       ),
       h('div', { style: 'margin-top:14px' }, h('button.r2-btn.small', { onclick: () => this.s.menus.close('character') }, 'Закрыть')),
@@ -307,7 +350,7 @@ export class GrowthScreens {
       const a = ARMOR_BY_ID[it.tpl];
       const prob = reqProblem(it, this.s.hero.stats);
       const lines: (HTMLElement | string)[] = [];
-      if (w) lines.push(`${FAMILY_NAME[w.family]}${w.kind === 'greatsword' ? ' (двуручный)' : ''} · ${w.damage}${it.upgrade ? ` × ${fmt(UPGRADE[it.upgrade].mul)} (${UPGRADE[it.upgrade].name})` : ''} ${w.family === 'staff' ? 'магического' : 'физического'} урона · ${fmt(w.aps)} атак/с`);
+      if (w) lines.push(`${FAMILY_NAME[w.family]}${w.kind === 'greatsword' ? ' (двуручный)' : ''} · ${w.damage}${it.upgrade ? ` × ${fmt(UPGRADE[it.upgrade].mul)} (${upgradeName(it.tpl, it.upgrade)})` : ''} ${w.family === 'staff' ? 'магического' : 'физического'} урона · ${fmt(w.aps)} атак/с`);
       if (a) lines.push(`${SLOT_NAME[a.slot]} · защита ${itemArmor(it)}${it.rarity !== 'common' ? ` (база ${a.armor} × ${fmt(r.armor)})` : ''}`);
       const req = Object.entries(w ? { [w.attr]: w.req } : a.req).map(([k, v]) => `${k.toUpperCase()} ${v}`).join(', ');
       const qi = c.data.quick.indexOf(it.uid);
@@ -339,16 +382,25 @@ export class GrowthScreens {
       const it = itemOf(g, g.equip[s]);
       slots.append(h('div.r2-eslot', h('small', SLOT_NAME[s]), it ? card(it, true) : h('div.r2-note', 'пусто')));
     }
-    const bag = g.items.filter((i) => !isEquipped(g, i.uid));
+    const f = this.inv;
+    const ql = f.q.trim().toLowerCase();
+    const bag = g.items.filter((i) => isGear(i.tpl) && !isEquipped(g, i.uid) && (f.cat === 'all' || f.cat === 'gear') && (!ql || itemName(i).toLowerCase().includes(ql)));
+    const rk = (i: Item) => RARITIES.indexOf(i.rarity);
+    if (f.sort === 'name') bag.sort((a, b) => itemName(a).localeCompare(itemName(b), 'ru'));
+    else if (f.sort === 'price') bag.sort((a, b) => (this.s.itemPrice?.(b) ?? 0) - (this.s.itemPrice?.(a) ?? 0));
+    else if (f.sort === 'rarity') bag.sort((a, b) => rk(b) - rk(a));
+    const extra = this.s.extraInventory?.(f, again) ?? null;
     const body = h(
       'div',
       h('h1', 'Инвентарь'),
-      h('div.r2-sub', `Золото: ${g.gold} · броня: ${totalArmor(g)} · малые зелья HP: ${g.potions.hpSmall}`),
+      h('div.r2-sub', `Золото: ${g.gold} · броня: ${totalArmor(g)}`),
       h('div.r2-rule'),
       h('h3', 'Экипировка (шлем, нагрудник, штаны, оружие)'),
       slots,
-      h('h3', `Сумка (${bag.length})`),
-      bag.length ? h('div.r2-bag', bag.map((i) => card(i, false))) : h('p.r2-note', 'Пусто.'),
+      filterBar(f, again),
+      f.cat === 'all' || f.cat === 'gear' ? [h('h3', `Экипировка в сумке (${bag.length})`), bag.length ? h('div.r2-bag', bag.map((i) => card(i, false))) : h('p.r2-note', ql ? 'Ничего не найдено.' : 'Пусто.')] : null,
+      extra,
+      h('p.r2-note', 'Выбрасывать и уничтожать предметы нельзя: ненужное можно продать или оставить в сундуке.'),
       h('p.r2-note', 'Требования проверяются по обученным характеристикам. Список Tab — до четырёх экземпляров оружия по кругу. Броня даёт только физическую защиту.'),
       h('button.r2-btn.small', { onclick: () => this.s.menus.close('inventory') }, 'Закрыть'),
     );

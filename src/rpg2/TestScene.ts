@@ -22,10 +22,16 @@ import { SceneMenus } from './ui/menus';
 import { SKILLS, SPELLS, WEAPONS, abilityName, type WeaponFamily } from './combat/data';
 import { CombatSystem, FAMILY_NAME, applyTestProfile, arenaEnemies, newCombatData, type Aim, type CombatData } from './combat/system';
 import { CombatView } from './combat/view';
-import { MENTORS, MENTOR_RANGE, addItem, applyHeroMods, combatBonuses, equip, itemOf, newGrowth, totalArmor, type GrowthData, type MentorId } from './growth/growth';
-import { ARMOR_BY_ID, RARITIES, RARITY, isWeapon, itemName, type Rarity } from './growth/items';
+import { MENTORS, addItem, applyHeroMods, combatBonuses, equip, itemOf, newGrowth, totalArmor, type GrowthData, type MentorId } from './growth/growth';
+import { ARMOR_BY_ID, RARITIES, RARITY, isItemTpl, isWeapon, itemName, type Rarity } from './growth/items';
 import { XP_CAP, addXp } from './growth/levels';
 import { GrowthScreens } from './ui/growthUi';
+import { EconomyScreens } from './ui/economyUi';
+import { EconomyScene } from './economyScene';
+import { newEconomyWorld, type EconomyWorld } from './economy/world';
+import { itemBuyPrice, MATERIAL_NAMES } from './economy/goods';
+import { addStack } from './economy/bag';
+import { useConsumable } from './economy/consumables';
 
 /** What the RPG test scene borrows from the app. */
 export interface SceneHost {
@@ -66,7 +72,10 @@ export class TestScene {
   /** Stage 3: gold, items and equipment, talents, circles and mods. */
   growth: GrowthData = newGrowth();
   readonly screens: GrowthScreens;
-  private mentorHint: HTMLElement | null = null;
+  /** Stage 4: corpses, chests, resource points and merchants. */
+  eworld: EconomyWorld = newEconomyWorld(this.growth);
+  readonly eco: EconomyScreens;
+  ecoScene!: EconomyScene;
   readonly dev: boolean;
   private devPanel: HTMLElement | null = null;
   /** Intent of the current frame; edge presses are used by the first simulation step only. */
@@ -102,6 +111,21 @@ export class TestScene {
       inCombat: () => this.hero.inCombat,
       toast: (t) => this.hud.toast(t),
       changed: () => this.growthChanged(),
+      extraInventory: (f, again) => this.eco.goods(f, again),
+      itemPrice: (it) => itemBuyPrice(it),
+    });
+    this.eco = new EconomyScreens({
+      get hero() { return self.hero; },
+      get growth() { return self.growth; },
+      get world() { return self.eworld; },
+      get combat() { return self.combat; },
+      menus: this.menus,
+      inCombat: () => this.hero.inCombat,
+      toast: (t) => this.hud.toast(t),
+      changed: () => this.growthChanged(),
+      nextUid: () => 'i' + this.growth.nextUid++,
+      busy: () => this.consumableBusy(),
+      mentor: (id) => this.screens.mentor(id),
     });
     // D208 / D211: a menu stops sprint, drops queued presses and frees the cursor
     this.pause.onPause = () => {
@@ -112,6 +136,7 @@ export class TestScene {
       this.rmbPress = this.swapPress = false;
       this.skillIdx = null;
       this.combat?.onMenu();
+      this.ecoScene?.cancelGather();
       this.intent = { ...NO_INTENT };
       this.input.releaseLock();
     };
@@ -135,6 +160,22 @@ export class TestScene {
     this.installCombat(newCombatData('start'));
     this.addMarkers(this.site.markers);
     this.addMentors();
+    const self = this;
+    this.ecoScene = new EconomyScene({
+      get hero() { return self.hero; },
+      get growth() { return self.growth; },
+      get world() { return self.eworld; },
+      get motor() { return self.motor; },
+      get combat() { return self.combat; },
+      get ground() { return self.site.ground; },
+      get eco() { return self.eco; },
+      forward: () => this.forward(),
+      toast: (t) => this.hud.toast(t),
+      openMentor: (id) => this.screens.mentor(id),
+      keyName: () => codeName(this.controls.binds.interact[0] ?? 'KeyE'),
+      addObject: (o) => this.host.renderer.addRunObject(o),
+      label: (t) => labelSprite(t),
+    }, this.host.root);
     this.input.active = true;
     this.input.live = true;
     this.hud.setVisible(true);
@@ -175,7 +216,7 @@ export class TestScene {
     this.menus.closeAll();
     this.hud.dispose();
     this.devPanel?.remove();
-    this.mentorHint?.remove();
+    this.ecoScene?.dispose();
     window.removeEventListener('blur', this.onBlur);
     document.removeEventListener('visibilitychange', this.onBlur);
     if ((window as unknown as { rpg2?: TestScene }).rpg2 === this) delete (window as unknown as { rpg2?: TestScene }).rpg2;
@@ -223,7 +264,8 @@ export class TestScene {
     this.hud.update(this.world, this.hero, this.motor, this.time, HERO_NAME, rig.yaw, realDt);
     this.host.worldMap.yaw = rig.yaw;
     this.host.worldMap.draw(this.world);
-    this.updateMentorHint();
+    this.ecoScene.syncView();
+    this.ecoScene.updateHint(this.pause.paused, this.hero.inCombat);
   }
 
   /** Camera forward on the ground (unit x / z). */
@@ -240,11 +282,15 @@ export class TestScene {
     if (pr.has('map')) return this.toggleMap(true);
     if (pr.has('character')) return this.openCharacter();
     if (pr.has('progress')) return this.screens.development();
-    if (pr.has('interact')) {
-      const m = this.nearMentor();
-      if (m && this.hero.inCombat) this.hud.toast('Наставник не учит во время боя');
-      else if (m) return this.screens.mentor(m);
-    }
+    if (pr.has('interact') && !this.ecoScene.gather && this.ecoScene.interact(this.hero.inCombat)) return;
+    const potion = (a: ControlAction, k: 'hp' | 'mp' | 'st') => {
+      if (!pr.has(a)) return;
+      const r = useConsumable(this.growth, this.hero, this.growth.potionSel[k], { inCombat: this.hero.inCombat, busy: this.consumableBusy() });
+      if (r) this.hud.toast(r);
+    };
+    potion('potionHp', 'hp');
+    potion('potionMp', 'mp');
+    potion('potionSt', 'st');
     if (pr.has('quickSave')) this.quickSave();
     if (pr.has('quickLoad')) return this.quickLoad();
     for (const a of ['journal', 'bestiary', 'trade', 'dialog'] as ControlAction[]) if (pr.has(a)) this.hud.toast(`«${actionName(a)}» — появится на следующих этапах`);
@@ -317,6 +363,8 @@ export class TestScene {
     p.attack = a ? ({ weapon: null, t: a.t, dur: a.dur, hitAt: Math.min(1, a.hitAt / a.dur), done: a.t >= a.hitAt, dirX: a.dirX, dirZ: a.dirZ, seq: a.rec } as unknown as typeof p.attack) : null;
     this.syncWeapon();
     hero.tick(dt, { campfire: false }, m.sprinting);
+    this.ecoScene.stepGather(dt, this.input.held('interact'), Math.hypot(this.intent.moveX, this.intent.moveZ) > 0.01 || m.mode !== 'ground' || m.dodging, c.counters.attacks !== attacks0 || !!c.data.action);
+    this.ecoScene.tick(dt, (x, z) => this.canRespawnAt(x, z, 30));
     this.syncPlayer(dt);
   }
 
@@ -616,7 +664,7 @@ export class TestScene {
       this.lastSave = 'Мёртвого героя сохранить нельзя.';
       return false;
     }
-    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data, growth: this.growth });
+    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data, growth: this.growth, world: this.eworld });
     const ok = writePlaythrough(s);
     this.lastSave = ok ? `Сохранено (${kind})` : 'Не удалось записать сохранение: браузер отказал в хранилище.';
     return ok;
@@ -656,6 +704,8 @@ export class TestScene {
     this.time.clock.days = r.time.clock.days;
     this.motor.loadSave(s.motor);
     this.growth = r.growth;
+    this.eworld = r.world;
+    this.ecoScene?.cancelGather();
     this.installCombat(r.combat);
     this.world.player.attack = null;
     this.input.freeze();
@@ -698,6 +748,8 @@ export class TestScene {
   restart(start: 'sword1' | 'bow1' | 'staff1' = 'sword1') {
     this.menus.closeAll();
     this.growth = newGrowth(start);
+    this.eworld = newEconomyWorld(this.growth);
+    this.ecoScene?.cancelGather();
     this.hero = new HeroState();
     const t = new ActiveTime();
     this.time.seconds = 0;
@@ -712,6 +764,27 @@ export class TestScene {
     this.syncPlayer(0);
     this.host.renderer.snapTo(this.motor.x, this.motor.z);
     this.input.live = !this.pause.paused;
+  }
+
+  /** D199: why consumables cannot be used right now. */
+  consumableBusy(): string | null {
+    if (this.motor.stunned) return 'Оглушение: расходники недоступны';
+    if (this.motor.dodging) return 'Во время уклонения расходники недоступны';
+    if (this.combat.data.action) return 'Во время атаки или подготовки расходники недоступны';
+    return null;
+  }
+
+  /** D086: ≥ min metres from the hero and out of the camera's view or behind an obstacle. */
+  canRespawnAt(x: number, z: number, min: number): boolean {
+    const m = this.motor;
+    const g = this.site.ground;
+    const dx = x - m.x;
+    const dz = z - m.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < min) return false;
+    const [fx, fz] = this.forward();
+    const inCone = (dx * fx + dz * fz) / dist > Math.cos((60 * Math.PI) / 180);
+    return !inCone || !this.combat.los(m.x, m.y + 1.6, m.z, x, g.top(x, z) + 0.6, z);
   }
 
   /** D047: the death screen; no automatic load and no save of the dead hero. */
@@ -766,6 +839,10 @@ export class TestScene {
     btn('+50 LP', () => this.devGrant({ lp: 50 }));
     btn('+5000 XP', () => this.devGrant({ xp: 5000 }));
     btn('Предмет…', () => this.openDevItems());
+    btn('+20 всех материалов', () => this.devMaterials(20));
+    btn('Нож, кирка и топор', () => { for (const t of ['knife', 'pickaxe', 'axe']) this.devItem(t); this.hud.toast('Инструменты добавлены'); });
+    btn('Все ремёсла, охота и сбор', () => this.devCrafts());
+    btn('Активное время +60 мин (мир)', () => this.devAdvance(3600));
     btn('Оружие и умения…', () => this.openLoadout());
     btn('Возродить противников', () => this.combat.respawnAll());
     btn('Разозлить Серого Клыка', () => this.combat.provoke('greyfang1'));
@@ -833,6 +910,7 @@ export class TestScene {
       return !inCone || !this.combat.los(m.x, m.y + 1.6, m.z, e.homeX, g.top(e.homeX, e.homeZ) + 0.6, e.homeZ);
     };
     this.linkGrowth();
+    this.combat.onKilled = (e) => this.ecoScene.onKilled(e);
     if (this.view) this.view.root.parent?.remove(this.view.root);
     this.view = new CombatView(this.combat);
     this.host.renderer.addRunObject(this.view.root);
@@ -934,32 +1012,6 @@ export class TestScene {
       group.add(label);
     }
     this.host.renderer.addRunObject(group);
-    this.mentorHint = h('div.r2.r2-hint');
-    this.mentorHint.style.display = 'none';
-    this.host.root.appendChild(this.mentorHint);
-  }
-
-  /** The mentor within the 3 m interaction range, if any. */
-  nearMentor(): MentorId | null {
-    let best: MentorId | null = null;
-    let bd = MENTOR_RANGE;
-    for (const sp of this.mentorSpots) {
-      const d = Math.hypot(sp.x - this.motor.x, sp.z - this.motor.z);
-      if (d <= bd) {
-        bd = d;
-        best = sp.id;
-      }
-    }
-    return best;
-  }
-
-  private updateMentorHint() {
-    const el = this.mentorHint;
-    if (!el) return;
-    const m = !this.pause.paused && !this.hero.dead ? this.nearMentor() : null;
-    const txt = m ? `${codeName(this.controls.binds.interact[0] ?? 'KeyE')} — обучение: ${MENTORS[m].name}` : '';
-    if (el.textContent !== txt) el.textContent = txt;
-    el.style.display = txt ? '' : 'none';
   }
 
   /** D207: up to four weapons for Tab and a 1–6 panel per weapon type (a window of the pause menu). */
@@ -1024,10 +1076,33 @@ export class TestScene {
     }
   }
 
+  /** Dev mode only: every material ×n. */
+  devMaterials(n: number) {
+    if (!this.dev) return;
+    for (const k of Object.keys(MATERIAL_NAMES)) addStack(this.growth, k, n);
+    this.hud.toast(`+${n} каждого материала`);
+  }
+
+  /** Dev mode only: all craft tiers, hunting and the rare gathering skills. */
+  devCrafts() {
+    if (!this.dev) return;
+    this.growth.crafts = { smith: 3, alchemy: 3, cooking: 3 };
+    this.growth.hunt = 3;
+    this.growth.gather = ['rareplants', 'rareminerals', 'rarewood'];
+    this.hud.toast('Все ремёсла, охота и редкий сбор изучены');
+  }
+
+  /** Dev mode only: runs the world's active-time timers (corpses, points, merchants, potion cooldown). */
+  devAdvance(sec: number) {
+    if (!this.dev) return;
+    this.ecoScene.tick(sec, (x, z) => this.canRespawnAt(x, z, 30));
+    this.hud.toast(`Мир: +${Math.round(sec / 60)} мин активного времени`);
+  }
+
   /** Dev mode only: creates an item of any template and rarity (affixes rolled as in the catalog). */
   devItem(tpl: string, rarity: Rarity = 'common'): string | null {
     if (!this.dev) return null;
-    if (!isWeapon(tpl) && !ARMOR_BY_ID[tpl]) return null;
+    if (!isItemTpl(tpl)) return null;
     return addItem(this.growth, tpl, rarity).uid;
   }
 
