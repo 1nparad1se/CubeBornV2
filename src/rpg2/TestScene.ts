@@ -14,7 +14,9 @@ import { HeroState, STAT_IDS, STAT_NAMES } from './hero';
 import { SceneInput } from './input';
 import { HeroMotor, NO_INTENT, type MotorEvent, type MotorIntent } from './motor';
 import { PauseManager } from './pause';
-import { SaveError, readPlaythrough, restore, snapshot, writePlaythrough, type PlaythroughSave } from './save';
+import { SaveError, restore, snapshot, type PlaythroughSave } from './save';
+import { KIND_NAME, SlotStore, type PlaythroughMeta, type RecordKind, type RecordMeta, type SlotIndex } from './slots';
+import { formatClock } from '../game/GameClock';
 import { buildTestSite, type TestMarker, type TestSite } from './testSite';
 import { ActiveTime } from './time';
 import { SceneHud } from './ui/hud';
@@ -33,6 +35,7 @@ import { itemBuyPrice, MATERIAL_NAMES } from './economy/goods';
 import { addStack } from './economy/bag';
 import { useConsumable } from './economy/consumables';
 import { StoryScreens } from './ui/storyUi';
+import { QUEST_BY_ID } from './story/quests';
 import { StoryScene } from './storyScene';
 import { CAMPFIRE_RADIUS, DESTINATIONS, RUNE_DEST, wakeAt, newStory, type StoryData } from './story/world';
 import { stackName } from './economy/goods';
@@ -95,12 +98,16 @@ export class TestScene {
   combat!: CombatSystem;
   private view: CombatView | null = null;
   aim: Aim = { x: 0, z: 0, target: null };
-  private playthroughId = 'test';
+  playthroughId = '';
+  /** Stage 6: the save slots (playthroughs, queues, manual records). */
+  readonly slots = new SlotStore();
+  /** An event autosave raised during a world step, written at the end of the step (D213). */
+  private pendingEvent: string | null = null;
   private disposed = false;
   /** Last result of the save / load for tests and the dev panel. */
   lastSave = '';
   /** Counters for automated checks. */
-  stats = { jumps: 0, airJumps: 0, dodges: 0, attacks: 0, autosaves: 0 };
+  stats = { jumps: 0, airJumps: 0, dodges: 0, attacks: 0, autosaves: 0, records: 0 };
 
   constructor(private host: SceneHost, opts: { dev: boolean }) {
     this.dev = opts.dev;
@@ -153,9 +160,7 @@ export class TestScene {
         if (svc === 'training') return this.eco.training(npc as never);
         return this.eco.forge();
       },
-      questDone: () => {
-        if (this.save('event')) this.hud.toast('Автосохранение: задание выполнено');
-      },
+      questDone: (id) => this.eventSave(`задание «${QUEST_BY_ID[id]?.name ?? id}» выполнено`),
       sleep: (hr) => this.sleep(hr),
       activateStone: (id) => this.storyScene.activateStone(id, this.hero.inCombat),
       travel: (kind, dest) => this.startTravel(kind, dest),
@@ -248,26 +253,15 @@ export class TestScene {
       addObject: (o) => this.host.renderer.addRunObject(o),
       label: (t) => labelSprite(t),
       teleport: (x, z) => this.placeHero(x, z),
-      eventSave: () => {
-        if (this.save('event')) this.hud.toast('Автосохранение: первый путевой камень');
-      },
+      eventSave: () => this.eventSave('первая активация путевого камня'),
     }, this.host.root);
     this.input.active = true;
     this.input.live = true;
     this.hud.setVisible(true);
     if (this.dev) this.buildDev();
-    let save: PlaythroughSave | null = null;
-    try {
-      save = readPlaythrough();
-    } catch (e) {
-      this.loadError(e);
-      this.syncPlayer(0);
-      return;
-    }
-    if (save) this.apply(save);
-    else this.syncPlayer(0);
+    this.syncPlayer(0);
     this.host.renderer.snapTo(this.motor.x, this.motor.z);
-    this.hud.toast(save ? 'Тестовая площадка: продолжение' : 'Тестовая площадка: новое прохождение');
+    this.entryMenu();
     window.addEventListener('blur', this.onBlur);
     document.addEventListener('visibilitychange', this.onBlur);
   }
@@ -278,7 +272,7 @@ export class TestScene {
 
   /** Leaves to the main menu: the regular exit saves the moment (D042), never a dead hero. */
   exit() {
-    if (!this.hero.dead) this.save('exit');
+    if (!this.hero.dead && this.playthroughId) this.save('exit');
     this.dispose();
     this.host.exit();
   }
@@ -328,11 +322,17 @@ export class TestScene {
           this.intent.jumpPressed = this.intent.dodgePressed = this.intent.sprintPressed = false;
           this.attackPress = false;
         }
-        if (this.time.advance(dt) && !this.hero.dead) {
-          this.stats.autosaves++;
-          if (this.save('auto')) this.hud.toast('Автосохранение');
-        }
+        // D213: deaths of this step are resolved first; a dead hero is never saved. A periodic and an
+        // event record due together come from one snapshot into their own queues.
+        const due = this.time.advance(dt);
+        const ev = this.pendingEvent;
+        this.pendingEvent = null;
         if (this.hero.dead) this.onDeath();
+        else if (due || ev) {
+          if (due) this.stats.autosaves++;
+          const ok = due ? this.save('auto', { also: ev ? ['event'] : [], note: ev ?? undefined }) : this.save('event', { note: ev! });
+          this.hud.toast(ok ? (due ? 'Автосохранение' : `Автосохранение: ${ev}`) : this.lastSave);
+        }
       }
     }
     this.host.renderer.frame(this.pause.paused ? 0 : dt);
@@ -570,11 +570,9 @@ export class TestScene {
       btn('Развитие и умения', () => this.screens.development()),
       btn('Панели и быстрые назначения', () => this.openLoadout()),
       btn('Управление', () => this.openControls()),
-      btn('Сохранить', () => {
-        note.textContent = this.save('manual') ? 'Сохранено.' : this.lastSave;
-      }),
-      btn('Загрузить последнее', () => this.quickLoad()),
-      btn('Начать площадку заново', () => this.menus.confirm('Начать тестовое прохождение заново? Текущее состояние будет заменено при следующем сохранении.', () => this.chooseStart())),
+      btn('Сохранения и загрузка', () => this.savesMenu()),
+      btn('Загрузить последнее', () => this.loadLatest()),
+      btn('Новое прохождение', () => this.chooseStart()),
       btn('Выйти в главное меню', () => this.exit()),
       note,
       h('div.r2-note', 'Мир, время, восстановление и перезарядки стоят, пока открыто любое окно.'),
@@ -747,17 +745,46 @@ export class TestScene {
     saveControls(this.controls);
   }
 
-  // ------------------------------------------------------------------ saves
-  /** Writes the test playthrough (never for a dead hero, D047 / D213). */
-  save(kind: 'manual' | 'quick' | 'auto' | 'exit' | 'event'): boolean {
+  // ------------------------------------------------------------------ saves (stage 6: D040–D047, D202, D213)
+  /** One consistent snapshot of the current moment (D040). */
+  private snap(): PlaythroughSave {
+    return snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data, growth: this.growth, world: this.eworld, story: this.story });
+  }
+
+  /**
+   * Writes records of the current playthrough from ONE snapshot (D213: a periodic and an event record
+   * due together are two records in their queues). Never for a dead hero (D047 / D213).
+   */
+  save(kind: RecordKind, opts: { name?: string; replace?: string; note?: string; also?: RecordKind[] } = {}): boolean {
     if (this.hero.dead) {
       this.lastSave = 'Мёртвого героя сохранить нельзя.';
       return false;
     }
-    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data, growth: this.growth, world: this.eworld, story: this.story });
-    const ok = writePlaythrough(s);
-    this.lastSave = ok ? `Сохранено (${kind})` : 'Не удалось записать сохранение: браузер отказал в хранилище.';
-    return ok;
+    if (!this.playthroughId) {
+      this.lastSave = 'Прохождение не выбрано.';
+      return false;
+    }
+    const kinds = [{ kind, name: opts.name, replace: opts.replace, note: opts.note }, ...(opts.also ?? []).map((k) => ({ kind: k, note: opts.note }))];
+    const r = this.slots.write(this.playthroughId, this.snap(), kinds);
+    if (typeof r === 'string') {
+      this.lastSave = r;
+      return false;
+    }
+    this.stats.records += r.length;
+    this.lastSave = `Сохранено: ${r.map((m) => KIND_NAME[m.kind]).join(' + ')}`;
+    return true;
+  }
+
+  /**
+   * D042 event autosave. In a menu (quest turn-in, waystone window) it is written at once after the
+   * operation (D213); during a world step it waits for the end of the step and joins a periodic
+   * record due at the same moment.
+   */
+  eventSave(note: string) {
+    if (this.pause.paused) {
+      if (this.save('event', { note })) this.hud.toast(`Автосохранение: ${note}`);
+      else if (!this.hero.dead) this.hud.toast(this.lastSave);
+    } else this.pendingEvent = note;
   }
 
   quickSave() {
@@ -765,28 +792,48 @@ export class TestScene {
     else this.hud.toast(this.lastSave);
   }
 
-  /** Loads the last record of the test playthrough. */
+  /** F9: the latest quicksave of the current playthrough (D044); none → a message and the list (D202). */
   quickLoad() {
-    let s: PlaythroughSave | null;
+    const rec = this.playthroughId ? this.slots.latest(this.playthroughId, 'quick') : null;
+    if (!rec) {
+      this.hud.toast('Быстрых сохранений этого прохождения нет');
+      this.savesMenu();
+      return;
+    }
+    this.loadRecord(this.playthroughId, rec.key);
+  }
+
+  /** D047 «Загрузить последнее»: the newest record of the current playthrough, any kind. */
+  loadLatest() {
+    const rec = this.playthroughId ? this.slots.latest(this.playthroughId) : null;
+    if (!rec) {
+      this.hud.toast('У этого прохождения нет сохранений');
+      this.savesMenu();
+      return;
+    }
+    this.loadRecord(this.playthroughId, rec.key);
+  }
+
+  /** Loads one record; an error shows the reason and offers another record (D202). */
+  loadRecord(pt: string, key: string): boolean {
+    let s: PlaythroughSave;
     try {
-      s = readPlaythrough();
+      s = this.slots.read(key);
     } catch (e) {
       this.loadError(e);
-      return;
+      return false;
     }
-    if (!s) {
-      this.hud.toast('Сохранений тестовой площадки пока нет');
-      return;
-    }
+    this.playthroughId = pt;
+    this.slots.setLast(pt);
     this.menus.closeAll();
     this.apply(s);
     this.hud.toast('Загружено');
+    return true;
   }
 
-  /** Puts a record into the running scene (hero, movement, clock, active time). */
+  /** Puts a record into the running scene (the whole consistent moment, D040). */
   private apply(s: PlaythroughSave) {
     const r = restore(s);
-    this.playthroughId = s.id;
     this.hero = r.hero;
     this.time.seconds = r.time.seconds;
     this.time.autosaveLeft = r.time.autosaveLeft;
@@ -796,6 +843,7 @@ export class TestScene {
     this.growth = r.growth;
     this.eworld = r.world;
     this.story = r.story;
+    this.pendingEvent = null;
     this.ecoScene?.cancelGather();
     this.storyScene?.cancelTravel();
     this.installCombat(r.combat);
@@ -812,12 +860,100 @@ export class TestScene {
       'div',
       h('h1', 'Ошибка загрузки'),
       h('div.r2-rule'),
-      h('p', `Сохранение тестовой площадки не загружено: ${why}.`),
-      h('p.r2-note', 'Старая запись не удалена. Можно начать заново (запись будет заменена при следующем сохранении) или выйти.'),
-      h('button.r2-btn.primary', { onclick: () => { this.menus.close('loadError'); this.restart(); } }, 'Начать заново'),
-      h('button.r2-btn', { onclick: () => { this.dispose(); this.host.exit(); } }, 'Главное меню'),
+      h('p', `Сохранение не загружено: ${why}.`),
+      h('p.r2-note', 'Запись не удалена, текущее состояние не изменено. Выберите другую запись.'),
+      h('button.r2-btn.primary', { onclick: () => { this.menus.close('loadError'); this.savesMenu(); } }, 'Выбрать другую запись'),
+      h('button.r2-btn', { onclick: () => this.leave() }, 'Главное меню'),
     );
     this.menus.show('loadError', body);
+  }
+
+  /** The entry screen of the test scene: continue, new playthrough, load, main menu. */
+  entryMenu() {
+    let cont: ReturnType<SlotStore['continueTarget']> = null;
+    let err = '';
+    try {
+      cont = this.slots.continueTarget();
+    } catch (e) {
+      err = (e as Error).message;
+    }
+    const btn = (label: string, fn: () => void, primary = false) => h('button.r2-btn' + (primary ? '.primary' : ''), { onclick: fn }, label);
+    const body = h(
+      'div',
+      h('h1', 'Тестовая площадка'),
+      h('div.r2-rule'),
+      cont ? btn(`Продолжить — ${cont.pt.name}: ${KIND_NAME[cont.rec.kind].toLowerCase()}, ${fmtDate(cont.rec.savedAt)}`, () => this.loadRecord(cont!.pt.id, cont!.rec.key), true) : h('p.r2-note', 'Продолжить нечего: нет записей последнего открытого прохождения.'),
+      btn('Новое прохождение', () => this.chooseStart(), !cont),
+      btn('Загрузить сохранение', () => this.savesMenu()),
+      this.dev ? h('div', h('h3', 'Режим разработки: тестовые профили'),
+        btn('Новое тестовое прохождение: всё оружие и умения', () => this.restart('sword1', 'test')),
+        btn('Новое тестовое прохождение: уровень 60', () => this.restart('sword1', 'high'))) : null,
+      btn('Главное меню', () => this.leave()),
+      err ? h('p.r2-note', err) : null,
+    );
+    this.menus.show('entry', body, () => {
+      // the scene has no playthrough yet: closing the entry screen with Esc brings it back
+      if (!this.playthroughId && !this.disposed) setTimeout(() => this.entryMenu(), 0);
+    });
+  }
+
+  /** Leaves without saving (no playthrough yet, the death screen, a load error). */
+  private leave() {
+    if (this.playthroughId && !this.hero.dead) this.save('exit');
+    this.dispose();
+    this.host.exit();
+  }
+
+  /** Save / load screen: the current playthrough's records, named manual saves, other playthroughs. */
+  savesMenu() {
+    const again = () => this.savesMenu();
+    let ix: SlotIndex;
+    try {
+      ix = this.slots.index();
+    } catch (e) {
+      this.menus.show('saves', h('div', h('h1', 'Сохранения'), h('p', (e as Error).message), h('button.r2-btn.small', { onclick: () => this.menus.close('saves') }, 'Закрыть')));
+      return;
+    }
+    const cur = ix.playthroughs.find((p) => p.id === this.playthroughId) ?? null;
+    const row = (pt: PlaythroughMeta, r: RecordMeta) =>
+      h('div.r2-goods',
+        h('span', h('b', r.kind === 'manual' ? r.name : KIND_NAME[r.kind]), h('small', ` · ${fmtDate(r.savedAt)} · ур. ${r.level} · день ${r.day + 1}, ${formatClock(r.minutes)}${r.note ? ` · ${r.note}` : ''}`)),
+        h('span', ''),
+        h('div.r2-item-btns',
+          h('button.r2-btn.small', { onclick: () => this.loadRecord(pt.id, r.key) }, 'Загрузить'),
+          r.kind === 'manual' && pt.id === this.playthroughId && !this.hero.dead
+            ? h('button.r2-btn.small', { onclick: () => this.menus.confirm(`Перезаписать «${r.name}» текущим моментом?`, () => { this.hud.toast(this.save('manual', { name: r.name, replace: r.key }) ? 'Перезаписано' : this.lastSave); again(); }) }, 'Перезаписать')
+            : null,
+          r.kind === 'manual'
+            ? h('button.r2-btn.small', { onclick: () => this.menus.confirm(`Удалить «${r.name}»?`, () => { this.slots.deleteRecord(pt.id, r.key); again(); }) }, 'Удалить')
+            : null,
+        ),
+      );
+    const recs = (pt: PlaythroughMeta) => [...pt.records].sort((a, b) => b.seq - a.seq).map((r) => row(pt, r));
+    const name = document.createElement('input');
+    name.className = 'r2-input';
+    name.placeholder = 'Название записи';
+    name.value = `Запись ${(cur?.records.filter((r) => r.kind === 'manual').length ?? 0) + 1}`;
+    const others = ix.playthroughs.filter((p) => p.id !== this.playthroughId);
+    const body = h(
+      'div',
+      h('h1', 'Сохранения'),
+      h('div.r2-sub', cur ? `Текущее прохождение: ${cur.name}${cur.profile !== 'normal' ? ' (тестовый профиль)' : ''}` : 'Прохождение не выбрано'),
+      h('div.r2-rule'),
+      cur && !this.hero.dead
+        ? h('div.r2-row', name, h('button.r2-btn.primary', { onclick: () => { const n = name.value.trim() || 'Без названия'; this.hud.toast(this.save('manual', { name: n }) ? `Сохранено: ${n}` : this.lastSave); again(); } }, 'Новое ручное сохранение'))
+        : this.hero.dead ? h('p.r2-note', 'Мёртвого героя сохранить нельзя.') : null,
+      cur ? h('div', h('h3', 'Записи прохождения'), cur.records.length ? recs(cur) : h('p.r2-note', 'Записей нет.')) : null,
+      others.length
+        ? h('div', h('h3', 'Другие прохождения'), others.map((p) => h('div.r2-card',
+            h('div.r2-card-h', h('span', p.name), h('small', `${p.profile !== 'normal' ? 'тестовый профиль · ' : ''}создано ${fmtDate(p.created)}`)),
+            p.records.length ? recs(p) : h('p.r2-note', 'Записей нет.'),
+            h('button.r2-btn.small', { onclick: () => this.menus.confirm(`Удалить прохождение «${p.name}» со всеми записями?`, () => { this.slots.deletePlaythrough(p.id); again(); }) }, 'Удалить прохождение'))))
+        : null,
+      h('p.r2-note', 'Хранятся: стартовая запись, 3 автосохранения (каждые 10 мин активной игры), 3 событийных, 1 при выходе, 3 быстрых (F5 / F9) и любые ручные. Очереди не вытесняют друг друга.'),
+      h('button.r2-btn.small', { onclick: () => this.menus.close('saves') }, 'Закрыть'),
+    );
+    this.menus.show('saves', body);
   }
 
   /** D048: the start weapon is chosen before a new playthrough begins. */
@@ -825,9 +961,9 @@ export class TestScene {
     const pick = (id: 'sword1' | 'bow1' | 'staff1', label: string) => h('button.r2-btn', { onclick: () => this.restart(id) }, label);
     const body = h(
       'div',
-      h('h1', 'Начальное оружие'),
+      h('h1', 'Новое прохождение'),
       h('div.r2-rule'),
-      h('p', 'Выберите оружие, с которым герой начнёт путь. Лёгкая броня I, 3 малых зелья здоровья, 0 золота; умений нет.'),
+      h('p', 'Выберите оружие, с которым герой начнёт путь. Лёгкая броня I, 3 малых зелья здоровья, 0 золота; умений нет. Прежние прохождения и их записи остаются.'),
       pick('sword1', 'Железный меч'),
       pick('bow1', 'Охотничий лук'),
       pick('staff1', 'Посох ученика'),
@@ -836,12 +972,26 @@ export class TestScene {
     this.menus.show('start', body);
   }
 
-  /** A new test playthrough: full resources, day 1 08:00, at the spawn. */
-  restart(start: 'sword1' | 'bow1' | 'staff1' = 'sword1') {
+  /**
+   * A new playthrough with its own world and history: the approved start (or, in dev mode only, a
+   * test profile), day 1 08:00 at the spawn, and its start record (never evicted, D202).
+   */
+  restart(start: 'sword1' | 'bow1' | 'staff1' = 'sword1', profile: 'normal' | 'test' | 'high' = 'normal') {
+    if (profile !== 'normal' && !this.dev) return;
+    let pt: PlaythroughMeta;
+    try {
+      const n = this.slots.index().playthroughs.length + 1;
+      pt = this.slots.createPlaythrough(profile === 'normal' ? `Прохождение ${n}` : `Тестовое прохождение ${n}`, profile);
+    } catch (e) {
+      this.loadError(e);
+      return;
+    }
+    this.playthroughId = pt.id;
     this.menus.closeAll();
     this.growth = newGrowth(start);
     this.eworld = newEconomyWorld(this.growth);
     this.story = newStory();
+    this.pendingEvent = null;
     this.ecoScene?.cancelGather();
     this.storyScene?.cancelTravel();
     this.hero = new HeroState();
@@ -853,11 +1003,13 @@ export class TestScene {
     const fresh = new HeroMotor(this.site.ground, this.site.spawn.x, this.site.spawn.z);
     this.motor.loadSave(fresh.toSave());
     this.installCombat(newCombatData('start'));
+    if (profile !== 'normal') this.devProfile(profile);
     this.world.player.attack = null;
-    this.playthroughId = 'test';
     this.syncPlayer(0);
     this.host.renderer.snapTo(this.motor.x, this.motor.z);
     this.input.live = !this.pause.paused;
+    if (!this.save('start')) this.hud.toast(this.lastSave);
+    else this.hud.toast(`${pt.name}: начало`);
   }
 
   // ------------------------------------------------------------------ stage 5: travel and sleep
@@ -929,9 +1081,9 @@ export class TestScene {
       'div',
       h('h1', 'Вы погибли'),
       h('div.r2-rule'),
-      h('button.r2-btn.primary', { onclick: () => this.quickLoad() }, 'Загрузить последнее'),
-      h('button.r2-btn', { onclick: () => this.chooseStart() }, 'Начать площадку заново'),
-      h('button.r2-btn', { onclick: () => this.exit() }, 'Главное меню'),
+      h('button.r2-btn.primary', { onclick: () => this.loadLatest() }, 'Загрузить последнее'),
+      h('button.r2-btn', { onclick: () => this.savesMenu() }, 'Выбрать сохранение'),
+      h('button.r2-btn', { onclick: () => this.leave() }, 'Главное меню'),
       h('div.r2-note', 'Смерть не создаёт сохранение; прежние записи остаются.'),
     );
     this.menus.show('death', body);
@@ -989,6 +1141,8 @@ export class TestScene {
   /** Dev mode only: switches the combat profile (ОМ, enemies and cooldowns stay). */
   devProfile(p: 'test' | 'start' | 'high') {
     if (!this.dev) return;
+    // a test profile used on a normal playthrough marks it as a test playthrough (kept apart, D214)
+    if (p !== 'start' && this.playthroughId) this.slots.markProfile(this.playthroughId, p);
     const d = this.combat.data;
     if (p === 'high') {
       addXp(this.hero.progress, XP_CAP);
@@ -1286,6 +1440,13 @@ export class TestScene {
     this.syncPlayer(0);
     this.host.renderer.snapTo(x, z);
   }
+}
+
+/** Real date and time of a record. */
+function fmtDate(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
 }
 
 /** Metres with a Russian decimal comma. */
