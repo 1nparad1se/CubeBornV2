@@ -92,6 +92,7 @@ export class RpgEntities {
       airborne: p.airborne,
       vy: p.jumpV,
       attack: a ? { t: Math.min(1, a.t / a.dur), hitAt: a.hitAt } : null,
+      hold: p.hold,
       time: w.time,
       flip: p.airJumpT >= 0 ? p.airJumpT / JUMP.flipTime : 0,
     });

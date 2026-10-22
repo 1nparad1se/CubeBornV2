@@ -19,6 +19,8 @@ interface HumanPose {
   time: number;
   /** Somersault of the double jump: progress 0..1 (0 = none). */
   flip?: number;
+  /** A held action (RPG test scene): sword block, bow aim, staff charge; `k` 0..1 builds the pose up. */
+  hold?: { kind: 'block' | 'aim' | 'charge'; k: number } | null;
 }
 
 /**
@@ -319,7 +321,9 @@ export class HumanModel {
       this.placeBow(g, 0);
       this.weapon.setDraw(null, false, 0);
     }
-    if (grip === 'two') this.twoHandPose(p, br);
+    if (p.hold && !p.attack && this.holdPose(p.hold.kind, p.hold.k, grip === 'two')) {
+      /* the held pose replaces the stance */
+    } else if (grip === 'two') this.twoHandPose(p, br);
     else if (p.attack) this.attackPose(p.attack.t, p.attack.hitAt);
     this.flipPose(p.flip ?? 0, grip === 'two');
   }
@@ -523,6 +527,67 @@ export class HumanModel {
     const nock = this.body.localToWorld(nockBody.multiplyScalar(PX));
     r.worldToLocal(nock);
     this.weapon!.setDraw(nocked ? nock : null, nocked, draw);
+  }
+
+  /**
+   * Held action poses, kept while the action lasts (cubic, no new parts):
+   * - block: the sword raised across the front at head height, blade level toward the left,
+   *   the free arm braced forward;
+   * - aim: the bow level across the chest, string drawn straight back to the chest (the draw of
+   *   the shot, held at full draw);
+   * - charge: the staff brought upright before the face (one hand) or raised high (two hands),
+   *   the body leaning back a little as the charge grows.
+   * Returns false when the held weapon has no such pose.
+   */
+  private holdPose(kind: 'block' | 'aim' | 'charge', k: number, twoHands: boolean): boolean {
+    const P = this.parts;
+    const r = this.weapon?.root;
+    const wk = this.weaponKind;
+    const e = ease(k);
+    if (kind === 'aim' && wk === 'bow') {
+      this.bowPose((0.25 + 0.75 * e) * 0.999, 1);
+      return true;
+    }
+    if (kind === 'block' && wk !== 'bow' && !twoHands) {
+      // right fist before the face, blade level across toward the model's left
+      const fist = _g.set(-1, 25, 7);
+      this.aimArm(P.armR, SHOULDER_R, fist, e);
+      if (r) {
+        r.position.set(0, 0, 0);
+        // blade straight out of the fist, then tipped so it lies level across the front
+        r.rotation.set(Math.PI / 2, 0, 0);
+        r.quaternion.premultiply(_q.setFromAxisAngle(_x.set(1, 0, 0), (Math.PI / 2) * e));
+      }
+      P.armL.rotation.x = -0.9 * e;
+      P.armL.rotation.z = 0.25 * e;
+      this.body.rotation.y = 0.12 * e;
+      P.legR.rotation.x += 0.15 * e;
+      P.legL.rotation.x -= 0.2 * e;
+      return true;
+    }
+    if (kind === 'charge') {
+      if (twoHands && wk === 'staff2h') {
+        const H = HOLDS.staff2h!;
+        this.holdTwoHanded(mixHold(_hold2, H.idle, H.a, e));
+        this.body.rotation.x = -0.08 * e;
+        P.head.rotation.x = -0.12 * e;
+        return true;
+      }
+      if (!twoHands) {
+        // staff upright before the face, the arm forward; the free hand open toward it
+        if (r) {
+          r.position.set(0, 0, 0);
+          r.rotation.set(0.15 + 1.2 * e, 0, 0);
+        }
+        P.armR.rotation.x = -0.3 - 1.05 * e;
+        P.armR.rotation.z = 0.2 * e;
+        P.armL.rotation.x = -0.25 - 0.95 * e;
+        P.armL.rotation.z = -0.35 * e;
+        this.body.rotation.x = -0.06 * e;
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Basic attack motion of the held weapon (t = progress 0..1 of one attack). */

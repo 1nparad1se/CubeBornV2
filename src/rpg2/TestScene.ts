@@ -103,6 +103,7 @@ export class TestScene {
   readonly slots = new SlotStore();
   /** An event autosave raised during a world step, written at the end of the step (D213). */
   private pendingEvent: string | null = null;
+  private holdT = 0;
   private disposed = false;
   /** Last result of the save / load for tests and the dev panel. */
   lastSave = '';
@@ -443,6 +444,10 @@ export class TestScene {
     this.stats.attacks += c.counters.attacks - attacks0;
     // the existing hero model plays the swing of the running action
     const a = c.data.action;
+    // held action poses (owner's request): block, aim and charge last as long as the action
+    const hk: 'block' | 'aim' | 'charge' | null = c.blocking ? 'block' : c.aiming ? 'aim' : c.charge !== null ? 'charge' : null;
+    this.holdT = hk && p.hold?.kind === hk ? this.holdT + dt : 0;
+    p.hold = hk ? { kind: hk, k: hk === 'charge' ? Math.min(1, 0.35 + (c.charge ?? 0)) : Math.min(1, this.holdT / (hk === 'aim' ? 0.4 : 0.15)) } : null;
     p.attack = a ? ({ weapon: null, t: a.t, dur: a.dur, hitAt: Math.min(1, a.hitAt / a.dur), done: a.t >= a.hitAt, dirX: a.dirX, dirZ: a.dirZ, seq: a.rec } as unknown as typeof p.attack) : null;
     this.syncWeapon();
     // D028: a campfire (the cooking stove) within 5 m out of combat: HP / MP regeneration ×5
