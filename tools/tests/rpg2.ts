@@ -343,13 +343,13 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
   const ed = sim(m, h, 0.1, {}, { dodgePressed: true });
   ok(ed.some((e) => e.type === 'dodgeDenied'), 'no dodge in water');
   const ej = sim(m, h, 0.15, {}, { jumpPressed: true });
-  ok(ej.some((e) => e.type === 'jump' && !e.air) && m.mode === 'air', 'jump up from the water surface');
+  ok(ej.some((e) => e.type === 'jump' && !e.air) && (m.mode as string) === 'air', 'jump up from the water surface');
   const ej2 = sim(m, h, 0.05, {}, { jumpPressed: true });
   ok(ej2.some((e) => e.type === 'jump' && e.air), 'then one air jump');
   sim(m, h, 2);
   ok(m.mode === 'swim' && m.airJumpReady, 'back in the water the air jump is restored');
   sim(m, h, 4, { moveX: 1, faceX: 1 });
-  ok(m.mode === 'ground' && near(m.y, 0.2), 'walks out onto a bank no higher than 0.3 m over the water');
+  ok((m.mode as string) === 'ground' && near(m.y, 0.2), 'walks out onto a bank no higher than 0.3 m over the water');
 }
 
 // ------------------------------------------------------------------ dodge (D167–D179)
@@ -360,6 +360,8 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
   ok(e.some((x) => x.type === 'dodge') && near(h.st, 80, 1e-9), 'dodge costs 20 ST at the start');
   ok(near(m.x - 50, 3, 0.05), `dodge moves 3 m in 0.5 s (${(m.x - 50).toFixed(2)})`);
   ok(e.some((x) => x.type === 'dodgeEnd'), 'it lasts 0.5 s');
+  sim(m, h, 0.3);
+  ok(near(m.x - 50, 3, 0.05), 'and stops: no slide past 3 m');
   const e2 = sim(m, h, 0.1, {}, { dodgePressed: true });
   ok(e2.some((x) => x.type === 'dodgeDenied' && x.reason === 'cooldown') && near(h.st, 80, 1e-9), 'cooldown 1 s: a refused press costs nothing');
   sim(m, h, 0.5);
@@ -430,7 +432,7 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
   c.sensitivity = 1.7;
   saveControls(c, kv);
   const back = loadControls(kv);
-  ok(back.binds.jump[0] === 'KeyW' && back.sensitivity === 1.7 && mem.has(CONTROLS_KEY) && CONTROLS_KEY !== TEST_SAVE_KEY, 'controls are stored for the whole game under their own key');
+  ok(back.binds.jump[0] === 'KeyW' && back.sensitivity === 1.7 && mem.has(CONTROLS_KEY) && (CONTROLS_KEY as string) !== TEST_SAVE_KEY, 'controls are stored for the whole game under their own key');
   ok(fixControls({ binds: { jump: 7 }, sensitivity: 99 }).binds.jump[0] === 'Space' && fixControls({ sensitivity: 99 }).sensitivity === 3, 'broken stored controls fall back per field');
 }
 

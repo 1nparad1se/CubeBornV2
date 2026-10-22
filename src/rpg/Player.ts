@@ -127,7 +127,6 @@ export class RpgPlayer {
     const w = this.w;
     const c = w.ctl;
     this.updateJump(dt);
-    if (this.cooldown > 0) this.cooldown -= dt;
     // ---------------------------------------------------------- intentions
     let ix = c.moveX;
     let iz = c.moveZ;
@@ -182,20 +181,9 @@ export class RpgPlayer {
       this.autoJump(ix, iz);
     } else this.stuckT = 0;
     // ---------------------------------------------------------- attacks
-    if (wantAttack && !this.attack && this.cooldown <= 0) this.startAttack(aimX, aimZ);
-    const a = this.attack;
-    if (a) {
-      a.t += dt;
-      this.fx = a.dirX;
-      this.fz = a.dirZ;
-      if (!a.done && a.t >= a.dur * a.hitAt) {
-        a.done = true;
-        w.resolveAttack(a.weapon, w.stats.hitDamage, a.dirX, a.dirZ);
-      }
-      if (a.t >= a.dur) this.attack = null;
-      // feet stay planted until the hit lands
-      if (!a.done) ix = iz = 0;
-    }
+    this.attackStep(dt, wantAttack, aimX, aimZ);
+    // feet stay planted until the hit lands
+    if (this.attack && !this.attack.done) ix = iz = 0;
     // ---------------------------------------------------------- movement
     const len = Math.hypot(ix, iz);
     if (len > 1) {
@@ -214,6 +202,32 @@ export class RpgPlayer {
     this.moveWithTerrain(this.vx * dt, this.vz * dt);
     this.followGround(dt);
     if (this.moving || Math.hypot(this.vx, this.vz) > 0.3) this.anim += dt * speed * 2.2;
+  }
+
+  /**
+   * Basic attacks: starts one toward (aimX, aimZ) when wanted and ready, advances the one in
+   * progress and resolves its hit. Also used alone by the RPG test scene (which moves the hero
+   * itself). Returns true when an attack started this tick.
+   */
+  attackStep(dt: number, want: boolean, aimX: number, aimZ: number): boolean {
+    if (this.cooldown > 0) this.cooldown -= dt;
+    let started = false;
+    if (want && !this.attack && this.cooldown <= 0) {
+      this.startAttack(aimX, aimZ);
+      started = true;
+    }
+    const a = this.attack;
+    if (a) {
+      a.t += dt;
+      this.fx = a.dirX;
+      this.fz = a.dirZ;
+      if (!a.done && a.t >= a.dur * a.hitAt) {
+        a.done = true;
+        this.w.resolveAttack(a.weapon, this.w.stats.hitDamage, a.dirX, a.dirZ);
+      }
+      if (a.t >= a.dur) this.attack = null;
+    }
+    return started;
   }
 
   private repath = 0;

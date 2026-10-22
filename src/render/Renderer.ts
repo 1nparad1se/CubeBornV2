@@ -492,7 +492,29 @@ export class Renderer {
     };
   }
 
+  /** Extra objects of the current run (RPG test scene markers); removed by endRun. */
+  private runObjects: THREE.Object3D[] = [];
+
+  /** Adds an object to the scene for the current run only. */
+  addRunObject(o: THREE.Object3D) {
+    this.runObjects.push(o);
+    this.scene.add(o);
+  }
+
   endRun() {
+    for (const o of this.runObjects) {
+      this.scene.remove(o);
+      o.traverse((c) => {
+        const m = c as THREE.Mesh;
+        m.geometry?.dispose();
+        const mats = Array.isArray(m.material) ? m.material : m.material ? [m.material] : [];
+        for (const mt of mats) {
+          (mt as THREE.MeshBasicMaterial).map?.dispose();
+          mt.dispose();
+        }
+      });
+    }
+    this.runObjects.length = 0;
     if (this.entities) {
       this.scene.remove(this.entities.group);
       this.entities.dispose();

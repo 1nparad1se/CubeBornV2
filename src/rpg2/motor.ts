@@ -282,6 +282,8 @@ export class HeroMotor {
       this.dodge.t += dt;
       if (this.dodge.t >= DODGE.duration) {
         this.dodge = null;
+        // the dodge covers its distance and stops (no slide past 3 m)
+        if (this.mode === 'ground') this.vx = this.vz = 0;
         const b = this.buffered;
         this.buffered = null;
         ev.push({ type: 'dodgeEnd', buffered: b });
@@ -382,7 +384,7 @@ export class HeroMotor {
     if (this.y > this.fallTop) this.fallTop = this.y;
     // D192: entering water; the depth is taken at the entry point
     const surf = this.g.water(this.x, this.z);
-    if (surf !== null && this.vy <= 0 && y0 >= surf && this.y <= surf) {
+    if (surf !== null && this.vy <= 0 && this.y <= surf) {
       const bed = this.g.top(this.x, this.z);
       const depth = surf - bed;
       if (depth >= WATER.swimDepth) {

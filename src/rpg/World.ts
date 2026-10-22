@@ -111,6 +111,11 @@ export class World {
   /** Attack the target automatically (walk into reach, then keep attacking). */
   autoAttack = false;
   time = 0;
+  /**
+   * Replaces the hero's own update (the RPG test scene moves the hero with its own controller,
+   * src/rpg2); null = the hero walks by mouse orders as usual.
+   */
+  driver: ((dt: number) => void) | null = null;
   stats: CharStats;
   jumps = 0;
 
@@ -170,7 +175,8 @@ export class World {
     // a target that left the world (killed or removed) is dropped with its automatic attack
     if (this.target && !this.dummies.includes(this.target)) this.select(null);
     this.dayNight.update();
-    this.player.update(dt);
+    if (this.driver) this.driver(dt);
+    else this.player.update(dt);
     this.updateProjectiles(dt);
     for (const d of this.dummies) {
       d.wobble = Math.max(0, d.wobble - dt * 2.2);
