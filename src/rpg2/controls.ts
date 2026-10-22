@@ -4,7 +4,6 @@
  * are written as "Mouse0" (left), "Mouse1" (middle), "Mouse2" (right).
  */
 export type ControlAction =
-  | 'moveF' | 'moveB' | 'moveL' | 'moveR'
   | 'jump' | 'dodge' | 'sprint' | 'walkToggle'
   | 'attack' | 'block' | 'interact' | 'weaponSwap'
   | 'skill1' | 'skill2' | 'skill3' | 'skill4' | 'skill5' | 'skill6'
@@ -16,16 +15,12 @@ export type ControlBinds = Record<ControlAction, string[]>;
 
 /** Actions in display order with their Russian names. */
 export const CONTROL_LIST: { id: ControlAction; name: string; group: string }[] = [
-  { id: 'moveF', name: 'Вперёд', group: 'Движение' },
-  { id: 'moveB', name: 'Назад', group: 'Движение' },
-  { id: 'moveL', name: 'Влево', group: 'Движение' },
-  { id: 'moveR', name: 'Вправо', group: 'Движение' },
   { id: 'jump', name: 'Прыжок / воздушный прыжок', group: 'Движение' },
-  { id: 'dodge', name: 'Уклонение', group: 'Движение' },
-  { id: 'sprint', name: 'Спринт (удерживать)', group: 'Движение' },
+  { id: 'dodge', name: 'Уклонение (к курсору)', group: 'Движение' },
+  { id: 'sprint', name: 'Спринт (включить / выключить)', group: 'Движение' },
   { id: 'walkToggle', name: 'Ходьба / бег', group: 'Движение' },
-  { id: 'attack', name: 'Обычная атака', group: 'Бой' },
-  { id: 'block', name: 'Блок / прицел / заряд', group: 'Бой' },
+  { id: 'attack', name: 'Обычная атака (удерживать)', group: 'Бой' },
+  { id: 'block', name: 'Блок / прицел / заряд (удерживать)', group: 'Бой' },
   { id: 'interact', name: 'Взаимодействие (удерживать — сбор)', group: 'Бой' },
   { id: 'weaponSwap', name: 'Смена оружия', group: 'Бой' },
   { id: 'skill1', name: 'Умение 1', group: 'Умения и зелья' },
@@ -49,12 +44,16 @@ export const CONTROL_LIST: { id: ControlAction; name: string; group: string }[] 
   { id: 'dialog', name: 'Диалог', group: 'Окна' },
 ];
 
-/** Defaults: the base key list of the GDD («Экраны и визуальный стиль», D193) plus WASD. */
+/**
+ * Defaults. Movement is by mouse only, as in the main game (owner's decision, overriding the WASD
+ * of D211): left click walks / selects / attacks, the right button held orbits the camera. Both
+ * mouse buttons are therefore reserved; the attack key is F like the main game, block / aim /
+ * charge is held on Q.
+ */
 export function defaultBinds(): ControlBinds {
   return {
-    moveF: ['KeyW'], moveB: ['KeyS'], moveL: ['KeyA'], moveR: ['KeyD'],
     jump: ['Space'], dodge: ['ShiftLeft'], sprint: ['AltLeft'], walkToggle: ['CapsLock'],
-    attack: ['Mouse0'], block: ['Mouse2'], interact: ['KeyE'], weaponSwap: ['Tab'],
+    attack: ['KeyF'], block: ['KeyQ'], interact: ['KeyE'], weaponSwap: ['Tab'],
     skill1: ['Digit1'], skill2: ['Digit2'], skill3: ['Digit3'], skill4: ['Digit4'], skill5: ['Digit5'], skill6: ['Digit6'],
     potionHp: ['F1'], potionMp: ['F2'], potionSt: ['F3'],
     quickSave: ['F5'], quickLoad: ['F9'],
@@ -72,14 +71,15 @@ export interface ControlSettings {
 
 export const CONTROLS_KEY = 'cubeborn.controls';
 /** 2: the default sprint key moved from Ctrl to Alt (owner's decision); v1 binds with the old default are migrated. */
-export const CONTROLS_VERSION = 2;
+/** 3: mouse-only movement; LMB / RMB reserved, attack → F, block → Q, no walking keys. */
+export const CONTROLS_VERSION = 3;
 
 export function defaultControls(): ControlSettings {
   return { version: CONTROLS_VERSION, binds: defaultBinds(), sensitivity: 1, invertY: false };
 }
 
 /** Keys that are never bindable: Esc always opens / closes menus (D211). */
-export const RESERVED = new Set(['Escape']);
+export const RESERVED = new Set(['Escape', 'Mouse0', 'Mouse2']);
 
 /** Reads stored controls (anything unreadable falls back to defaults per field). */
 export function fixControls(raw: unknown): ControlSettings {
@@ -96,6 +96,13 @@ export function fixControls(raw: unknown): ControlSettings {
   if ((r.version ?? 1) < 2 && binds.sprint.length === 1 && binds.sprint[0] === 'ControlLeft') {
     const taken = (Object.keys(binds) as ControlAction[]).some((k) => k !== 'sprint' && binds[k].includes('AltLeft'));
     if (!taken) binds.sprint = ['AltLeft'];
+  }
+  // v2 → v3: the mouse buttons left the bindings (RESERVED filter above); emptied attack / block
+  // get their new defaults when the key is free
+  if ((r.version ?? 1) < 3) {
+    const used = (code: string) => (Object.keys(binds) as ControlAction[]).some((k) => binds[k].includes(code));
+    if (!binds.attack.length && !used('KeyF')) binds.attack = ['KeyF'];
+    if (!binds.block.length && !used('KeyQ')) binds.block = ['KeyQ'];
   }
   return {
     version: CONTROLS_VERSION,

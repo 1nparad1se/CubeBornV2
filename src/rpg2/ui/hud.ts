@@ -144,10 +144,10 @@ export class SceneHud {
     this.weaponKey.replaceChildren(h('kbd', codeName(b.weaponSwap[0])), ' — сменить оружие');
     this.help.replaceChildren(key('inventory', 'Инвентарь'), key('map', 'Карта'), h('div', h('kbd', 'Esc'), ' — Пауза'), this.helpFull);
     this.helpFull.replaceChildren(
-      h('div', k('moveF'), k('moveL'), k('moveB'), k('moveR'), ' — движение, мышь — обзор, ', k('attack'), ' — атака'),
-      h('div', k('jump'), ' — прыжок (ещё раз в воздухе), ', k('dodge'), ' — уклонение'),
+      h('div', 'ЛКМ по земле — идти, по противнику — выбрать (второй щелчок — автоатака), ПКМ (удерживать) — камера'),
+      h('div', k('attack'), ' — атака, ', k('jump'), ' — прыжок (ещё раз в воздухе), ', k('dodge'), ' — уклонение к курсору'),
       h('div', k('block'), ' — блок (меч) / прицел (лук) / заряд (посох), ', k('weaponSwap'), ' — смена оружия, ', k('skill1'), '–', k('skill6'), ' — умения'),
-      h('div', k('sprint'), ' — спринт, ', k('walkToggle'), ' — ходьба/бег'),
+      h('div', k('sprint'), ' — спринт вкл/выкл, ', k('walkToggle'), ' — ходьба/бег, ', k('interact'), ' — взаимодействие'),
       h('div', k('inventory'), ' инвентарь · ', k('map'), ' карта · ', k('character'), ' персонаж · ', h('kbd', 'Esc'), ' пауза'),
     );
   }

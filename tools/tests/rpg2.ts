@@ -14,6 +14,8 @@ import { bind, defaultBinds, defaultControls, fixControls, loadControls, saveCon
 import { PLAYTHROUGH_VERSION, SaveError, migratePlaythrough, readPlaythrough, restore, snapshot, writePlaythrough, TEST_SAVE_KEY } from '../../src/rpg2/save';
 import { newCombatData } from '../../src/rpg2/combat/system';
 import { newGrowth } from '../../src/rpg2/growth/growth';
+import { buildTestSite } from '../../src/rpg2/testSite';
+import { ClickWalk } from '../../src/rpg2/clickWalk';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -423,20 +425,23 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
 // ------------------------------------------------------------------ controls (D211)
 {
   const b = defaultBinds();
-  ok(b.jump[0] === 'Space' && b.dodge[0] === 'ShiftLeft' && b.sprint[0] === 'AltLeft' && b.walkToggle[0] === 'CapsLock' && b.potionHp[0] === 'F1' && b.attack[0] === 'Mouse0', 'default keys (sprint on Alt by the owner)');
+  ok(b.jump[0] === 'Space' && b.dodge[0] === 'ShiftLeft' && b.sprint[0] === 'AltLeft' && b.walkToggle[0] === 'CapsLock' && b.potionHp[0] === 'F1' && b.attack[0] === 'KeyF' && b.block[0] === 'KeyQ' && !Object.values(b).some((v) => v.includes('Mouse0') || v.includes('Mouse2')), 'default keys (mouse buttons reserved for walking and camera)');
   {
     const v1 = { version: 1, binds: { ...defaultControls().binds, sprint: ['ControlLeft'] }, sensitivity: 1.4, invertY: false };
     const m = fixControls(v1);
-    ok(m.binds.sprint[0] === 'AltLeft' && m.sensitivity === 1.4 && m.version === 2, 'v1 controls: the old Ctrl default moves to Alt');
+    ok(m.binds.sprint[0] === 'AltLeft' && m.sensitivity === 1.4 && m.version === 3, 'v1 controls: the old Ctrl default moves to Alt');
     const own = fixControls({ ...v1, binds: { ...v1.binds, sprint: ['KeyQ'] } });
     ok(own.binds.sprint[0] === 'KeyQ', 'a sprint key chosen by the player stays');
     const v2 = fixControls({ ...v1, version: 2 });
     ok(v2.binds.sprint[0] === 'ControlLeft', 'Ctrl chosen after the change stays');
+    const v2m = fixControls({ ...v1, version: 2, binds: { ...v1.binds, attack: ['Mouse0'], block: ['Mouse2'] } });
+    ok(v2m.binds.attack[0] === 'KeyF' && v2m.binds.block[0] === 'KeyQ', 'v2 → v3: mouse buttons leave the bindings, attack F, block Q');
   }
-  const r = bind(b, 'jump', 'KeyW', false);
-  ok(r.conflict === 'moveF' && !r.done && b.jump[0] === 'Space' && b.moveF[0] === 'KeyW', 'a conflict is reported and nothing changes without confirmation');
-  const r2 = bind(b, 'jump', 'KeyW', true);
-  ok(r2.done && b.jump[0] === 'KeyW' && !b.moveF.includes('KeyW'), 'confirmed: the key moves to the new action');
+  const r = bind(b, 'jump', 'KeyE', false);
+  ok(r.conflict === 'interact' && !r.done && b.jump[0] === 'Space' && b.interact[0] === 'KeyE', 'a conflict is reported and nothing changes without confirmation');
+  const r2 = bind(b, 'jump', 'KeyE', true);
+  ok(r2.done && b.jump[0] === 'KeyE' && !b.interact.includes('KeyE'), 'confirmed: the key moves to the new action');
+  ok(!bind(b, 'attack', 'Mouse0', true).done && !bind(b, 'block', 'Mouse2', true).done, 'mouse buttons cannot be rebound');
   ok(!bind(b, 'map', 'Escape', true).done, 'Esc cannot be rebound');
   const mem = new Map<string, string>();
   const kv = { getItem: (k: string) => mem.get(k) ?? null, setItem: (k: string, v: string) => void mem.set(k, v) };
@@ -445,7 +450,7 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
   c.sensitivity = 1.7;
   saveControls(c, kv);
   const back = loadControls(kv);
-  ok(back.binds.jump[0] === 'KeyW' && back.sensitivity === 1.7 && mem.has(CONTROLS_KEY) && (CONTROLS_KEY as string) !== TEST_SAVE_KEY, 'controls are stored for the whole game under their own key');
+  ok(back.binds.jump[0] === 'KeyE' && back.sensitivity === 1.7 && mem.has(CONTROLS_KEY) && (CONTROLS_KEY as string) !== TEST_SAVE_KEY, 'controls are stored for the whole game under their own key');
   ok(fixControls({ binds: { jump: 7 }, sensitivity: 99 }).binds.jump[0] === 'Space' && fixControls({ sensitivity: 99 }).sensitivity === 3, 'broken stored controls fall back per field');
 }
 
@@ -505,6 +510,24 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
   mem.set(TEST_SAVE_KEY, JSON.stringify({ ...s, version: 0 }));
   const up = readPlaythrough(TEST_SAVE_KEY, kv)!;
   ok(up.version === PLAYTHROUGH_VERSION && mem.has(TEST_SAVE_KEY + '.backup.v0'), 'an older record is upgraded and the original backed up');
+}
+
+// ------------------------------------------------------------------ mouse walking (main game controls)
+{
+  const site = buildTestSite();
+  for (const [gx, gz] of [[61, 69.5], [33, 62], [56, 76], [48, 50]]) {
+    const m = new HeroMotor(site.ground, site.spawn.x, site.spawn.z);
+    const h = new HeroState();
+    const w = new ClickWalk(site.terrain, site.ground);
+    w.order(m.x, m.z, gx, gz);
+    let t = 0;
+    for (; t < 40 && (w.walking || m.mode !== 'ground'); t += 1 / 60) {
+      const st = w.steer(m, 1 / 60);
+      m.update(1 / 60, { ...NO_INTENT, moveX: st?.dx ?? 0, moveZ: st?.dz ?? 0, faceX: st?.dx ?? m.fx, faceZ: st?.dz ?? m.fz, jumpPressed: !!st?.jump }, h);
+      h.tick(1 / 60, {}, false);
+    }
+    ok(Math.hypot(m.x - gx, m.z - gz) < 0.6, `click-walk from the spawn reaches (${gx}, ${gz}) in ${t.toFixed(1)} s`);
+  }
 }
 
 if (fails) {
