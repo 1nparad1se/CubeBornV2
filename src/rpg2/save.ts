@@ -5,6 +5,9 @@ import type { MotorSave } from './motor';
 import { ActiveTime } from './time';
 import { checkCombat, newCombatData, type CombatData } from './combat/system';
 import { masteryThreshold } from './combat/formulas';
+import { checkGrowth, newGrowth, addItem, type GrowthData } from './growth/growth';
+import { levelForXp, tpForLevel, LP_PER_LEVEL } from './growth/levels';
+import { SPELL_BY_ID } from './combat/data';
 
 /**
  * Playthrough snapshot of the RPG systems (stage 1: the hero state, the movement state, the clock
@@ -14,8 +17,8 @@ import { masteryThreshold } from './combat/formulas';
  * (D040–D047) arrives in stage 6 and keeps this record as the snapshot body.
  */
 export const PLAYTHROUGH_FORMAT = 'cubeborn.rpg2.playthrough';
-/** 1: stage 1 (hero, movement, clock). 2: stage 2 adds the combat block. */
-export const PLAYTHROUGH_VERSION = 2;
+/** 1: stage 1 (hero, movement, clock). 2: stage 2 adds the combat block. 3: stage 3 adds growth (gold, items, talents, circles, mods). */
+export const PLAYTHROUGH_VERSION = 3;
 /** The test scene's single record (stage 6 replaces it with slots and queues). */
 export const TEST_SAVE_KEY = 'cubeborn.rpg2.test';
 
@@ -45,9 +48,11 @@ export interface PlaythroughSave {
   active: { seconds: number; autosaveLeft: number };
   /** Stage 2: weapons, panels, cooldowns, ОМ, the running action, projectiles, zones and enemies. */
   combat: CombatData;
+  /** Stage 3: gold, inventory and equipment, talents, circles, modifications, potions. */
+  growth: GrowthData;
 }
 
-export function snapshot(o: { id: string; map: string; name: string; race: string; hero: HeroState; motor: MotorSave; time: ActiveTime; combat: CombatData; now?: number }): PlaythroughSave {
+export function snapshot(o: { id: string; map: string; name: string; race: string; hero: HeroState; motor: MotorSave; time: ActiveTime; combat: CombatData; growth: GrowthData; now?: number }): PlaythroughSave {
   const h = o.hero;
   return {
     format: PLAYTHROUGH_FORMAT,
@@ -71,11 +76,12 @@ export function snapshot(o: { id: string; map: string; name: string; race: strin
     clock: { minutes: o.time.clock.minutes, days: o.time.clock.days },
     active: { seconds: o.time.seconds, autosaveLeft: o.time.autosaveLeft },
     combat: JSON.parse(JSON.stringify(o.combat)),
+    growth: JSON.parse(JSON.stringify(o.growth)),
   };
 }
 
 /** Restores the hero and the active time from a checked record. */
-export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime; combat: CombatData } {
+export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime; combat: CombatData; growth: GrowthData } {
   const hero = new HeroState();
   hero.stats = { ...s.hero.stats };
   hero.progress = { ...s.hero.progress, mastery: { ...s.hero.progress.mastery } };
@@ -88,7 +94,7 @@ export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime
   const time = new ActiveTime(new GameClock(s.clock.minutes, s.clock.days, CLOCK.rate));
   time.seconds = s.active.seconds;
   time.autosaveLeft = s.active.autosaveLeft;
-  return { hero, time, combat: JSON.parse(JSON.stringify(s.combat)) };
+  return { hero, time, combat: JSON.parse(JSON.stringify(s.combat)), growth: JSON.parse(JSON.stringify(s.growth)) };
 }
 
 export class SaveError extends Error {}
@@ -109,16 +115,51 @@ export function migratePlaythrough(raw: any): { save: PlaythroughSave; migrated:
   const migrated = v < PLAYTHROUGH_VERSION;
   // each version adds its step here, oldest first
   let combat: CombatData;
+  let growth: GrowthData | null = null;
+  let usedStart = false;
   if (v < 2) {
     // v1 → v2: the approved start (one sword, no skills); masteries of v1 become their ОМ thresholds
     combat = newCombatData('start');
     for (const k of ['sword', 'bow', 'staff'] as const) combat.om[k] = masteryThreshold(num(raw.hero?.progress?.mastery?.[k] ?? 1, `hero.progress.mastery.${k}`));
-  } else {
+  } else if (v < 3) {
     try {
       combat = checkCombat(raw.combat);
     } catch (e) {
       throw new SaveError(`Повреждён боевой блок: ${(e as Error).message}`);
     }
+  } else {
+    let gr: GrowthData;
+    try {
+      gr = checkGrowth(raw.growth);
+    } catch (e) {
+      throw new SaveError(`Повреждён блок развития: ${(e as Error).message}`);
+    }
+    try {
+      combat = checkCombat(raw.combat, (id) => gr.items.some((i) => i.uid === id));
+    } catch (e) {
+      throw new SaveError(`Повреждён боевой блок: ${(e as Error).message}`);
+    }
+    growth = gr;
+  }
+  if (v < 3) {
+    // v2 → v3: the approved start kit (light armor I equipped, 3 small HP potions, 0 gold); every
+    // weapon of the old quick list becomes a common item; circles cover the learned spells; levels
+    // follow the stored XP with their LP and talent points (D198)
+    const first = (combat.quick.find((q) => q) ?? 'sword1') as string;
+    const start = first === 'bow1' || first === 'staff1' ? first : 'sword1';
+    growth = newGrowth(start);
+    const startUid = growth.equip.weapon!;
+    const uids = combat.quick.map((q) => {
+      if (!q) return null;
+      if (q === start && !usedStart) {
+        usedStart = true;
+        return startUid;
+      }
+      return addItem(growth!, q, 'common').uid;
+    });
+    combat.quick = uids;
+    growth.equip.weapon = uids[combat.cur] ?? startUid;
+    growth.circles = Math.max(0, ...combat.learned.map((id) => SPELL_BY_ID[id]?.tier ?? 0));
   }
   const h = raw.hero ?? {};
   const stats = baseStats();
@@ -164,7 +205,16 @@ export function migratePlaythrough(raw: any): { save: PlaythroughSave; migrated:
     clock: { minutes: num(raw.clock?.minutes, 'clock.minutes'), days: num(raw.clock?.days ?? 0, 'clock.days') },
     active: { seconds: num(raw.active?.seconds ?? 0, 'active.seconds'), autosaveLeft: num(raw.active?.autosaveLeft ?? AUTOSAVE_SECONDS, 'active.autosaveLeft') },
     combat,
+    growth: growth!,
   };
+  if (v < 3) {
+    const lv = levelForXp(save.hero.progress.xp);
+    if (lv > save.hero.progress.level) {
+      save.hero.progress.lp += LP_PER_LEVEL * (lv - save.hero.progress.level);
+      save.hero.progress.tp += tpForLevel(lv) - tpForLevel(save.hero.progress.level);
+      save.hero.progress.level = lv;
+    }
+  }
   return { save, migrated };
 }
 

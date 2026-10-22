@@ -199,10 +199,10 @@ export class HeroMotor {
     }
     // ------------------------------------------------ dodge (D167, D170, D171, D173, D174, D179)
     if (it.dodgePressed && !dead) {
-      const deny = this.dodge ? 'busy' : this.mode === 'swim' ? 'swim' : this.mode !== 'ground' ? 'air' : this.stunned ? 'stun' : this.dodgeCd > 0 ? 'cooldown' : hero.st < DODGE.cost ? 'st' : null;
+      const deny = this.dodge ? 'busy' : this.mode === 'swim' ? 'swim' : this.mode !== 'ground' ? 'air' : this.stunned ? 'stun' : this.dodgeCd > 0 ? 'cooldown' : hero.st < hero.mods.dodgeCost ? 'st' : null;
       if (deny) ev.push({ type: 'dodgeDenied', reason: deny });
       else {
-        hero.spendSt(DODGE.cost);
+        hero.spendSt(hero.mods.dodgeCost);
         this.dodgeCd = DODGE.cooldown;
         let dx = it.moveX;
         let dz = it.moveZ;
@@ -264,7 +264,7 @@ export class HeroMotor {
     }
     this.sprinting = sprintNow;
     if (sprintNow) {
-      hero.spendSt(SPRINT.costPerSec * dt);
+      hero.spendSt(hero.mods.sprintCost * dt);
       if (hero.st <= 0) {
         // D181 / D182: back to running; a new press (with ≥ 10 ST) is needed
         this.sprinting = false;

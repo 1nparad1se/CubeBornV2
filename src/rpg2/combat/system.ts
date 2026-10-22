@@ -1,3 +1,4 @@
+import { addXp } from '../growth/levels';
 import type { HeroState } from '../hero';
 import type { HeroMotor, MotorGround } from '../motor';
 import { applyKnock, applySlow, applyStun } from './control';
@@ -9,6 +10,7 @@ import {
   ENEMY_HEIGHT, ENEMY_RADIUS, aggro, enemyDef, killEnemy, newEnemy, onDamaged, separate, updateEnemy,
   type EnemyCtx, type EnemyState,
 } from './enemy';
+import type { CombatBonuses } from '../growth/growth';
 import {
   BLOCK, Rng, combatAward, critParams, hitDamage, inFront, killXp, masteryOf, participationEnough, statMul, trainingAward,
 } from './formulas';
@@ -36,7 +38,24 @@ export interface ActionRec {
   credited: boolean;
   /** Hits per target uid (b5: at most 2 per target). */
   perTarget: Record<string, number>;
+  /** Stage 3: frozen bonus multiplier (talents, affixes, modifications) and the legendary effect of a normal attack. */
+  mul: number;
+  legend: string | null;
+  normal: boolean;
 }
+
+/** Stage 3 link to the inventory: the quick list holds item ids, the weapon is the equipped item. */
+export interface GearLink {
+  weaponTpl(): string;
+  itemTpl(uid: string): string | undefined;
+  equipWeapon(uid: string): string | null;
+  bonuses(): CombatBonuses;
+}
+
+const NEUTRAL: CombatBonuses = {
+  physDmg: 1, magicDmg: 1, physCrit: 0, physCritPow: 0, magicCrit: 0, magicCritPow: 0, skillSt: 1, skillCd: 1, spellMp: 1, spellCd: 1,
+  atkSpeed: 1, blockReduce: 0.5, baseMul: 1, legendary: null, ability: () => ({ dmg: 1, cost: 1, cd: 1 }),
+};
 
 export interface ActionState {
   rec: number;
@@ -243,6 +262,11 @@ export class CombatSystem {
   heroArmor = START_ARMOR;
   private msgCd = 0;
   canRespawn: (e: EnemyState) => boolean = () => false;
+  /** Stage 3: inventory link (null in the stage 2 tests: the quick list then holds template ids). */
+  gear: GearLink | null = null;
+  get bonus(): CombatBonuses {
+    return this.gear?.bonuses() ?? NEUTRAL;
+  }
 
   constructor(
     private ground: MotorGround,
@@ -259,6 +283,7 @@ export class CombatSystem {
 
   // ------------------------------------------------------------------ weapon and panels
   get weapon(): WeaponDef {
+    if (this.gear) return WEAPON_BY_ID[this.gear.weaponTpl()] ?? WEAPON_BY_ID.sword1;
     const id = this.data.quick[this.data.cur] ?? this.data.quick.find((q) => q) ?? 'sword1';
     return WEAPON_BY_ID[id] ?? WEAPON_BY_ID.sword1;
   }
@@ -281,8 +306,9 @@ export class CombatSystem {
       const k = (this.data.cur + i) % q.length;
       const id = q[k];
       if (!id || k === this.data.cur) continue;
-      const w = WEAPON_BY_ID[id];
+      const w = WEAPON_BY_ID[this.gear ? this.gear.itemTpl(id) ?? '' : id];
       if (!w || !this.meetsReq(w)) continue;
+      if (this.gear && this.gear.equipWeapon(id)) continue;
       this.data.cur = k;
       // D011 / D194: switching cancels the unfinished action and the charge; projectiles and zones stay
       this.cancelAction();
@@ -500,9 +526,10 @@ export class CombatSystem {
     return null;
   }
 
-  private newRec(family: WeaponFamily, stat: number, base: number): ActionRec {
-    const c = critParams();
-    const r: ActionRec = { id: this.data.nextId++, family, heroLevel: this.hero.progress.level, stat, base, critChance: c.chance, critMult: c.mult, credited: false, perTarget: {} };
+  private newRec(family: WeaponFamily, stat: number, base: number, magic = family === 'staff', mul = 1, normal = false): ActionRec {
+    const b = this.bonus;
+    const c = magic ? critParams(b.magicCrit, b.magicCritPow) : critParams(b.physCrit, b.physCritPow);
+    const r: ActionRec = { id: this.data.nextId++, family, heroLevel: this.hero.progress.level, stat, base, critChance: c.chance, critMult: c.mult, credited: false, perTarget: {}, mul, legend: normal ? b.legendary : null, normal };
     this.data.actions.push(r);
     return r;
   }
@@ -529,8 +556,9 @@ export class CombatSystem {
       this.hero.mp -= NORMAL.staffMp;
     }
     this.endBlockForAttack();
-    const rec = this.newRec(w.family, this.statFor(w), w.damage);
-    const dur = 1 / w.aps;
+    const b = this.bonus;
+    const rec = this.newRec(w.family, this.statFor(w), w.damage * b.baseMul, w.family === 'staff', w.family === 'staff' ? b.magicDmg : b.physDmg, true);
+    const dur = 1 / (w.aps * b.atkSpeed);
     const [dx, dz] = this.aimDir(aim);
     d.action = { rec: rec.id, kind: 'normal', ability: null, wid: w.id, t: 0, dur, hitAt: dur * NORMAL.hitAt[w.kind], prep: false, fired: 0, dirX: dx, dirZ: dz, aimX: aim.x, aimZ: aim.z, target: aim.target, charge };
     d.normalCd = dur;
@@ -578,14 +606,17 @@ export class CombatSystem {
         const t = this.target(aim.target);
         if (!t || Math.hypot(t.x - this.motor.x, t.z - this.motor.z) - t.radius > sp.range || !this.losTo(t, this.heroChest())) return this.refuse(`${sp.name}: нет цели в пределах ${sp.range} м`);
       } else target = null;
-      if (this.hero.mp + 1e-9 < sp.mp) return this.refuse(`${sp.name}: недостаточно маны`);
-      this.hero.mp -= sp.mp;
+      const mp = this.spellCost(sp);
+      if (this.hero.mp + 1e-9 < mp) return this.refuse(`${sp.name}: недостаточно маны`);
+      this.hero.mp -= mp;
     } else if (sk) {
-      if (!this.hero.trySpendSt(sk.st)) return this.refuse(`${sk.name}: недостаточно выносливости`);
+      if (!this.hero.trySpendSt(this.skillCost(sk))) return this.refuse(`${sk.name}: недостаточно выносливости`);
     } else return false;
     this.endBlockForAttack();
-    d.cds[id] = sk ? sk.cd : sp!.cd;
-    const rec = sp ? this.newRec('staff', this.hero.stats.int, 0) : this.newRec(w.family, this.statFor(w), w.damage);
+    d.cds[id] = this.abilityCd(id);
+    const b = this.bonus;
+    const am = b.ability(id);
+    const rec = sp ? this.newRec('staff', this.hero.stats.int, 0, true, b.magicDmg * am.dmg) : this.newRec(w.family, this.statFor(w), w.damage * b.baseMul, false, b.physDmg * am.dmg);
     const prep = sk ? sk.prep : sp!.cast;
     const [dx, dz] = this.aimDir(aim);
     let ax = aim.x;
@@ -612,6 +643,23 @@ export class CombatSystem {
     else this.counters.skills++;
     if (sp) this.fx.sound('magic', 0.35);
     return true;
+  }
+
+  /** Costs and cooldowns after modifications, talents and affixes (multiplied, «Расчёт действия и ресурсов»). */
+  skillCost(sk: SkillDef): number {
+    const b = this.bonus;
+    return sk.st * b.ability(sk.id).cost * b.skillSt;
+  }
+  spellCost(sp: SpellDef): number {
+    const b = this.bonus;
+    // «Первая формула»: I circle spells −10 % MP with this staff, checked at the start (D210)
+    return sp.mp * b.ability(sp.id).cost * b.spellMp * (b.legendary === 'firstFormula' && sp.tier === 1 ? 0.9 : 1);
+  }
+  abilityCd(id: string): number {
+    const b = this.bonus;
+    const sk = SKILL_BY_ID[id];
+    const sp = SPELL_BY_ID[id];
+    return sk ? sk.cd * b.ability(id).cd * b.skillCd : sp.cd * b.ability(id).cd * b.spellCd;
   }
 
   private endBlockForAttack() {
@@ -717,7 +765,12 @@ export class CombatSystem {
         const hits = this.meleeTargets(NORMAL.reach[w.kind], NORMAL.sector);
         for (const t of hits) this.applyHit(rec, t, rec.base, [statMul(rec.stat)], false, m.x, m.z, null);
         this.fx.sound(hits.length ? 'hit' : 'slash', 0.45);
-      } else if (w.kind === 'bow') this.spawnShot(rec, a, 'arrow', null, 0, [1], NORMAL.arrow.speed, NORMAL.arrow.range, 0);
+      } else if (w.kind === 'bow') {
+        // «Дальний рубеж»: more than 15 m to the target at the release (D210)
+        const t = this.target(a.target);
+        const far = rec.legend === 'farLine' && !!t && Math.hypot(t.x - m.x, t.z - m.z) > 15;
+        this.spawnShot(rec, a, 'arrow', null, 0, [far ? 1.15 : 1], NORMAL.arrow.speed, NORMAL.arrow.range, 0);
+      }
       else this.spawnShot(rec, a, 'bolt', null, 0, [a.charge], NORMAL.bolt.speed, NORMAL.bolt.range, 0);
       return;
     }
@@ -934,7 +987,11 @@ export class CombatSystem {
     const crit = this.rng.next() < rec.critChance;
     const e = t.enemy;
     const def = e ? enemyDef(e) : null;
-    const dmg = hitDamage({ base, mults, magic, armor: def?.armor ?? 0, res: def?.res ?? 0, crit, critMult: rec.critMult });
+    const all = [...mults, rec.mul];
+    // D210: conditional legendary bonuses of normal hits, checked before each hit on each target
+    if (rec.normal && rec.legend === 'firstStrike' && (!e || (def && e.hp >= def.hp))) all.push(1.2);
+    if (rec.normal && rec.legend === 'lastArgument' && e && def && e.hp <= 0.3 * def.hp) all.push(1.15);
+    const dmg = hitDamage({ base, mults: all, magic, armor: def?.armor ?? 0, res: def?.res ?? 0, crit, critMult: rec.critMult });
     this.log.push({ rec: rec.id, ability: (eff as { id?: string } | null)?.id ?? null, target: t.uid, damage: dmg, crit });
     if (this.log.length > 200) this.log.shift();
     // D016: every hit of the attack refreshes the combat timer (dummies too)
@@ -1002,8 +1059,9 @@ export class CombatSystem {
     this.fx.burst(e.x, e.y + 0.6, e.z, 0x8a8478, 20);
     if (enough) {
       const xp = killXp(def.xp, def.level, this.hero.progress.level);
-      this.hero.progress.xp += xp;
+      const up = addXp(this.hero.progress, xp);
       this.fx.toast(`${def.name} повержен: +${xp} XP`);
+      if (up) this.fx.toast(`Новый уровень: ${this.hero.progress.level}`);
     } else this.fx.toast(`${def.name} повержен: участие меньше 25 % — без опыта`);
   }
 
@@ -1027,7 +1085,7 @@ export class CombatSystem {
         this.counters.blocks++;
       }
     }
-    const dmg = hitDamage({ base: damage, mults: [], magic: !phys, armor: this.heroArmor, res: hero.stats.res, crit: false, critMult: 1, blocked });
+    const dmg = hitDamage({ base: damage, mults: [], magic: !phys, armor: this.heroArmor, res: hero.stats.res, crit: false, critMult: 1, blocked, blockReduce: this.bonus.blockReduce });
     hero.takeDamage(dmg);
     this.counters.heroHits++;
     this.log.push({ rec: 0, ability: null, target: 'hero', damage: dmg, crit: false, blocked });
@@ -1124,7 +1182,7 @@ const strOrNull = (v: unknown, path: string): string | null => {
  * Checks a saved combat block (D202: a broken record is refused, never partly loaded) and returns
  * a clean copy. Unknown ids are refused too.
  */
-export function checkCombat(raw: unknown): CombatData {
+export function checkCombat(raw: unknown, isItem?: (id: string) => boolean): CombatData {
   const c = obj(raw, 'combat');
   const d = newCombatData('start');
   d.profile = c.profile === 'test' ? 'test' : 'start';
@@ -1132,7 +1190,7 @@ export function checkCombat(raw: unknown): CombatData {
   if (quick.length !== 4) throw new Error('поле «combat.quick»');
   d.quick = quick.map((q, i) => {
     const id = strOrNull(q, `combat.quick.${i}`);
-    if (id && !WEAPON_BY_ID[id]) throw new Error(`неизвестное оружие «${id}»`);
+    if (id && !(isItem ? isItem(id) : WEAPON_BY_ID[id])) throw new Error(`неизвестное оружие «${id}»`);
     return id;
   });
   if (!d.quick.some(Boolean)) throw new Error('поле «combat.quick»');
@@ -1168,7 +1226,7 @@ export function checkCombat(raw: unknown): CombatData {
     if (!['sword', 'bow', 'staff'].includes(r.family)) throw new Error(`поле «${p}.family»`);
     const per: Record<string, number> = {};
     for (const [k, v] of Object.entries(obj(r.perTarget, `${p}.perTarget`))) per[k] = fin(v, `${p}.perTarget.${k}`);
-    return { id: fin(r.id, `${p}.id`), family: r.family, heroLevel: fin(r.heroLevel, `${p}.heroLevel`), stat: fin(r.stat, `${p}.stat`), base: fin(r.base, `${p}.base`), critChance: fin(r.critChance, `${p}.critChance`), critMult: fin(r.critMult, `${p}.critMult`), credited: r.credited === true, perTarget: per };
+    return { id: fin(r.id, `${p}.id`), family: r.family, heroLevel: fin(r.heroLevel, `${p}.heroLevel`), stat: fin(r.stat, `${p}.stat`), base: fin(r.base, `${p}.base`), critChance: fin(r.critChance, `${p}.critChance`), critMult: fin(r.critMult, `${p}.critMult`), credited: r.credited === true, perTarget: per, mul: fin(r.mul ?? 1, `${p}.mul`), legend: typeof r.legend === 'string' ? r.legend : null, normal: r.normal === true };
   });
   if (c.action !== null && c.action !== undefined) {
     const a = obj(c.action, 'combat.action');

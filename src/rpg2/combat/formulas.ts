@@ -56,6 +56,8 @@ export interface HitInput {
   critMult: number;
   /** A successful block (physical only, D161). */
   blocked?: boolean;
+  /** Block reduction (0.5; 0.6 with «Крепкий блок»). */
+  blockReduce?: number;
 }
 
 /** D004 → D005/D007 → D160 → D161 → D006: the damage of one hit on one target. */
@@ -65,7 +67,7 @@ export function hitDamage(h: HitInput): number {
   if (h.crit) v *= h.critMult;
   if (!h.magic) {
     v *= physMul(h.armor, h.res);
-    if (h.blocked) v *= 1 - BLOCK.reduce;
+    if (h.blocked) v *= 1 - (h.blockReduce ?? BLOCK.reduce);
   }
   return roundDamage(v);
 }

@@ -45,6 +45,28 @@ export function newProgress(): Progress {
   return { level: LEVELS.min, xp: 0, lp: 0, tp: 0, mastery: { sword: 1, bow: 1, staff: 1 } };
 }
 
+/** Passive effects of talents on the hero's own numbers (stage 3, «Выживание» and «Контроль маны»). */
+export interface HeroMods {
+  /** Max HP multiplier after VIT and level, rounded down (+10 %). */
+  hpMul: number;
+  /** Flat max ST bonus (+15). */
+  stBonus: number;
+  /** ST regeneration delay (1 → 0.7 s). */
+  stDelay: number;
+  /** Sprint ST per second (8 → 6.8). */
+  sprintCost: number;
+  /** Dodge ST (20 → 18). */
+  dodgeCost: number;
+  /** Out-of-combat HP regeneration multiplier (×1.25). */
+  hpRegenMul: number;
+  /** MP regeneration multiplier (×1.15). */
+  mpRegenMul: number;
+}
+
+export function baseMods(): HeroMods {
+  return { hpMul: 1, stBonus: 0, stDelay: REGEN.stDelay, sprintCost: 8, dodgeCost: 20, hpRegenMul: 1, mpRegenMul: 1 };
+}
+
 /** What the world around the hero adds to regeneration this tick. */
 export interface RegenContext {
   /** Within the radius of a burning campfire (D028). */
@@ -59,6 +81,7 @@ export interface RegenContext {
 export class HeroState {
   stats: Stats = baseStats();
   progress: Progress = newProgress();
+  mods: HeroMods = baseMods();
   hp: number;
   mp: number;
   st: number;
@@ -76,13 +99,13 @@ export class HeroState {
   }
 
   get maxHp(): number {
-    return maxHpFor(this.stats.vit, this.progress.level);
+    return Math.floor(maxHpFor(this.stats.vit, this.progress.level) * this.mods.hpMul + 1e-9);
   }
   get maxMp(): number {
     return maxMpFor(this.stats.spi);
   }
   get maxSt(): number {
-    return maxStFor();
+    return maxStFor() + this.mods.stBonus;
   }
   get inCombat(): boolean {
     return this.combatLeft > 0;
@@ -137,15 +160,15 @@ export class HeroState {
     const outTime = dt - inTime;
     const fire = ctx.campfire ? REGEN.campfire : 1;
     // HP: out of combat only (D013), x5 at a campfire (D028)
-    this.hp = Math.min(this.maxHp, this.hp + REGEN.hpOut * fire * this.maxHp * outTime);
+    this.hp = Math.min(this.maxHp, this.hp + REGEN.hpOut * this.mods.hpRegenMul * fire * this.maxHp * outTime);
     // MP: 0.5 % in combat, 2 % out of combat (x5 out of combat at a campfire)
-    this.mp = Math.min(this.maxMp, this.mp + this.maxMp * (REGEN.mpIn * inTime + REGEN.mpOut * fire * outTime));
+    this.mp = Math.min(this.maxMp, this.mp + this.maxMp * this.mods.mpRegenMul * (REGEN.mpIn * inTime + REGEN.mpOut * fire * outTime));
     // ST: 15/s after one second without spending (same in and out of combat, no campfire bonus)
     if (stSpentThisTick) this.stIdle = 0;
     else {
       const before = this.stIdle;
       this.stIdle += dt;
-      const regenTime = Math.max(0, this.stIdle - Math.max(before, REGEN.stDelay));
+      const regenTime = Math.max(0, this.stIdle - Math.max(before, this.mods.stDelay));
       this.st = Math.min(this.maxSt, this.st + REGEN.st * regenTime);
     }
   }
