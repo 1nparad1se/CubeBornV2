@@ -40,6 +40,13 @@ Read this before changing the game. It holds the decisions the owner has already
 - Water is a see-through layer over a real bed (`src/render/water.ts`): the deeper, the darker and less see-through. Nine kinds (plain, deep, shallow, rapids, waterfall, calm lake, swamp, sea, frozen); no glossy highlights. Banks never lie below the water beside them.
 - Jumps: the hero lands on a block as soon as the feet reach its top; paths may climb one block with a jump and two with a double jump, never more.
 
+## RPG systems (GDD v1.2)
+- The spec: [docs/gdd/RPG_AI_Implementation_Package.md](docs/gdd/RPG_AI_Implementation_Package.md); what is built and the chosen parameters: [docs/rpg2/IMPLEMENTATION.md](docs/rpg2/IMPLEMENTATION.md).
+- New systems live in `src/rpg2/` and are played on «Тестовая площадка» (main menu), a separate copy of the training meadow; stages follow D202. `?dev=1` shows the dev panel.
+- Only the test scene uses keyboard + mouse (WASD, mouse look with a captured cursor, keys rebindable, D211); the main game keeps the mouse-only controls above.
+- Scale: 1 block = 1 m. The test scene follows D212 (steps up to 0.3 m on foot, jumps 1 m).
+- Its save is separate (`cubeborn.rpg2.test`, own format version); controls are stored apart from playthroughs (`cubeborn.controls`).
+
 ## References
 - The owner's reference pictures live in [docs/references/](docs/references/README.md) (ground blocks 1–46, block transitions, winter, forest, desert and swamp plants, swamp and desert trees). Look there before changing ground blocks, textures, plants, trees or biomes, and match their style: small pixel squares, mixed materials blended in ragged pixel patches.
 
