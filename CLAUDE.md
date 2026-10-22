@@ -36,7 +36,7 @@ Read this before changing the game. It holds the decisions the owner has already
 - Jumps: the hero lands on a block as soon as the feet reach its top; paths may climb one block with a jump and two with a double jump, never more.
 
 ## References
-- The owner's reference pictures live in [docs/references/](docs/references/README.md) (ground blocks 1–46, block transitions, winter, forest, desert and swamp plants). Look there before changing ground blocks, textures, plants or biomes, and match their style: small pixel squares, mixed materials blended in ragged pixel patches.
+- The owner's reference pictures live in [docs/references/](docs/references/README.md) (ground blocks 1–46, block transitions, winter, forest, desert and swamp plants, swamp and desert trees). Look there before changing ground blocks, textures, plants, trees or biomes, and match their style: small pixel squares, mixed materials blended in ragged pixel patches.
 
 ## Commands
 - `npm install`: install dependencies (Node 20+).
