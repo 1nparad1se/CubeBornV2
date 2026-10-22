@@ -21,7 +21,7 @@ import { buildTestSite, type TestMarker, type TestSite } from './testSite';
 import { ActiveTime } from './time';
 import { SceneHud } from './ui/hud';
 import { SceneMenus } from './ui/menus';
-import { SKILLS, SPELLS, WEAPONS, abilityName, type WeaponFamily } from './combat/data';
+import { NORMAL, SKILLS, SPELLS, WEAPONS, abilityName, type WeaponFamily } from './combat/data';
 import { CombatSystem, FAMILY_NAME, applyTestProfile, arenaEnemies, newCombatData, type Aim, type CombatData } from './combat/system';
 import { CombatView } from './combat/view';
 import { MENTORS, addItem, applyHeroMods, combatBonuses, equip, itemOf, newGrowth, totalArmor, type GrowthData, type MentorId } from './growth/growth';
@@ -35,6 +35,8 @@ import { itemBuyPrice, MATERIAL_NAMES } from './economy/goods';
 import { addStack } from './economy/bag';
 import { useConsumable } from './economy/consumables';
 import { StoryScreens } from './ui/storyUi';
+import { ClickWalk } from './clickWalk';
+import { setCursor } from '../ui/cursor';
 import { QUEST_BY_ID } from './story/quests';
 import { StoryScene } from './storyScene';
 import { CAMPFIRE_RADIUS, DESTINATIONS, RUNE_DEST, wakeAt, newStory, type StoryData } from './story/world';
@@ -57,7 +59,7 @@ export interface SceneHost {
 
 const HERO_NAME = 'Испытатель';
 /** Mouse look: radians per pixel at sensitivity 1. */
-const LOOK = { yaw: 0.0028, pitch: 0.0018 };
+const LOOK = { yaw: 0.006, pitch: 0.004 };
 
 /**
  * «Тестовая площадка»: the RPG systems of stage 1 (hero state, resources, active time, pause and
@@ -104,6 +106,15 @@ export class TestScene {
   /** An event autosave raised during a world step, written at the end of the step (D213). */
   private pendingEvent: string | null = null;
   private holdT = 0;
+  /** Mouse control (stage 7, the main game's controls). */
+  walk!: ClickWalk;
+  selected: string | null = null;
+  autoAttack = false;
+  private autoInReach = false;
+  private sprintOn = false;
+  private steerHeld = false;
+  private steerT = 0;
+  private repathT = 0;
   private disposed = false;
   /** Last result of the save / load for tests and the dev panel. */
   lastSave = '';
@@ -181,16 +192,14 @@ export class TestScene {
       this.ecoScene?.cancelGather();
       this.storyScene?.cancelTravel('Перемещение отменено: открыто окно');
       this.intent = { ...NO_INTENT };
-      this.input.releaseLock();
+      this.walk?.stop();
+      this.autoAttack = false;
     };
     this.pause.onResume = () => {
       this.input.freeze();
       this.input.live = !this.hero.dead;
     };
     this.input.onMenuKey = (code) => this.menuKey(code);
-    this.input.onLockLost = () => {
-      if (!this.pause.paused) this.openPause();
-    };
   }
 
   // ------------------------------------------------------------------ start / stop
@@ -200,6 +209,7 @@ export class TestScene {
     this.world = this.host.createWorld(this.site, this.time.clock, cloneGear(this.gear));
     this.motor = new HeroMotor(this.site.ground, this.site.spawn.x, this.site.spawn.z);
     this.world.driver = (dt) => this.step(dt);
+    this.walk = new ClickWalk(this.site.terrain, this.site.ground);
     this.installCombat(newCombatData('start'));
     this.addMarkers(this.site.markers);
     this.addMentors();
@@ -281,7 +291,7 @@ export class TestScene {
   dispose() {
     if (this.disposed) return;
     this.disposed = true;
-    this.input.releaseLock();
+    setCursor('default');
     this.input.active = false;
     this.input.dispose();
     this.menus.closeAll();
@@ -303,6 +313,7 @@ export class TestScene {
     // mouse look turns the existing orbit camera (its tilt limits and terrain collision stay)
     if (inp.lookX || inp.lookY) {
       const s = this.controls.sensitivity;
+      // the right button held and dragged orbits the camera, with the main game's rates
       rig.orbit(-inp.lookX * LOOK.yaw * s, inp.lookY * LOOK.pitch * s * (this.controls.invertY ? -1 : 1));
       inp.lookX = inp.lookY = 0;
     }
@@ -382,32 +393,146 @@ export class TestScene {
       this.motor.walk = !this.motor.walk;
       this.hud.toast(this.motor.walk ? 'Ходьба' : 'Бег');
     }
-    const [fx, fz] = this.forward();
-    let mx = 0;
-    let mz = 0;
-    const f = (inp.held('moveF') ? 1 : 0) - (inp.held('moveB') ? 1 : 0);
-    const r = (inp.held('moveR') ? 1 : 0) - (inp.held('moveL') ? 1 : 0);
-    mx = fx * f + -fz * r;
-    mz = fz * f + fx * r;
-    const l = Math.hypot(mx, mz);
-    if (l > 1) {
-      mx /= l;
-      mz /= l;
+    this.readMouse(pr);
+    this.attackPress = pr.has('attack');
+    this.rmbPress = pr.has('block');
+    this.swapPress = pr.has('weaponSwap');
+    for (let i = 1; i <= 6; i++) if (pr.has(`skill${i}` as ControlAction)) this.skillPress(i);
+  }
+
+  /** The ground point and the enemy or dummy under the cursor (tested at a few body heights, like the main game). */
+  private underCursor(): { ground: [number, number] | null; hover: string | null } {
+    const inp = this.input;
+    if (inp.mx < 0) return { ground: null, hover: null };
+    const rig = this.host.renderer.rig;
+    const vw = this.host.view.clientWidth || 1;
+    const vh = this.host.view.clientHeight || 1;
+    const top = (x: number, z: number) => this.site.ground.top(x, z);
+    const ground = rig.terrainPoint(inp.mx, inp.my, vw, vh, top, 0);
+    let hover: string | null = null;
+    const ts = this.combat.targets();
+    for (const lift of [1.2, 0.7, 0.2]) {
+      const q = rig.terrainPoint(inp.mx, inp.my, vw, vh, top, lift);
+      if (!q) continue;
+      let best = Infinity;
+      for (const t of ts) {
+        const d = Math.hypot(t.x - q[0], t.z - q[1]);
+        if (d < t.radius + 0.3 && d < best) {
+          best = d;
+          hover = t.uid;
+        }
+      }
+      if (hover) break;
+    }
+    return { ground, hover };
+  }
+
+  /**
+   * Mouse control, the same as the main game (owner's decision): a left click on the ground walks
+   * there (path search; held, the order follows the cursor), on an enemy or dummy it selects it, a
+   * second click on the selected one starts the automatic attack (walk into reach, keep hitting);
+   * a ground click stops it. Attacks and skills aim at the selected target. Space jumps (again in
+   * the air), Shift dodges toward the cursor, Alt toggles sprint, Q held blocks / aims / charges.
+   */
+  private readMouse(pr: Set<ControlAction>) {
+    const inp = this.input;
+    const m = this.motor;
+    const { ground, hover } = this.underCursor();
+    setCursor(hover ? 'attack' : 'default');
+    const clicks = inp.takeClicks();
+    if (clicks > 0) {
+      this.steerT = 0;
+      if (hover) {
+        if (this.selected === hover) this.autoAttack = true;
+        else {
+          this.selected = hover;
+          this.autoAttack = false;
+        }
+        this.steerHeld = false;
+      } else if (ground) {
+        this.autoAttack = false;
+        this.walk.order(m.x, m.z, ground[0], ground[1]);
+        this.host.renderer.markMove(ground[0], ground[1]);
+        this.steerHeld = true;
+        this.steerT = 0.25;
+      }
+    } else if (this.steerHeld && inp.lmb && ground) {
+      if ((this.steerT -= 1 / 60) <= 0) {
+        this.steerT = 0.2;
+        this.walk.order(m.x, m.z, ground[0], ground[1]);
+      }
+    }
+    if (!inp.lmb) this.steerHeld = false;
+    // the selection follows the target's life
+    const tgt = this.combat.target(this.selected);
+    if (!tgt) {
+      this.selected = null;
+      this.autoAttack = false;
+    }
+    // automatic attack: walk into the weapon's reach, then keep attacking
+    let inReach = false;
+    if (tgt && this.autoAttack) {
+      const reach = this.reach();
+      const d = Math.hypot(tgt.x - m.x, tgt.z - m.z) - tgt.radius;
+      inReach = d <= reach && this.combat.los(m.x, m.y + 1.6, m.z, tgt.x, tgt.y + tgt.height * 0.6, tgt.z);
+      if (inReach) this.walk.stop();
+      else if (!this.walk.walking || (this.repathT -= 1 / 60) <= 0) {
+        this.repathT = 0.3;
+        const ux = (m.x - tgt.x) / Math.max(0.01, d + tgt.radius);
+        const uz = (m.z - tgt.z) / Math.max(0.01, d + tgt.radius);
+        const k = tgt.radius + Math.max(0.5, reach - 0.4);
+        this.walk.order(m.x, m.z, tgt.x + ux * k, tgt.z + uz * k);
+      }
+    }
+    this.autoInReach = inReach;
+    const st = this.walk.steer(m, 1 / 60);
+    let mx = st ? st.dx : 0;
+    let mz = st ? st.dz : 0;
+    // facing: the selected target while attacking or holding block / aim / charge, else the way walked
+    let fx = m.fx;
+    let fz = m.fz;
+    const busy = inReach || inp.held('attack') || inp.held('block') || !!this.combat.data.action || this.combat.charge !== null;
+    if (tgt && (busy || (!st && Math.hypot(tgt.x - m.x, tgt.z - m.z) < 30))) {
+      const l = Math.hypot(tgt.x - m.x, tgt.z - m.z) || 1;
+      fx = (tgt.x - m.x) / l;
+      fz = (tgt.z - m.z) / l;
+    } else if (st) {
+      fx = st.dx;
+      fz = st.dz;
+    }
+    // Shift: dodge toward the cursor
+    const dodge = pr.has('dodge');
+    if (dodge && ground) {
+      const l = Math.hypot(ground[0] - m.x, ground[1] - m.z);
+      if (l > 0.1) {
+        mx = (ground[0] - m.x) / l;
+        mz = (ground[1] - m.z) / l;
+      }
+    }
+    let sprintPressed = false;
+    if (pr.has('sprint')) {
+      this.sprintOn = !this.sprintOn;
+      sprintPressed = this.sprintOn;
+      this.hud.toast(this.sprintOn ? 'Спринт включён' : 'Спринт выключен');
     }
     this.intent = {
       moveX: mx,
       moveZ: mz,
       faceX: fx,
       faceZ: fz,
-      sprintHeld: inp.held('sprint'),
-      sprintPressed: pr.has('sprint'),
-      jumpPressed: pr.has('jump'),
-      dodgePressed: pr.has('dodge'),
+      sprintHeld: this.sprintOn,
+      sprintPressed,
+      jumpPressed: pr.has('jump') || !!st?.jump,
+      dodgePressed: dodge,
     };
-    this.attackPress = pr.has('attack');
-    this.rmbPress = pr.has('block');
-    this.swapPress = pr.has('weaponSwap');
-    for (let i = 1; i <= 6; i++) if (pr.has(`skill${i}` as ControlAction)) this.skillPress(i);
+  }
+
+  /** Reach of the held weapon for the automatic attack (melee: the hit reach; bow and staff: their range). */
+  private reach(): number {
+    const k = this.combat.weapon.kind;
+    const melee = (NORMAL.reach as Record<string, number>)[k];
+    if (melee) return melee;
+    return k === 'bow' ? 28 : 23;
   }
 
   /** A panel key: used now, or kept in the dodge buffer during the last 0.15 s of a dodge (D178). */
@@ -431,9 +556,10 @@ export class TestScene {
     // a press during a dodge is refused and buffered in its last 0.15 s (D176 / D178)
     if (this.attackPress && m.dodging) m.pressAction('attack');
     const attacks0 = c.counters.attacks;
-    this.aim = c.aimAhead();
+    const sel = c.target(this.selected);
+    this.aim = sel ? { x: sel.x, z: sel.z, target: sel.uid } : c.aimAhead();
     c.update(dt, {
-      attackHeld: !hero.dead && !m.dodging && (this.input.held('attack') || this.attackPress),
+      attackHeld: !hero.dead && !m.dodging && (this.input.held('attack') || this.attackPress || this.autoInReach),
       rmbHeld: this.input.held('block'),
       rmbPressed: this.rmbPress,
       skill: m.dodging ? null : this.skillIdx,
@@ -505,6 +631,7 @@ export class TestScene {
         else if (e.buffered?.startsWith('skill')) this.skillIdx = Number(e.buffered.slice(5)) - 1;
         break;
       case 'sprintEmpty':
+        this.sprintOn = false;
         this.hud.toast('Выносливость закончилась');
         break;
       default:
@@ -588,7 +715,7 @@ export class TestScene {
   /** «Продолжить»: closes the pause menu and captures the pointer again (a click is a gesture). */
   private resume() {
     this.menus.close('pause');
-    if (!this.pause.paused) this.input.requestLock();
+
   }
 
   /** I: the stage 3 inventory and equipment window (D200). */

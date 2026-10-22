@@ -46,8 +46,6 @@ export interface Target {
 }
 
 export const INTERACT_RANGE = 3;
-/** The aim of the third-person camera: a narrow cone around the camera's forward direction. */
-const AIM_COS = Math.cos((35 * Math.PI) / 180);
 
 const MENTOR_SPOTS: { id: MentorId; x: number; z: number }[] = [
   { id: 'arden', x: 46, z: 55 },
@@ -194,10 +192,12 @@ export class EconomyScene {
     return out;
   }
 
-  /** D129 / D130: within 3 m, inside the aim cone, nothing opaque between; the most central, then the nearest. */
+  /**
+   * D129 / D130 with the mouse controls (owner's decision): the nearest object within 3 m with
+   * nothing opaque between (no aim cone: the camera no longer follows the hero's facing).
+   */
   pick(): Target | null {
     const m = this.s.motor;
-    const [fx, fz] = this.s.forward();
     let best: Target | null = null;
     let bestScore = -Infinity;
     for (const t of this.targets()) {
@@ -205,11 +205,9 @@ export class EconomyScene {
       const dz = t.z - m.z;
       const d = Math.hypot(dx, dz);
       if (d > INTERACT_RANGE) continue;
-      const cos = d < 0.4 ? 1 : (dx * fx + dz * fz) / d;
-      if (cos < AIM_COS) continue;
       const ty = this.s.ground.top(t.x, t.z) + 0.6;
       if (d > 0.6 && !this.s.combat.los(m.x, m.y + 1.6, m.z, t.x, ty, t.z)) continue;
-      const score = cos * 10 - d;
+      const score = -d;
       if (score > bestScore) {
         bestScore = score;
         best = t;

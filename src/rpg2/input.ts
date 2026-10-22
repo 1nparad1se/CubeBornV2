@@ -1,9 +1,9 @@
 import type { ControlAction, ControlBinds } from './controls';
 
 /**
- * Keyboard and mouse of the RPG test scene (D211): bound keys and mouse buttons, mouse look with
- * the pointer captured (Pointer Lock; when the browser refuses it, holding the right button and
- * dragging turns the camera instead), and the rules for menus:
+ * Keyboard and mouse of the RPG test scene, the same as the main game (owner's decision): the left
+ * button walks / selects / attacks (clicks and the cursor position are read by the scene), the right
+ * button held and dragged orbits the camera, bound keys for the rest; and the rules for menus:
  *  - while a menu is open no game presses are recorded (D208: nothing queues up);
  *  - keys and buttons still held when a menu opens or closes are ignored until released and
  *    pressed again (sprint / block need a new press; UI clicks never leak into play).
@@ -25,16 +25,14 @@ export class SceneInput {
   live = false;
   /** Scene is active at all (listeners ignore everything otherwise). */
   active = false;
-  locked = false;
-  /** Pointer Lock failed or is unsupported: fall back to right-button drag for the camera. */
-  lockFailed = false;
+  /** Cursor position in the view (px), -1 when outside. */
+  mx = -1;
+  my = -1;
+  private clicks = 0;
   /** While set, the next key or mouse press is handed over for rebinding. */
   capture: ((code: string) => void) | null = null;
   /** Keys handled even while menus are open (Esc and window hotkeys). */
   onMenuKey: ((code: string) => void) | null = null;
-  /** The pointer was released by the browser (Esc in Pointer Lock) during play. */
-  onLockLost: (() => void) | null = null;
-  private lastUnlock = 0;
   private offs: (() => void)[] = [];
 
   constructor(private area: HTMLElement, binds: ControlBinds) {
@@ -60,8 +58,6 @@ export class SceneInput {
       if (e.repeat) return;
       this.down.add(e.code);
       if (e.code === 'Escape') {
-        // the Esc that released Pointer Lock has already opened the pause menu
-        if (performance.now() - this.lastUnlock < 250) return;
         this.onMenuKey?.(e.code);
         return;
       }
@@ -77,23 +73,20 @@ export class SceneInput {
       if (e.code === 'CapsLock' && this.active && this.live && /Mac/.test(navigator.platform)) this.presses.push(e.code);
     });
     on(window, 'blur', () => this.clearHeld());
+    // mouse like the main game: left button walks / selects / attacks (the scene reads the clicks),
+    // the right button held and dragged orbits the camera; no Pointer Lock
+    on(area, 'contextmenu', (e: MouseEvent) => e.preventDefault());
     on(area, 'mousedown', (e: MouseEvent) => {
       if (!this.active) return;
       const code = 'Mouse' + e.button;
       if (this.capture) {
         e.preventDefault();
-        const f = this.capture;
-        this.capture = null;
-        f(code);
         return;
       }
-      if (!this.live) return;
-      if (!this.locked && !this.lockFailed) {
-        // the click that captures the pointer is not an attack
-        this.requestLock();
-        return;
-      }
+      this.track(e);
       this.down.add(code);
+      if (!this.live) return;
+      if (e.button === 0) this.clicks++;
       this.presses.push(code);
     });
     on(window, 'mouseup', (e: MouseEvent) => {
@@ -102,11 +95,15 @@ export class SceneInput {
       this.suppressed.delete(code);
     });
     on(window, 'mousemove', (e: MouseEvent) => {
-      if (!this.active || !this.live) return;
-      if (this.locked || (this.lockFailed && this.down.has('Mouse2'))) {
+      if (!this.active) return;
+      this.track(e);
+      if (this.live && this.down.has('Mouse2')) {
         this.lookX += e.movementX || 0;
         this.lookY += e.movementY || 0;
       }
+    });
+    on(area, 'mouseleave', () => {
+      this.mx = this.my = -1;
     });
     on(
       area,
@@ -118,46 +115,30 @@ export class SceneInput {
       },
       { passive: false },
     );
-    on(document, 'pointerlockchange', () => {
-      const was = this.locked;
-      this.locked = document.pointerLockElement === this.area;
-      if (was && !this.locked) {
-        this.lastUnlock = performance.now();
-        if (this.active && this.live) this.onLockLost?.();
-      }
-    });
-    on(document, 'pointerlockerror', () => {
-      this.lockFailed = true;
-    });
   }
 
-  /** Captures the pointer (needs a user gesture; a refusal switches to the right-drag fallback). */
-  requestLock() {
-    if (this.locked || this.lockFailed) return;
-    const el = this.area as HTMLElement & { requestPointerLock?: () => Promise<void> | void };
-    if (!el.requestPointerLock) {
-      this.lockFailed = true;
-      return;
-    }
-    try {
-      const r = el.requestPointerLock();
-      if (r && typeof (r as Promise<void>).catch === 'function') (r as Promise<void>).catch(() => (this.lockFailed = true));
-    } catch {
-      this.lockFailed = true;
-    }
-    // no answer at all (some headless browsers): fall back after a moment
-    setTimeout(() => {
-      if (!this.locked) this.lockFailed = true;
-    }, 600);
+  private track(e: MouseEvent) {
+    const r = this.area.getBoundingClientRect();
+    this.mx = e.clientX - r.left;
+    this.my = e.clientY - r.top;
   }
 
-  releaseLock() {
-    if (document.pointerLockElement === this.area) document.exitPointerLock?.();
+  /** Left button held (and not held across a menu). */
+  get lmb(): boolean {
+    return this.codeHeld('Mouse0');
+  }
+
+  /** Left clicks since the last call. */
+  takeClicks(): number {
+    const n = this.clicks;
+    this.clicks = 0;
+    return n;
   }
 
   /** A menu opened or closed: drop queued presses and ignore what is held until it is released. */
   freeze() {
     this.presses.length = 0;
+    this.clicks = 0;
     this.lookX = this.lookY = 0;
     this.wheel = 0;
     this.suppressed = new Set(this.down);
