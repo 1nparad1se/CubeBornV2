@@ -103,6 +103,49 @@ function wolfModel(color: number, scale: number, seed: number): Omit<WolfParts, 
   return { root, body, legs, head, tail };
 }
 
+/** A cubic humanoid (bandits): the same animated parts as the wolf (legs swing, «tail» = the sword). */
+function humanModel(color: number, scale: number): Omit<WolfParts, 'label' | 'labelKey' | 'canvas' | 'tex' | 'tele' | 'deadT'> {
+  const cloth = new THREE.MeshLambertMaterial({ color });
+  const skin = new THREE.MeshLambertMaterial({ color: 0xc89070 });
+  const pants = new THREE.MeshLambertMaterial({ color: 0x3a3228 });
+  const steel = new THREE.MeshLambertMaterial({ color: 0xa8a8b0 });
+  const box = (w: number, h: number, d: number, m: THREE.Material) => {
+    const me = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), m);
+    me.castShadow = true;
+    return me;
+  };
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const torso = box(0.5, 0.7, 0.28, cloth);
+  torso.position.set(0, 1.1, 0);
+  body.add(torso);
+  const head = new THREE.Group();
+  head.position.set(0, 1.68, 0);
+  body.add(head);
+  head.add(box(0.42, 0.42, 0.42, skin));
+  const mask = box(0.44, 0.14, 0.44, pants);
+  mask.position.set(0, -0.08, 0.01);
+  head.add(mask);
+  const legs: THREE.Mesh[] = [];
+  for (const [lx, ly, m] of [[-0.13, 0.75, pants], [0.13, 0.75, pants], [-0.36, 1.42, cloth], [0.36, 1.42, cloth]] as [number, number, THREE.Material][]) {
+    const g = new THREE.BoxGeometry(0.2, ly > 1 ? 0.62 : 0.75, 0.22);
+    g.translate(0, ly > 1 ? -0.31 : -0.375, 0);
+    const leg = new THREE.Mesh(g, m);
+    leg.castShadow = true;
+    leg.position.set(lx, ly, 0);
+    body.add(leg);
+    legs.push(leg);
+  }
+  const tg = new THREE.BoxGeometry(0.06, 0.06, 0.8);
+  tg.translate(0, 0, 0.4);
+  const tail = new THREE.Mesh(tg, steel);
+  tail.position.set(0.36, 0.85, 0.1);
+  body.add(tail);
+  root.scale.setScalar(scale);
+  return { root, body, legs, head, tail };
+}
+
 /** A ring of small cubes (a round area drawn in the cubic style). */
 function cubeRing(radius: number, color: number, opacity: number): THREE.Group {
   const g = new THREE.Group();
@@ -151,7 +194,7 @@ export class CombatView {
     let w = this.wolves.get(e.uid);
     if (w) return w;
     const d = enemyDef(e);
-    const m = wolfModel(d.color, d.scale, e.uid.length * 97 + d.hp);
+    const m = d.model === 'human' ? humanModel(d.color, d.scale) : wolfModel(d.color, d.scale, e.uid.length * 97 + d.hp);
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 64;

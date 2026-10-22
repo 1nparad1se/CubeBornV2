@@ -18,6 +18,7 @@ import { MERCHANT_IDS, OFFERS, OFFER_COUNT, RESTOCK_SECONDS, WALLET, buy, buyBac
 import { checkWorld, corpseFromKill, newEconomyWorld } from '../../src/rpg2/economy/world';
 import { PLAYTHROUGH_VERSION, migratePlaythrough, restore, snapshot } from '../../src/rpg2/save';
 import { ActiveTime } from '../../src/rpg2/time';
+import { newStory } from '../../src/rpg2/story/world';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -230,8 +231,8 @@ const sameCensus = (a: ReturnType<typeof census>, b: ReturnType<typeof census>) 
   world.merchants.cook.cycleLeft = 1234;
   const combat = newCombatData('start');
   combat.quick = [growth.equip.weapon, null, null, null];
-  const snap = snapshot({ id: 't', map: 'rpg_test', name: 'И', race: 'human', hero: new HeroState(), motor: new HeroMotor(ground, 5, 5).toSave(), time: new ActiveTime(), combat, growth, world });
-  ok(snap.version === PLAYTHROUGH_VERSION && PLAYTHROUGH_VERSION === 4, 'save version 4');
+  const snap = snapshot({ id: 't', map: 'rpg_test', name: 'И', race: 'human', hero: new HeroState(), motor: new HeroMotor(ground, 5, 5).toSave(), time: new ActiveTime(), combat, growth, world, story: newStory() });
+  ok(snap.version === PLAYTHROUGH_VERSION && PLAYTHROUGH_VERSION === 5, 'save version 5');
   const back = migratePlaythrough(JSON.parse(JSON.stringify(snap)));
   const r = restore(back.save);
   ok(!back.migrated && JSON.stringify(r.world) === JSON.stringify(world) && JSON.stringify(r.growth) === JSON.stringify(growth), 'world and bag round-trip (corpses, chests, points, merchants, stacks)');
@@ -242,7 +243,7 @@ const sameCensus = (a: ReturnType<typeof census>, b: ReturnType<typeof census>) 
   delete v3.growth.stacks;
   v3.growth.potions = { hpSmall: 2 };
   const m = migratePlaythrough(v3);
-  ok(m.migrated && m.save.growth.stacks.potionHP1 === 2 && Object.keys(m.save.world.chests).length === 4 && m.save.world.merchants.smith.wallet === 10000, 'v3 → v4: potions become stacks, the world is created');
+  ok(m.migrated && m.save.growth.stacks.potionHP1 === 2 && Object.keys(m.save.world.chests).length === 4 && m.save.world.merchants.smith.wallet === 10000, 'v3 → v5: potions become stacks, the world is created');
   const dup = JSON.parse(JSON.stringify(snap));
   dup.world.chests['chest-test'].entries.push({ kind: 'item', item: dup.growth.items[0] });
   let threw = false;

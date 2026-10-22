@@ -205,10 +205,12 @@ export interface EnemyDef {
   respawnMin: number;
   /** Model scale (technical). */
   scale: number;
+  /** Cubic model kind (technical): a wolf by default, a humanoid for bandits. */
+  model?: 'wolf' | 'human';
   color: number;
 }
 
-/** Bestiary JSON rows (enemyDefs) of the two enemies placed in the test scene. */
+/** Bestiary JSON rows (enemyDefs) of the enemies placed in the test scene (stage 5 adds the bandits of the crossing). */
 export const ENEMIES: EnemyDef[] = [
   { id: 'wolf', name: 'Серый волк', level: 3, rank: 'normal', hp: 85, armor: 2, res: 2, damage: 14, phys: true, interval: 2.2, xp: 90, behavior: 'aggressive', detect: 12, leash: 35, windup: 0.5, speed: 4.5, range: 2, respawnMin: 4, scale: 1, color: 0x8a8a86 },
   {
@@ -216,6 +218,7 @@ export const ENEMIES: EnemyDef[] = [
     special: { name: 'Прыжок вожака', damage: 45, phys: true, windup: 1.1, cd: 10, range: 6, radius: 1.3 },
   },
 ];
+ENEMIES.push({ id: 'bandit', name: 'Разбойник переправы', level: 10, rank: 'normal', hp: 260, armor: 10, res: 5, damage: 32, phys: true, interval: 2.5, xp: 150, behavior: 'aggressive', detect: 12, leash: 35, windup: 0.5, speed: 3.5, range: 2, respawnMin: 4, scale: 1, color: 0x7a3a2a, model: 'human' });
 export const ENEMY_BY_ID: Record<string, EnemyDef> = Object.fromEntries(ENEMIES.map((e) => [e.id, e]));
 
 export function isBoss(r: Rank): boolean {

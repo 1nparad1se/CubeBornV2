@@ -182,6 +182,11 @@ export function arenaEnemies(g: MotorGround): EnemyState[] {
     newEnemy('wolf1', 'wolf', 30, 64, g.top(30, 64)),
     newEnemy('wolf2', 'wolf', 33.5, 66.5, g.top(33.5, 66.5)),
     newEnemy('greyfang1', 'greyfang', 30, 49, g.top(30, 49), 8),
+    // stage 5: four bandits of the old crossing («Разбойники у переправы»)
+    newEnemy('bandit1', 'bandit', 24, 55, g.top(24, 55)),
+    newEnemy('bandit2', 'bandit', 26, 56.5, g.top(26, 56.5)),
+    newEnemy('bandit3', 'bandit', 23.5, 58.5, g.top(23.5, 58.5)),
+    newEnemy('bandit4', 'bandit', 26, 59.5, g.top(26, 59.5)),
   ];
 }
 
@@ -1052,6 +1057,8 @@ export class CombatSystem {
   /** D035–D039 / D198: death after the damage; XP only with ≥ 25 % participation. One life rewards once. */
   /** Stage 4: the scene turns a death into a lootable corpse (called before the enemy is reset). */
   onKilled: ((e: EnemyState) => void) | null = null;
+  /** Stage 5: a kill credited to the hero (D035–D039) — quests (D107) and the bestiary (D061). */
+  onCredited: ((e: EnemyState) => void) | null = null;
 
   private onKill(e: EnemyState) {
     this.onKilled?.(e);
@@ -1064,6 +1071,7 @@ export class CombatSystem {
     if (enough) {
       const xp = killXp(def.xp, def.level, this.hero.progress.level);
       const up = addXp(this.hero.progress, xp);
+      this.onCredited?.(e);
       this.fx.toast(`${def.name} повержен: +${xp} XP`);
       if (up) this.fx.toast(`Новый уровень: ${this.hero.progress.level}`);
     } else this.fx.toast(`${def.name} повержен: участие меньше 25 % — без опыта`);
