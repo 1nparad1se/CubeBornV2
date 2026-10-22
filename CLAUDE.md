@@ -35,6 +35,9 @@ Read this before changing the game. It holds the decisions the owner has already
 - Water is a see-through layer over a real bed (`src/render/water.ts`): the deeper, the darker and less see-through. Nine kinds (plain, deep, shallow, rapids, waterfall, calm lake, swamp, sea, frozen); no glossy highlights. Banks never lie below the water beside them.
 - Jumps: the hero lands on a block as soon as the feet reach its top; paths may climb one block with a jump and two with a double jump, never more.
 
+## References
+- The owner's reference pictures live in [docs/references/](docs/references/README.md) (ground blocks 1–28 and 38–46, block transitions). Look there before changing ground blocks, textures or biomes, and match their style: small pixel squares, mixed materials blended in ragged pixel patches.
+
 ## Commands
 - `npm install`: install dependencies (Node 20+).
 - `npm run dev`: start the game at http://localhost:5173.
