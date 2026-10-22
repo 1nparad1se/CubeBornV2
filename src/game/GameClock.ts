@@ -52,7 +52,11 @@ export class GameClock {
   /** Whole days passed since the clock was created (informational). */
   days = 0;
 
-  constructor(minutes = CLOCK_START, days = 0) {
+  /** Game minutes per real second (the main world: 1; the RPG test scene: 0.4, see rpg2/config). */
+  readonly rate: number;
+
+  constructor(minutes = CLOCK_START, days = 0, rate = CLOCK_RATE) {
+    this.rate = Number.isFinite(rate) && rate > 0 ? rate : CLOCK_RATE;
     this.minutes = wrapMinutes(minutes);
     this.days = Number.isFinite(days) && days > 0 ? Math.floor(days) : 0;
   }
@@ -60,7 +64,7 @@ export class GameClock {
   /** Advances by real seconds of play. */
   advance(realSeconds: number) {
     if (!(realSeconds > 0)) return;
-    const m = this.minutes + realSeconds * CLOCK_RATE;
+    const m = this.minutes + realSeconds * this.rate;
     this.days += Math.floor(m / DAY_MINUTES);
     this.minutes = wrapMinutes(m);
   }
