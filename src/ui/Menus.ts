@@ -14,6 +14,8 @@ export interface MenuApi {
   sfx(id: string): void;
   /** Enters the training meadow with a saved character. */
   play(charId: string): void;
+  /** Enters the RPG test scene («Тестовая площадка»). */
+  playTest(): void;
   /** Captures the next key press for rebinding. */
   captureKey(cb: (code: string) => void): void;
   /** True when a setting changed that only applies after a restart. */
@@ -28,9 +30,10 @@ export interface MenuApi {
 type ScreenId = 'main' | 'continue' | 'create' | 'settings';
 
 /** Menu entries in order (main list and the tab bar of the inner screens). */
-const ENTRIES: { id: ScreenId | 'exit'; icon: string; ru: string; en: string }[] = [
+const ENTRIES: { id: ScreenId | 'exit' | 'test'; icon: string; ru: string; en: string }[] = [
   { id: 'continue', icon: 'play', ru: 'Продолжить игру', en: 'Continue' },
   { id: 'create', icon: 'helm', ru: 'Создать персонажа', en: 'Create character' },
+  { id: 'test', icon: 'flag', ru: 'Тестовая площадка', en: 'Test ground' },
   { id: 'settings', icon: 'gear', ru: 'Настройки', en: 'Settings' },
   { id: 'exit', icon: 'door', ru: 'Выход', en: 'Exit' },
 ];
@@ -142,9 +145,9 @@ export class Menus {
     }
   }
 
-  private go(id: ScreenId | 'exit') {
+  private go(id: ScreenId | 'exit' | 'test') {
     this.api.sfx('ui');
-    const go = () => (id === 'exit' ? this.exitDialog() : this.open(id));
+    const go = () => (id === 'exit' ? this.exitDialog() : id === 'test' ? this.api.playTest() : this.open(id));
     if (this.current === 'settings') leaveSettings(this.api, this.root, go);
     else go();
   }

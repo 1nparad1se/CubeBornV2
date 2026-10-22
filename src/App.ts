@@ -18,6 +18,9 @@ import { generateWild } from './world/wild';
 import { SPAWN, TEST_MAP, buildTestMap } from './rpg/testMap';
 import { cloneGear, type Gear } from './rpg/equipment';
 import type { Terrain } from './game/Terrain';
+import { TestScene } from './rpg2/TestScene';
+import type { TestSite } from './rpg2/testSite';
+import type { GameClock as Clock } from './game/GameClock';
 
 const VERSION = 'v6.0.0';
 
@@ -58,7 +61,7 @@ class ProxyFx implements FxSink {
   }
 }
 
-type Mode = 'splash' | 'menu' | 'run';
+type Mode = 'splash' | 'menu' | 'run' | 'test';
 
 /** Top-level controller: screens, the game loop and saving the played character. */
 export class App implements MenuApi {
@@ -93,6 +96,8 @@ export class App implements MenuApi {
   readonly clock: GameClock;
   /** The test map is built once and reused by the menu backdrop and every visit. */
   private terrain: Terrain | null = null;
+  /** The RPG test scene («Тестовая площадка», src/rpg2) while it is played. */
+  private test: TestScene | null = null;
 
   constructor(root: HTMLElement) {
     installCursors();
@@ -112,8 +117,9 @@ export class App implements MenuApi {
     this.input.onJump = () => {
       if (this.world && this.mode === 'run' && !this.paused) this.world.player.requestJump();
     };
-    this.input.onInventory = () => this.toggleInventory();
-    this.input.onMap = () => this.toggleMap();
+    // in the RPG test scene its own input handles every key (src/rpg2/input.ts)
+    this.input.onInventory = () => this.mode !== 'test' && this.toggleInventory();
+    this.input.onMap = () => this.mode !== 'test' && this.toggleMap();
     this.hud = new Hud(root);
     this.hud.minimap.yaw = this.renderer.rig.yaw;
     this.hud.setVisible(false);
@@ -220,6 +226,7 @@ export class App implements MenuApi {
   }
 
   private handleEscape() {
+    if (this.mode === 'test') return;
     const confirm = this.root.querySelector('.modal-back.confirm');
     if (confirm) {
       confirm.remove();
@@ -244,6 +251,10 @@ export class App implements MenuApi {
   // ------------------------------------------------------------------ inventory
   /** Opens or closes the inventory window (the world keeps running behind it). */
   toggleInventory(force?: boolean) {
+    if (this.mode === 'test') {
+      this.test?.toggleInventory(force ?? false);
+      return;
+    }
     const w = this.world;
     if (!w || this.mode !== 'run' || this.paused) return;
     const open = force ?? !this.inventory.isOpen;
@@ -258,6 +269,10 @@ export class App implements MenuApi {
 
   /** Opens or closes the world map (M; Esc closes it too). The world keeps running behind it. */
   toggleMap(force?: boolean) {
+    if (this.mode === 'test') {
+      this.test?.toggleMap(force ?? false);
+      return;
+    }
     const w = this.world;
     if (!w || this.mode !== 'run' || this.paused) return;
     const open = force ?? !this.worldMap.isOpen;
@@ -271,6 +286,10 @@ export class App implements MenuApi {
 
   /** New gear from the inventory: the world (stats, model) and the save follow at once. */
   private setGear(g: Gear) {
+    if (this.mode === 'test') {
+      this.test?.setGear(g);
+      return;
+    }
     const w = this.world;
     const ch = this.currentChar();
     if (!w || !ch) return;
@@ -378,6 +397,52 @@ export class App implements MenuApi {
     this.hud.showHint(s.showHints && ch.playTime < 60);
     this.firstMove = s.showHints ? () => setTimeout(() => this.hud.showHint(false), 6000) : null;
     this.saveChar();
+  }
+
+  /**
+   * «Тестовая площадка»: the RPG systems on a separate copy of the training meadow (src/rpg2),
+   * with keyboard + mouse controls. The normal game and its save are not touched.
+   */
+  playTest() {
+    if (this.loading || this.test) return;
+    this.menus.setVisible(false);
+    this.modals.close();
+    this.renderer.endRun();
+    this.hud.setVisible(false);
+    this.input.setEnabled(false);
+    this.mode = 'test';
+    const dev = new URLSearchParams(location.search).get('dev') === '1';
+    const scene = new TestScene(
+      {
+        root: this.root,
+        view: this.view,
+        renderer: this.renderer,
+        inventory: this.inventory,
+        worldMap: this.worldMap,
+        createWorld: (site: TestSite, clock: Clock, gear: Gear) => {
+          const fx = new ProxyFx();
+          const world = new World(fx, clock, 'human', gear, site);
+          fx.target = this.renderer.startRun(world, { sound: (id, v) => audio.play(id, v), vibrate: () => {} });
+          this.renderer.setZoom(this.profile.data.settings.cameraZoom);
+          world.events.on('banner', (key) => scene.hud.toast(t(key)));
+          return world;
+        },
+        sfx: (id) => this.sfx(id),
+        zoom: (dir) => this.stepZoom(dir),
+        exit: () => {
+          this.test = null;
+          this.inventory.close();
+          this.worldMap.close();
+          this.renderer.endRun();
+          this.showMenuBackdrop();
+          this.toMenu();
+        },
+      },
+      { dev },
+    );
+    this.test = scene;
+    scene.start();
+    audio.playMusic('forest');
   }
 
   /** Writes the played character: gear and play time (the clock too). */
@@ -533,7 +598,10 @@ export class App implements MenuApi {
     this.last = now;
     const dt = Math.min(realDt, 1 / 20);
     const w = this.world;
-    if (w && this.mode === 'run') {
+    if (this.mode === 'test' && this.test) {
+      this.test.frame(realDt);
+      audio.setAmbience(!this.test.pause.paused, 0.5, 0, this.test.world.dayNight.period === 'night', realDt);
+    } else if (w && this.mode === 'run') {
       this.input.update();
       const active = !this.paused && !this.modals.isOpen;
       this.readMouse(w, active, realDt);
