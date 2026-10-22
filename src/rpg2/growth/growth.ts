@@ -2,7 +2,7 @@ import { SKILL_BY_ID, SPELL_BY_ID, WEAPON_BY_ID, type WeaponFamily } from '../co
 import { baseMods, type HeroMods, type HeroState, type StatId } from '../hero';
 import { REGEN } from '../config';
 import { masteryOf } from '../combat/formulas';
-import { ARMOR_SLOTS, itemArmor, itemSlot, makeItem, reqProblem, weaponBonuses, type EquipSlot, type Item, type LegendaryId, type Rarity } from './items';
+import { ARMOR_SLOTS, isGear, isItemTpl, itemArmor, itemSlot, makeItem, reqProblem, weaponBonuses, type EquipSlot, type Item, type LegendaryId, type Rarity } from './items';
 import { TALENT_BY_ID, talentProblem, talentResetCost } from './talents';
 
 /**
@@ -27,14 +27,28 @@ export interface GrowthData {
   items: Item[];
   equip: Record<EquipSlot, string | null>;
   nextUid: number;
-  potions: { hpSmall: number };
+  /** Stage 4: stackable materials and consumables by key (unlimited bag, stacks of 99 shown, D100). */
+  stacks: Record<string, number>;
+  /** Craft professions learned tier 0..3 (Кузнечное дело, Алхимия, Кулинария). */
+  crafts: { smith: number; alchemy: number; cooking: number };
+  /** Hunting tier 0..3 (Охотник, Опытный охотник, Мастер охоты). */
+  hunt: number;
+  /** Rare gathering skills learned: rareplants, rareminerals, rarewood. */
+  gather: string[];
+  /** D199: the potion size chosen for F1 / F2 / F3 and the shared potion cooldown (active seconds). */
+  potionSel: { hp: string; mp: string; st: string };
+  potionCd: number;
   /** D048: the starting weapon chosen for this playthrough. */
   startWeapon: 'sword1' | 'bow1' | 'staff1';
 }
 
 /** D048–D054: one chosen weapon, light armor I equipped, 0 gold, 3 small HP potions, nothing learned. */
 export function newGrowth(start: 'sword1' | 'bow1' | 'staff1' = 'sword1'): GrowthData {
-  const g: GrowthData = { gold: 0, talents: [], circles: 0, mods: {}, items: [], equip: { head: null, chest: null, legs: null, weapon: null }, nextUid: 1, potions: { hpSmall: 3 }, startWeapon: start };
+  const g: GrowthData = {
+    gold: 0, talents: [], circles: 0, mods: {}, items: [], equip: { head: null, chest: null, legs: null, weapon: null }, nextUid: 1,
+    stacks: { potionHP1: 3 }, crafts: { smith: 0, alchemy: 0, cooking: 0 }, hunt: 0, gather: [],
+    potionSel: { hp: 'potionHP1', mp: 'potionMP1', st: 'potionST1' }, potionCd: 0, startWeapon: start,
+  };
   const w = addItem(g, start, 'common');
   g.equip.weapon = w.uid;
   for (const s of ARMOR_SLOTS) g.equip[s] = addItem(g, `light_${s}1`, 'common').uid;
@@ -57,6 +71,7 @@ export function isEquipped(g: GrowthData, uid: string): boolean {
 export function equip(g: GrowthData, uid: string, hero: HeroState): string | null {
   const it = itemOf(g, uid);
   if (!it) return 'Предмета нет';
+  if (!isGear(it.tpl)) return 'Это не экипировка';
   const p = reqProblem(it, hero.stats);
   if (p) return p;
   g.equip[itemSlot(it)] = uid;
@@ -384,7 +399,8 @@ export function weaponTplOf(g: GrowthData): string {
 export { WEAPON_BY_ID, TALENT_BY_ID };
 
 // ------------------------------------------------------------------ save check
-import { ARMOR_BY_ID, RARITIES, AFFIXES } from './items';
+import { RARITIES, AFFIXES } from './items';
+import { consumableDef, isStackKey } from '../economy/goods';
 
 /** Checks a saved growth block (D202: refused when broken, never partly loaded). */
 export function checkGrowth(raw: unknown): GrowthData {
@@ -410,7 +426,7 @@ export function checkGrowth(raw: unknown): GrowthData {
   }
   if (!Array.isArray(r.items)) bad('items');
   g.items = (r.items as any[]).map((it, i) => {
-    if (!it || typeof it.uid !== 'string' || (!WEAPON_BY_ID[it.tpl] && !ARMOR_BY_ID[it.tpl]) || !RARITIES.includes(it.rarity)) bad(`items.${i}`);
+    if (!it || typeof it.uid !== 'string' || !isItemTpl(it.tpl) || !RARITIES.includes(it.rarity)) bad(`items.${i}`);
     if (!Array.isArray(it.affixes)) bad(`items.${i}.affixes`);
     const affixes = it.affixes.map((a: any, j: number) => (a && AFFIXES[a.id as keyof typeof AFFIXES] && typeof a.value === 'number' ? { id: a.id, value: a.value } : bad(`items.${i}.affixes.${j}`)));
     return { uid: it.uid, tpl: it.tpl, rarity: it.rarity, affixes, upgrade: it.upgrade === 'sharp' || it.upgrade === 'tempered' ? it.upgrade : null, fav: it.fav === true } as Item;
@@ -423,7 +439,31 @@ export function checkGrowth(raw: unknown): GrowthData {
   }
   if (!g.equip.weapon) bad('equip.weapon');
   g.nextUid = n(r.nextUid, 'nextUid');
-  g.potions = { hpSmall: n(r.potions?.hpSmall ?? 0, 'potions.hpSmall') };
+  // stage 4 fields; a v3 record carries only «potions.hpSmall» (small HP potions → potionHP1)
+  g.stacks = {};
+  if (r.stacks === undefined) {
+    const hp = n(r.potions?.hpSmall ?? 0, 'potions.hpSmall');
+    if (hp > 0) g.stacks.potionHP1 = hp;
+  } else {
+    if (!r.stacks || typeof r.stacks !== 'object') bad('stacks');
+    for (const [k, v] of Object.entries(r.stacks as Record<string, unknown>)) {
+      if (!isStackKey(k)) bad(`stacks.${k}`);
+      const q = n(v, `stacks.${k}`);
+      if (q < 0 || q !== Math.floor(q)) bad(`stacks.${k}`);
+      if (q > 0) g.stacks[k] = q;
+    }
+  }
+  const tier = (v: unknown, f: string) => {
+    const t = n(v ?? 0, f);
+    return t >= 0 && t <= 3 && t === Math.floor(t) ? t : bad(f);
+  };
+  g.crafts = { smith: tier(r.crafts?.smith, 'crafts.smith'), alchemy: tier(r.crafts?.alchemy, 'crafts.alchemy'), cooking: tier(r.crafts?.cooking, 'crafts.cooking') };
+  g.hunt = tier(r.hunt, 'hunt');
+  g.gather = Array.isArray(r.gather) ? (r.gather as unknown[]).map((x, i) => (x === 'rareplants' || x === 'rareminerals' || x === 'rarewood' ? x : bad(`gather.${i}`))) : r.gather === undefined ? [] : bad('gather');
+  const ps = r.potionSel ?? {};
+  const pk = (v: unknown, def: string, stat: string) => (typeof v === 'string' && consumableDef(v)?.result.kind === 'potion' && consumableDef(v)?.result.stat === stat ? v : def);
+  g.potionSel = { hp: pk(ps.hp, 'potionHP1', 'HP'), mp: pk(ps.mp, 'potionMP1', 'MP'), st: pk(ps.st, 'potionST1', 'ST') };
+  g.potionCd = Math.max(0, n(r.potionCd ?? 0, 'potionCd'));
   g.startWeapon = r.startWeapon === 'bow1' || r.startWeapon === 'staff1' ? r.startWeapon : 'sword1';
   return g;
 }

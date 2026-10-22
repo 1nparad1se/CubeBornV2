@@ -17,6 +17,7 @@ import {
 } from '../../src/rpg2/growth/growth';
 import { PLAYTHROUGH_VERSION, migratePlaythrough, restore, snapshot } from '../../src/rpg2/save';
 import { ActiveTime } from '../../src/rpg2/time';
+import { newEconomyWorld } from '../../src/rpg2/economy/world';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -169,8 +170,8 @@ function ctx(): LearnCtx {
   addItem(growth, 'bow1', 'epic');
   const combat = newCombatData('start');
   combat.quick = [growth.equip.weapon, null, null, null];
-  const snap = snapshot({ id: 't', map: 'rpg_test', name: 'И', race: 'human', hero, motor: motor.toSave(), time: new ActiveTime(), combat, growth });
-  ok(snap.version === PLAYTHROUGH_VERSION && PLAYTHROUGH_VERSION === 3, 'save version 3');
+  const snap = snapshot({ id: 't', map: 'rpg_test', name: 'И', race: 'human', hero, motor: motor.toSave(), time: new ActiveTime(), combat, growth, world: newEconomyWorld(growth) });
+  ok(snap.version === PLAYTHROUGH_VERSION && PLAYTHROUGH_VERSION === 4, 'save version 4');
   const back = migratePlaythrough(JSON.parse(JSON.stringify(snap)));
   const r = restore(back.save);
   ok(!back.migrated && JSON.stringify(r.growth) === JSON.stringify(growth), 'growth round-trips (gold, items, affixes, talents, mods)');
@@ -185,9 +186,9 @@ function ctx(): LearnCtx {
   v2.hero.progress = { ...v2.hero.progress, level: 1, xp: xpForLevel(6), lp: 0, tp: 0 };
   const m = migratePlaythrough(v2);
   const g = m.save.growth;
-  ok(m.migrated && g.gold === 0 && g.items.find((i) => i.uid === g.equip.weapon)?.tpl === 'bow1', 'v2 → v3: equipped weapon = quick slot at cur');
-  ok(m.save.combat.quick.every((q) => q === null || g.items.some((i) => i.uid === q)), 'v2 → v3: quick list holds item uids');
-  ok(m.save.hero.progress.level === 6 && m.save.hero.progress.lp === 50 && m.save.hero.progress.tp === 1, 'v2 → v3: level from XP with its LP and talent points');
+  ok(m.migrated && g.gold === 0 && g.items.find((i) => i.uid === g.equip.weapon)?.tpl === 'bow1', 'v2 → v4: equipped weapon = quick slot at cur');
+  ok(m.save.combat.quick.every((q) => q === null || g.items.some((i) => i.uid === q)), 'v2 → v4: quick list holds item uids');
+  ok(m.save.hero.progress.level === 6 && m.save.hero.progress.lp === 50 && m.save.hero.progress.tp === 1, 'v2 → v4: level from XP with its LP and talent points');
   ok(g.circles >= 1, `v2 → v3: circles from learned spells (${g.circles})`);
   const bad = JSON.parse(JSON.stringify(snap));
   bad.growth.gold = 'много';

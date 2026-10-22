@@ -7,6 +7,7 @@ import { HeroState, maxHpFor, maxMpFor, maxStFor } from '../../src/rpg2/hero';
 import { HeroMotor, NO_INTENT, fallDamage, fallShare, type MotorGround, type MotorIntent, type MotorEvent } from '../../src/rpg2/motor';
 import { PauseManager } from '../../src/rpg2/pause';
 import { ActiveTime } from '../../src/rpg2/time';
+import { newEconomyWorld } from '../../src/rpg2/economy/world';
 import { AUTOSAVE_SECONDS, JUMP2, SPEED, roundDamage } from '../../src/rpg2/config';
 import { bind, defaultBinds, defaultControls, fixControls, loadControls, saveControls, CONTROLS_KEY } from '../../src/rpg2/controls';
 import { PLAYTHROUGH_VERSION, SaveError, migratePlaythrough, readPlaythrough, restore, snapshot, writePlaythrough, TEST_SAVE_KEY } from '../../src/rpg2/save';
@@ -458,7 +459,7 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
   m.update(1 / 60, { ...NO_INTENT, jumpPressed: true }, h);
   m.walk = true;
   const gr = newGrowth();
-  const s = snapshot({ id: 'p1', map: 'rpg_test', name: 'Испытатель', race: 'human', hero: h, motor: m.toSave(), time: t, combat: { ...newCombatData('start'), quick: [gr.equip.weapon, null, null, null] }, growth: gr, now: 1000 });
+  const s = snapshot({ id: 'p1', map: 'rpg_test', name: 'Испытатель', race: 'human', hero: h, motor: m.toSave(), time: t, combat: { ...newCombatData('start'), quick: [gr.equip.weapon, null, null, null] }, growth: gr, world: newEconomyWorld(gr), now: 1000 });
   ok(writePlaythrough(s, TEST_SAVE_KEY, kv), 'the record is written');
   const back = readPlaythrough(TEST_SAVE_KEY, kv)!;
   ok(JSON.stringify(back) === JSON.stringify(s), 'round trip: the record reads back identical');

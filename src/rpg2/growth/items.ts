@@ -109,7 +109,7 @@ export const UPGRADE: Record<Upgrade, { name: string; mul: number }> = { sharp: 
 export const FORGE_COSTS: Record<number, Record<Upgrade, { gold: number; materials: Record<string, number> }>> = {
   1: { sharp: { gold: 100, materials: { coal: 2 } }, tempered: { gold: 180, materials: { iron: 2, coal: 2 } } },
   2: { sharp: { gold: 300, materials: { coal: 3 } }, tempered: { gold: 500, materials: { steel: 2, coal: 3 } } },
-  3: { sharp: { gold: 700, materials: { coal: 4 } }, tempered: { gold: 1200, materials: { fortified: 2, coal: 4 } } },
+  3: { sharp: { gold: 700, materials: { coal: 4 } }, tempered: { gold: 1200, materials: { alloy: 2, coal: 4 } } },
 };
 
 /** One item instance (D138: the favourite mark belongs to the instance). */
@@ -125,11 +125,42 @@ export interface Item {
 export function isWeapon(tpl: string): boolean {
   return !!WEAPON_BY_ID[tpl];
 }
+/** Equipment that goes into a slot (weapons and armor). */
+export function isGear(tpl: string): boolean {
+  return !!WEAPON_BY_ID[tpl] || !!ARMOR_BY_ID[tpl];
+}
+/** Stage 4: tools are separate items without durability (D203); runes are goods (D206). */
+export const TOOL_NAMES: Record<string, string> = { knife: 'Охотничий нож', pickaxe: 'Кирка', axe: 'Топор' };
+export const RUNE_NAMES: Record<string, string> = {
+  'rune-quiet-valley': 'Руна Тихой Долины',
+  'rune-forest-rest': 'Руна Лесного Привала',
+  'rune-stone-ford': 'Руна Каменного Брода',
+};
+export function isTool(tpl: string): boolean {
+  return !!TOOL_NAMES[tpl];
+}
+export function isRune(tpl: string): boolean {
+  return !!RUNE_NAMES[tpl];
+}
+/** Any template an item instance may carry. */
+export function isItemTpl(tpl: string): boolean {
+  return isGear(tpl) || isTool(tpl) || isRune(tpl);
+}
 export function itemName(it: Item): string {
-  return WEAPON_BY_ID[it.tpl]?.name ?? ARMOR_BY_ID[it.tpl]?.name ?? it.tpl;
+  return WEAPON_BY_ID[it.tpl]?.name ?? ARMOR_BY_ID[it.tpl]?.name ?? TOOL_NAMES[it.tpl] ?? RUNE_NAMES[it.tpl] ?? it.tpl;
+}
+/** D154: sword upgrades are «Заточка» / «Закалка», bow and staff ones «Точная» / «Усиленная обработка». */
+export function upgradeName(tpl: string, u: Upgrade): string {
+  const k = WEAPON_BY_ID[tpl]?.kind;
+  if (k === 'bow' || k === 'staff') return u === 'sharp' ? 'Точная обработка' : 'Усиленная обработка';
+  return UPGRADE[u].name;
+}
+/** Weapon group I–III (price and forge cost row) from the template's tier digit. */
+export function weaponGroup(tpl: string): number {
+  return Number(tpl.slice(-1)) || 1;
 }
 export function itemSlot(it: Item): EquipSlot {
-  return isWeapon(it.tpl) ? 'weapon' : ARMOR_BY_ID[it.tpl].slot;
+  return isWeapon(it.tpl) ? 'weapon' : ARMOR_BY_ID[it.tpl]?.slot ?? 'weapon';
 }
 export function itemReq(it: Item): Partial<Record<StatId, number>> {
   const w = WEAPON_BY_ID[it.tpl];

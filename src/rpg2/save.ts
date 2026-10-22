@@ -8,6 +8,7 @@ import { masteryThreshold } from './combat/formulas';
 import { checkGrowth, newGrowth, addItem, type GrowthData } from './growth/growth';
 import { levelForXp, tpForLevel, LP_PER_LEVEL } from './growth/levels';
 import { SPELL_BY_ID } from './combat/data';
+import { checkWorld, newEconomyWorld, worldUids, type EconomyWorld } from './economy/world';
 
 /**
  * Playthrough snapshot of the RPG systems (stage 1: the hero state, the movement state, the clock
@@ -17,8 +18,12 @@ import { SPELL_BY_ID } from './combat/data';
  * (D040–D047) arrives in stage 6 and keeps this record as the snapshot body.
  */
 export const PLAYTHROUGH_FORMAT = 'cubeborn.rpg2.playthrough';
-/** 1: stage 1 (hero, movement, clock). 2: stage 2 adds the combat block. 3: stage 3 adds growth (gold, items, talents, circles, mods). */
-export const PLAYTHROUGH_VERSION = 3;
+/**
+ * 1: stage 1 (hero, movement, clock). 2: stage 2 adds the combat block. 3: stage 3 adds growth
+ * (gold, items, talents, circles, mods). 4: stage 4 adds stacks, crafts and hunting / gathering
+ * skills to growth and the world block (corpses, chests, resource points, merchants).
+ */
+export const PLAYTHROUGH_VERSION = 4;
 /** The test scene's single record (stage 6 replaces it with slots and queues). */
 export const TEST_SAVE_KEY = 'cubeborn.rpg2.test';
 
@@ -50,9 +55,11 @@ export interface PlaythroughSave {
   combat: CombatData;
   /** Stage 3: gold, inventory and equipment, talents, circles, modifications, potions. */
   growth: GrowthData;
+  /** Stage 4: corpses, one-off chests, resource points and merchants (D040 one snapshot with the bag). */
+  world: EconomyWorld;
 }
 
-export function snapshot(o: { id: string; map: string; name: string; race: string; hero: HeroState; motor: MotorSave; time: ActiveTime; combat: CombatData; growth: GrowthData; now?: number }): PlaythroughSave {
+export function snapshot(o: { id: string; map: string; name: string; race: string; hero: HeroState; motor: MotorSave; time: ActiveTime; combat: CombatData; growth: GrowthData; world: EconomyWorld; now?: number }): PlaythroughSave {
   const h = o.hero;
   return {
     format: PLAYTHROUGH_FORMAT,
@@ -77,11 +84,12 @@ export function snapshot(o: { id: string; map: string; name: string; race: strin
     active: { seconds: o.time.seconds, autosaveLeft: o.time.autosaveLeft },
     combat: JSON.parse(JSON.stringify(o.combat)),
     growth: JSON.parse(JSON.stringify(o.growth)),
+    world: JSON.parse(JSON.stringify(o.world)),
   };
 }
 
 /** Restores the hero and the active time from a checked record. */
-export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime; combat: CombatData; growth: GrowthData } {
+export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime; combat: CombatData; growth: GrowthData; world: EconomyWorld } {
   const hero = new HeroState();
   hero.stats = { ...s.hero.stats };
   hero.progress = { ...s.hero.progress, mastery: { ...s.hero.progress.mastery } };
@@ -94,7 +102,7 @@ export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime
   const time = new ActiveTime(new GameClock(s.clock.minutes, s.clock.days, CLOCK.rate));
   time.seconds = s.active.seconds;
   time.autosaveLeft = s.active.autosaveLeft;
-  return { hero, time, combat: JSON.parse(JSON.stringify(s.combat)), growth: JSON.parse(JSON.stringify(s.growth)) };
+  return { hero, time, combat: JSON.parse(JSON.stringify(s.combat)), growth: JSON.parse(JSON.stringify(s.growth)), world: JSON.parse(JSON.stringify(s.world)) };
 }
 
 export class SaveError extends Error {}
@@ -206,7 +214,20 @@ export function migratePlaythrough(raw: any): { save: PlaythroughSave; migrated:
     active: { seconds: num(raw.active?.seconds ?? 0, 'active.seconds'), autosaveLeft: num(raw.active?.autosaveLeft ?? AUTOSAVE_SECONDS, 'active.autosaveLeft') },
     combat,
     growth: growth!,
+    world: null as unknown as EconomyWorld,
   };
+  // v3 → v4: the stage 4 world is created now (chest contents fixed from here on, D096); a v4
+  // world is checked, and no item may exist twice across the bag and the world
+  if (v < 4) save.world = newEconomyWorld(save.growth);
+  else {
+    try {
+      save.world = checkWorld(raw.world);
+    } catch (e) {
+      throw new SaveError(`Повреждён блок мира: ${(e as Error).message}`);
+    }
+  }
+  const uids = [...save.growth.items.map((i) => i.uid), ...worldUids(save.world)];
+  if (new Set(uids).size !== uids.length) throw new SaveError('Повреждён блок мира: предмет записан дважды');
   if (v < 3) {
     const lv = levelForXp(save.hero.progress.xp);
     if (lv > save.hero.progress.level) {

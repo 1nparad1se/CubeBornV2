@@ -1050,7 +1050,11 @@ export class CombatSystem {
   }
 
   /** D035–D039 / D198: death after the damage; XP only with ≥ 25 % participation. One life rewards once. */
+  /** Stage 4: the scene turns a death into a lootable corpse (called before the enemy is reset). */
+  onKilled: ((e: EnemyState) => void) | null = null;
+
   private onKill(e: EnemyState) {
+    this.onKilled?.(e);
     const def = enemyDef(e);
     const enough = participationEnough(e.part, def.hp);
     killEnemy(e);

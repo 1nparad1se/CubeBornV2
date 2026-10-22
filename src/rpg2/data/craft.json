@@ -1,0 +1,1120 @@
+{
+ "professions": [
+  {
+   "id": "smith",
+   "name": "Кузнечное дело",
+   "station": "Кузница",
+   "attr": "STR",
+   "thresholds": [
+    10,
+    25,
+    50
+   ],
+   "effect": "Слитки, оружие и броня. Броня даёт только физическую защиту."
+  },
+  {
+   "id": "alchemy",
+   "name": "Алхимия",
+   "station": "Алхимический стол",
+   "attr": "INT",
+   "thresholds": [
+    10,
+    25,
+    50
+   ],
+   "effect": "Малые, средние и большие зелья HP / MP / ST. Без зелий усиления характеристик."
+  },
+  {
+   "id": "cooking",
+   "name": "Кулинария",
+   "station": "Костёр / печь",
+   "attr": null,
+   "thresholds": [
+    0,
+    0,
+    0
+   ],
+   "effect": "Пища восстанавливает только HP и используется вне боя. Без сытости и дополнительных бонусов."
+  }
+ ],
+ "craftTraining": [
+  {
+   "id": "smith1",
+   "profession": "smith",
+   "tier": 1,
+   "name": "Кузнечное дело I",
+   "lp": 5,
+   "gold": 75,
+   "attr": "STR",
+   "threshold": 10
+  },
+  {
+   "id": "smith2",
+   "profession": "smith",
+   "tier": 2,
+   "name": "Кузнечное дело II",
+   "lp": 10,
+   "gold": 300,
+   "attr": "STR",
+   "threshold": 25
+  },
+  {
+   "id": "smith3",
+   "profession": "smith",
+   "tier": 3,
+   "name": "Кузнечное дело III",
+   "lp": 15,
+   "gold": 900,
+   "attr": "STR",
+   "threshold": 50
+  },
+  {
+   "id": "alchemy1",
+   "profession": "alchemy",
+   "tier": 1,
+   "name": "Алхимия I",
+   "lp": 5,
+   "gold": 75,
+   "attr": "INT",
+   "threshold": 10
+  },
+  {
+   "id": "alchemy2",
+   "profession": "alchemy",
+   "tier": 2,
+   "name": "Алхимия II",
+   "lp": 10,
+   "gold": 300,
+   "attr": "INT",
+   "threshold": 25
+  },
+  {
+   "id": "alchemy3",
+   "profession": "alchemy",
+   "tier": 3,
+   "name": "Алхимия III",
+   "lp": 15,
+   "gold": 900,
+   "attr": "INT",
+   "threshold": 50
+  },
+  {
+   "id": "cooking1",
+   "profession": "cooking",
+   "tier": 1,
+   "name": "Кулинария I",
+   "lp": 5,
+   "gold": 75,
+   "attr": null,
+   "threshold": 0
+  },
+  {
+   "id": "cooking2",
+   "profession": "cooking",
+   "tier": 2,
+   "name": "Кулинария II",
+   "lp": 10,
+   "gold": 300,
+   "attr": null,
+   "threshold": 0
+  },
+  {
+   "id": "cooking3",
+   "profession": "cooking",
+   "tier": 3,
+   "name": "Кулинария III",
+   "lp": 15,
+   "gold": 900,
+   "attr": null,
+   "threshold": 0
+  }
+ ],
+ "huntingTraining": [
+  {
+   "id": "hunt1",
+   "tier": 1,
+   "name": "Охотник",
+   "lp": 3,
+   "gold": 75,
+   "attr": "DEX",
+   "threshold": 10,
+   "effect": "Позволяет снимать редкие волчьи шкуры. Для любой шкуры нужен охотничий нож."
+  },
+  {
+   "id": "hunt2",
+   "tier": 2,
+   "name": "Опытный охотник",
+   "lp": 6,
+   "gold": 250,
+   "attr": "DEX",
+   "threshold": 25,
+   "effect": "Позволяет извлекать крепкие сухожилия у подходящей добычи. Нож для этого трофея не требуется; предыдущие возможности сохраняются."
+  },
+  {
+   "id": "hunt3",
+   "tier": 3,
+   "name": "Мастер охоты",
+   "lp": 9,
+   "gold": 600,
+   "attr": "DEX",
+   "threshold": 50,
+   "effect": "Позволяет извлекать древние рога у соответствующих существ. Нож для рога не требуется; не даёт редкий трофей каждому животному."
+  }
+ ],
+ "gatheringTraining": [
+  {
+   "id": "rareplants",
+   "name": "Знаток редких растений",
+   "lp": 5,
+   "gold": 200,
+   "attr": "INT",
+   "threshold": 25,
+   "effect": "Открывает сбор лунного цветка и кровоцвета. Инструмент не нужен."
+  },
+  {
+   "id": "rareminerals",
+   "name": "Добытчик редких минералов",
+   "lp": 5,
+   "gold": 200,
+   "attr": "STR",
+   "threshold": 25,
+   "effect": "Открывает добычу звёздной руды и грозового кристалла. Нужна кирка в инвентаре."
+  },
+  {
+   "id": "rarewood",
+   "name": "Заготовщик редкой древесины",
+   "lp": 5,
+   "gold": 200,
+   "attr": "STR",
+   "threshold": 25,
+   "effect": "Открывает сбор древней древесины. Нужен топор в инвентаре."
+  }
+ ],
+ "resourceNames": {
+  "ore": "Железная руда",
+  "wood": "Древесина",
+  "coal": "Уголь",
+  "iron": "Железный слиток",
+  "steel": "Стальной слиток",
+  "alloy": "Укреплённый слиток",
+  "leather": "Обычная шкура",
+  "rareleather": "Редкая волчья шкура",
+  "sinew": "Крепкое сухожилие",
+  "horn": "Древний рог",
+  "red": "Красная трава",
+  "blue": "Синяя трава",
+  "yellow": "Жёлтая трава",
+  "moon": "Лунный цветок",
+  "blood": "Кровоцвет",
+  "starore": "Звёздная руда",
+  "crystal": "Грозовой кристалл",
+  "oldwood": "Древняя древесина",
+  "water": "Чистая вода",
+  "bottle": "Пустой флакон",
+  "meat": "Сырое мясо",
+  "fish": "Сырая рыба",
+  "grain": "Зерно",
+  "mushroom": "Съедобный гриб",
+  "claw": "Обычный коготь"
+ },
+ "toolNames": {
+  "knife": "Охотничий нож",
+  "pickaxe": "Кирка",
+  "axe": "Топор"
+ },
+ "recipes": [
+  {
+   "id": "ingot1",
+   "profession": "smith",
+   "tier": 1,
+   "name": "Железный слиток",
+   "ingredients": {
+    "ore": 3,
+    "coal": 1
+   },
+   "result": {
+    "kind": "material",
+    "key": "iron",
+    "qty": 1
+   },
+   "effect": "Материал для дальнейшего изготовления."
+  },
+  {
+   "id": "sword1",
+   "profession": "smith",
+   "tier": 1,
+   "name": "Железный меч",
+   "ingredients": {
+    "iron": 3,
+    "wood": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Меч",
+    "damage": 12,
+    "attr": "STR",
+    "requirement": 10
+   },
+   "effect": "Обычное оружие: 12 базового физического урона; STR 10. Без аффиксов."
+  },
+  {
+   "id": "bow1",
+   "profession": "smith",
+   "tier": 1,
+   "name": "Простой лук",
+   "ingredients": {
+    "wood": 3,
+    "leather": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Лук",
+    "damage": 10,
+    "attr": "DEX",
+    "requirement": 10
+   },
+   "effect": "Обычное оружие: 10 базового физического урона; DEX 10. Стрелы не изготавливаются и не расходуются."
+  },
+  {
+   "id": "staff1",
+   "profession": "smith",
+   "tier": 1,
+   "name": "Дорожный посох",
+   "ingredients": {
+    "wood": 2,
+    "iron": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Посох",
+    "damage": 12,
+    "attr": "INT",
+    "requirement": 10
+   },
+   "effect": "Обычный посох: 12 базового урона обычной магической атаки; INT 10. Этот урон не прибавляется к базовому урону заклинаний."
+  },
+  {
+   "id": "chest1",
+   "profession": "smith",
+   "tier": 1,
+   "name": "Кожаный нагрудник",
+   "ingredients": {
+    "leather": 3,
+    "iron": 1
+   },
+   "result": {
+    "kind": "armor",
+    "slot": "Нагрудник",
+    "defense": 8,
+    "requirements": {
+     "DEX": 10
+    }
+   },
+   "effect": "Только физическая защита +8. Лёгкая: DEX 10. Других бонусов нет."
+  },
+  {
+   "id": "armor1",
+   "profession": "smith",
+   "tier": 1,
+   "name": "Железный шлем",
+   "ingredients": {
+    "iron": 2,
+    "leather": 1
+   },
+   "result": {
+    "kind": "armor",
+    "slot": "Шлем",
+    "defense": 4,
+    "requirements": {
+     "STR": 10
+    }
+   },
+   "effect": "Только физическая защита +4. Средняя броня: STR 10. Других бонусов нет."
+  },
+  {
+   "id": "potionHP1",
+   "profession": "alchemy",
+   "tier": 1,
+   "name": "Малое зелье HP",
+   "ingredients": {
+    "red": 2,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "HP",
+    "amount": 60,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 60 HP, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "potionMP1",
+   "profession": "alchemy",
+   "tier": 1,
+   "name": "Малое зелье MP",
+   "ingredients": {
+    "blue": 2,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "MP",
+    "amount": 60,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 60 MP, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "potionST1",
+   "profession": "alchemy",
+   "tier": 1,
+   "name": "Малое зелье ST",
+   "ingredients": {
+    "yellow": 2,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "ST",
+    "amount": 30,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 30 ST, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "food10",
+   "profession": "cooking",
+   "tier": 1,
+   "name": "Жареное мясо",
+   "ingredients": {
+    "meat": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 40,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 40 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "food11",
+   "profession": "cooking",
+   "tier": 1,
+   "name": "Запечённая рыба",
+   "ingredients": {
+    "fish": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 35,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 35 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "food12",
+   "profession": "cooking",
+   "tier": 1,
+   "name": "Пресная лепёшка",
+   "ingredients": {
+    "grain": 2,
+    "water": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 25,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 25 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "ingot2",
+   "profession": "smith",
+   "tier": 2,
+   "name": "Стальной слиток",
+   "ingredients": {
+    "iron": 2,
+    "coal": 2
+   },
+   "result": {
+    "kind": "material",
+    "key": "steel",
+    "qty": 1
+   },
+   "effect": "Материал для дальнейшего изготовления."
+  },
+  {
+   "id": "sword2",
+   "profession": "smith",
+   "tier": 2,
+   "name": "Стальной меч",
+   "ingredients": {
+    "steel": 3,
+    "wood": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Меч",
+    "damage": 24,
+    "attr": "STR",
+    "requirement": 25
+   },
+   "effect": "Обычное оружие: 24 базового физического урона; STR 25. Без аффиксов."
+  },
+  {
+   "id": "bow2",
+   "profession": "smith",
+   "tier": 2,
+   "name": "Составной лук",
+   "ingredients": {
+    "wood": 3,
+    "sinew": 1,
+    "steel": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Лук",
+    "damage": 20,
+    "attr": "DEX",
+    "requirement": 25
+   },
+   "effect": "Обычное оружие: 20 базового физического урона; DEX 25. Стрелы не изготавливаются и не расходуются."
+  },
+  {
+   "id": "staff2",
+   "profession": "smith",
+   "tier": 2,
+   "name": "Посох кристалла",
+   "ingredients": {
+    "wood": 2,
+    "steel": 1,
+    "crystal": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Посох",
+    "damage": 24,
+    "attr": "INT",
+    "requirement": 25
+   },
+   "effect": "Обычный посох: 24 базового урона обычной магической атаки; INT 25. Этот урон не прибавляется к базовому урону заклинаний."
+  },
+  {
+   "id": "chest2",
+   "profession": "smith",
+   "tier": 2,
+   "name": "Стальной нагрудник",
+   "ingredients": {
+    "steel": 4,
+    "rareleather": 1
+   },
+   "result": {
+    "kind": "armor",
+    "slot": "Нагрудник",
+    "defense": 18,
+    "requirements": {
+     "STR": 25
+    }
+   },
+   "effect": "Только физическая защита +18. Средняя: STR 25. Других бонусов нет."
+  },
+  {
+   "id": "armor2",
+   "profession": "smith",
+   "tier": 2,
+   "name": "Стальные штаны",
+   "ingredients": {
+    "steel": 2,
+    "leather": 1
+   },
+   "result": {
+    "kind": "armor",
+    "slot": "Штаны",
+    "defense": 10,
+    "requirements": {
+     "STR": 25
+    }
+   },
+   "effect": "Только физическая защита +10. Средняя броня: STR 25. Других бонусов нет."
+  },
+  {
+   "id": "potionHP2",
+   "profession": "alchemy",
+   "tier": 2,
+   "name": "Среднее зелье HP",
+   "ingredients": {
+    "red": 4,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "HP",
+    "amount": 140,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 140 HP, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "potionMP2",
+   "profession": "alchemy",
+   "tier": 2,
+   "name": "Среднее зелье MP",
+   "ingredients": {
+    "blue": 4,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "MP",
+    "amount": 140,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 140 MP, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "potionST2",
+   "profession": "alchemy",
+   "tier": 2,
+   "name": "Среднее зелье ST",
+   "ingredients": {
+    "yellow": 4,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "ST",
+    "amount": 60,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 60 ST, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "food20",
+   "profession": "cooking",
+   "tier": 2,
+   "name": "Мясная похлёбка",
+   "ingredients": {
+    "meat": 2,
+    "mushroom": 1,
+    "water": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 85,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 85 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "food21",
+   "profession": "cooking",
+   "tier": 2,
+   "name": "Рыбный суп",
+   "ingredients": {
+    "fish": 2,
+    "grain": 1,
+    "water": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 75,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 75 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "food22",
+   "profession": "cooking",
+   "tier": 2,
+   "name": "Грибная каша",
+   "ingredients": {
+    "mushroom": 2,
+    "grain": 2,
+    "water": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 65,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 65 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "ingot3",
+   "profession": "smith",
+   "tier": 3,
+   "name": "Укреплённый слиток",
+   "ingredients": {
+    "steel": 2,
+    "starore": 1,
+    "coal": 2
+   },
+   "result": {
+    "kind": "material",
+    "key": "alloy",
+    "qty": 1
+   },
+   "effect": "Материал для дальнейшего изготовления."
+  },
+  {
+   "id": "sword3",
+   "profession": "smith",
+   "tier": 3,
+   "name": "Укреплённый меч",
+   "ingredients": {
+    "alloy": 3,
+    "wood": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Меч",
+    "damage": 40,
+    "attr": "STR",
+    "requirement": 50
+   },
+   "effect": "Обычное оружие: 40 базового физического урона; STR 50. Без аффиксов."
+  },
+  {
+   "id": "bow3",
+   "profession": "smith",
+   "tier": 3,
+   "name": "Лук древней древесины",
+   "ingredients": {
+    "oldwood": 3,
+    "sinew": 1,
+    "alloy": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Лук",
+    "damage": 34,
+    "attr": "DEX",
+    "requirement": 50
+   },
+   "effect": "Обычное оружие: 34 базового физического урона; DEX 50. Стрелы не изготавливаются и не расходуются."
+  },
+  {
+   "id": "staff3",
+   "profession": "smith",
+   "tier": 3,
+   "name": "Посох древнего рога",
+   "ingredients": {
+    "oldwood": 2,
+    "alloy": 1,
+    "horn": 1
+   },
+   "result": {
+    "kind": "weapon",
+    "type": "Посох",
+    "damage": 40,
+    "attr": "INT",
+    "requirement": 50
+   },
+   "effect": "Обычный посох: 40 базового урона обычной магической атаки; INT 50. Этот урон не прибавляется к базовому урону заклинаний."
+  },
+  {
+   "id": "chest3",
+   "profession": "smith",
+   "tier": 3,
+   "name": "Тяжёлый нагрудник",
+   "ingredients": {
+    "alloy": 4,
+    "rareleather": 2
+   },
+   "result": {
+    "kind": "armor",
+    "slot": "Нагрудник",
+    "defense": 30,
+    "requirements": {
+     "STR": 50,
+     "RES": 35
+    }
+   },
+   "effect": "Только физическая защита +30. Тяжёлая: STR 50 и RES 35. Других бонусов нет."
+  },
+  {
+   "id": "armor3",
+   "profession": "smith",
+   "tier": 3,
+   "name": "Укреплённый шлем",
+   "ingredients": {
+    "alloy": 2,
+    "leather": 1
+   },
+   "result": {
+    "kind": "armor",
+    "slot": "Шлем",
+    "defense": 14,
+    "requirements": {
+     "STR": 50,
+     "RES": 35
+    }
+   },
+   "effect": "Только физическая защита +14. Тяжёлая броня: STR 50 и RES 35. Других бонусов нет."
+  },
+  {
+   "id": "potionHP3",
+   "profession": "alchemy",
+   "tier": 3,
+   "name": "Большое зелье HP",
+   "ingredients": {
+    "red": 4,
+    "blood": 1,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "HP",
+    "amount": 260,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 260 HP, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "potionMP3",
+   "profession": "alchemy",
+   "tier": 3,
+   "name": "Большое зелье MP",
+   "ingredients": {
+    "blue": 4,
+    "moon": 1,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "MP",
+    "amount": 260,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 260 MP, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "potionST3",
+   "profession": "alchemy",
+   "tier": 3,
+   "name": "Большое зелье ST",
+   "ingredients": {
+    "yellow": 4,
+    "crystal": 1,
+    "water": 1,
+    "bottle": 1
+   },
+   "result": {
+    "kind": "potion",
+    "stat": "ST",
+    "amount": 100,
+    "qty": 1
+   },
+   "effect": "Мгновенно восстанавливает 100 ST, не выше максимума. Работает в бою. Общий откат всех зелий — 10 с."
+  },
+  {
+   "id": "food30",
+   "profession": "cooking",
+   "tier": 3,
+   "name": "Походное жаркое",
+   "ingredients": {
+    "meat": 3,
+    "mushroom": 2,
+    "grain": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 150,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 150 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "food31",
+   "profession": "cooking",
+   "tier": 3,
+   "name": "Сытный рыбный пирог",
+   "ingredients": {
+    "fish": 3,
+    "grain": 3,
+    "water": 1
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 135,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 135 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  },
+  {
+   "id": "food32",
+   "profession": "cooking",
+   "tier": 3,
+   "name": "Густая грибная похлёбка",
+   "ingredients": {
+    "mushroom": 4,
+    "grain": 2,
+    "water": 2
+   },
+   "result": {
+    "kind": "food",
+    "stat": "HP",
+    "amount": 120,
+    "qty": 1
+   },
+   "effect": "Восстанавливает 120 HP мгновенно, только вне боя, не выше максимума. Без баффов, голода и сытости."
+  }
+ ],
+ "resourceSources": [
+  {
+   "id": "node-red",
+   "name": "Красная трава",
+   "material": "red",
+   "kind": "Обычное растение",
+   "tool": null,
+   "skill": null,
+   "stock": {
+    "min": 2,
+    "max": 4,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 15,
+   "cycleSeconds": 1,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-blue",
+   "name": "Синяя трава",
+   "material": "blue",
+   "kind": "Обычное растение",
+   "tool": null,
+   "skill": null,
+   "stock": {
+    "min": 2,
+    "max": 4,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 15,
+   "cycleSeconds": 1,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-yellow",
+   "name": "Жёлтая трава",
+   "material": "yellow",
+   "kind": "Обычное растение",
+   "tool": null,
+   "skill": null,
+   "stock": {
+    "min": 2,
+    "max": 4,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 15,
+   "cycleSeconds": 1,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-ore",
+   "name": "Железная руда",
+   "material": "ore",
+   "kind": "Обычная руда",
+   "tool": "pickaxe",
+   "skill": null,
+   "stock": {
+    "min": 3,
+    "max": 6,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 30,
+   "cycleSeconds": 3,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-wood",
+   "name": "Древесина",
+   "material": "wood",
+   "kind": "Обычная древесина",
+   "tool": "axe",
+   "skill": null,
+   "stock": {
+    "min": 3,
+    "max": 6,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 30,
+   "cycleSeconds": 3,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-moon",
+   "name": "Лунный цветок",
+   "material": "moon",
+   "kind": "Редкое растение",
+   "tool": null,
+   "skill": "rareplants",
+   "stock": {
+    "min": 1,
+    "max": 2,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 120,
+   "cycleSeconds": 1,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-blood",
+   "name": "Кровоцвет",
+   "material": "blood",
+   "kind": "Редкое растение",
+   "tool": null,
+   "skill": "rareplants",
+   "stock": {
+    "min": 1,
+    "max": 2,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 120,
+   "cycleSeconds": 1,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-starore",
+   "name": "Звёздная руда",
+   "material": "starore",
+   "kind": "Редкий минерал",
+   "tool": "pickaxe",
+   "skill": "rareminerals",
+   "stock": {
+    "min": 1,
+    "max": 2,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 120,
+   "cycleSeconds": 3,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-crystal",
+   "name": "Грозовой кристалл",
+   "material": "crystal",
+   "kind": "Редкий минерал",
+   "tool": "pickaxe",
+   "skill": "rareminerals",
+   "stock": {
+    "min": 1,
+    "max": 2,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 120,
+   "cycleSeconds": 3,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  },
+  {
+   "id": "node-oldwood",
+   "name": "Древняя древесина",
+   "material": "oldwood",
+   "kind": "Редкая древесина",
+   "tool": "axe",
+   "skill": "rarewood",
+   "stock": {
+    "min": 1,
+    "max": 2,
+    "distribution": "Равномерное целочисленное"
+   },
+   "respawnMinutes": 120,
+   "cycleSeconds": 3,
+   "unitsPerCycle": 1,
+   "startTimer": "После полного истощения",
+   "minimumRespawnDistance": 30,
+   "visibility": "Вне камеры либо за непрозрачным препятствием"
+  }
+ ],
+ "trophyRequirements": [
+  {
+   "id": "meat",
+   "tool": null,
+   "skill": null,
+   "materials": [
+    "meat",
+    "claw"
+   ],
+   "quantity": "По таблице добычи конкретного противника"
+  },
+  {
+   "id": "leather",
+   "tool": "knife",
+   "skill": null,
+   "materials": [
+    "leather"
+   ],
+   "quantity": "По таблице добычи конкретного противника"
+  },
+  {
+   "id": "rareleather",
+   "tool": "knife",
+   "skill": "hunt1",
+   "materials": [
+    "rareleather"
+   ],
+   "quantity": "По таблице добычи конкретного противника"
+  },
+  {
+   "id": "sinew",
+   "tool": null,
+   "skill": "hunt2",
+   "materials": [
+    "sinew"
+   ],
+   "quantity": "По таблице добычи конкретного противника"
+  },
+  {
+   "id": "horn",
+   "tool": null,
+   "skill": "hunt3",
+   "materials": [
+    "horn"
+   ],
+   "quantity": "По таблице добычи конкретного противника"
+  }
+ ]
+}

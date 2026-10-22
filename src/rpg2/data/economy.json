@@ -1,0 +1,1297 @@
+{
+ "materialBuyPrices": {
+  "ore": 5,
+  "wood": 4,
+  "coal": 4,
+  "iron": 20,
+  "steel": 60,
+  "alloy": 200,
+  "leather": 10,
+  "rareleather": 60,
+  "sinew": 45,
+  "horn": 140,
+  "red": 3,
+  "blue": 3,
+  "yellow": 3,
+  "moon": 45,
+  "blood": 40,
+  "starore": 45,
+  "crystal": 80,
+  "oldwood": 120,
+  "water": 2,
+  "bottle": 2,
+  "meat": 8,
+  "fish": 7,
+  "grain": 3,
+  "mushroom": 3,
+  "claw": 6
+ },
+ "toolBuyPrices": {
+  "knife": 30,
+  "pickaxe": 40,
+  "axe": 35
+ },
+ "weaponBuyPrices": {
+  "sword": [
+   140,
+   400,
+   1200
+  ],
+  "greatsword": [
+   200,
+   600,
+   1800
+  ],
+  "bow": [
+   80,
+   350,
+   1500
+  ],
+  "staff": [
+   90,
+   450,
+   1600
+  ]
+ },
+ "rarityPriceFactors": {
+  "common": 1,
+  "uncommon": 1.8,
+  "rare": 3,
+  "epic": 5,
+  "legendary": 9
+ },
+ "merchants": [
+  {
+   "id": "smith",
+   "name": "Бран",
+   "role": "Кузнец",
+   "place": "Каменный Брод · город",
+   "greeting": "Меч, лук или добротная броня? Выбирай по руке и по кошельку.",
+   "specialty": "Оружие, броня, слитки, уголь. Легендарных предметов в продаже нет."
+  },
+  {
+   "id": "alchemist",
+   "name": "Мира",
+   "role": "Алхимик",
+   "place": "Каменный Брод · город",
+   "greeting": "Здоровье, мана, выносливость — что пополним перед дорогой?",
+   "specialty": "Все девять зелий, травы, редкие реагенты, вода и флаконы."
+  },
+  {
+   "id": "cook",
+   "name": "Рада",
+   "role": "Повар",
+   "place": "Тихая Долина · деревня",
+   "greeting": "Горячая еда и припасы. Только помни: поесть можно вне боя.",
+   "specialty": "Девять блюд, мясо, рыба, зерно, грибы и вода."
+  },
+  {
+   "id": "hunter",
+   "name": "Егор",
+   "role": "Охотник",
+   "place": "Лесной Привал · деревня",
+   "greeting": "Трофеи приму, шкуры покажу. Хороший нож тоже найдётся.",
+   "specialty": "Шкуры, сухожилия, рога, когти и охотничий нож."
+  },
+  {
+   "id": "supplier",
+   "name": "Торен",
+   "role": "Снабженец",
+   "place": "Каменный Брод · город",
+   "greeting": "Материалы и инструменты. Остальное ищи у мастеров своего дела.",
+   "specialty": "Обычная и редкая руда/древесина, уголь, кирка и топор."
+  }
+ ],
+ "merchantOffers": {
+  "smith": [
+   {
+    "id": "smith-0",
+    "kind": "gear",
+    "template": "sword1",
+    "rarity": "common",
+    "unitBuyPrice": 140,
+    "unitSellPrice": 35,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-1",
+    "kind": "gear",
+    "template": "greatsword1",
+    "rarity": "common",
+    "unitBuyPrice": 200,
+    "unitSellPrice": 50,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-2",
+    "kind": "gear",
+    "template": "bow1",
+    "rarity": "common",
+    "unitBuyPrice": 80,
+    "unitSellPrice": 20,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-3",
+    "kind": "gear",
+    "template": "staff1",
+    "rarity": "common",
+    "unitBuyPrice": 90,
+    "unitSellPrice": 22,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-4",
+    "kind": "gear",
+    "template": "lightШлем1",
+    "rarity": "common",
+    "unitBuyPrice": 32,
+    "unitSellPrice": 8,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-5",
+    "kind": "gear",
+    "template": "lightНагрудник1",
+    "rarity": "common",
+    "unitBuyPrice": 64,
+    "unitSellPrice": 16,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-6",
+    "kind": "gear",
+    "template": "lightШтаны1",
+    "rarity": "common",
+    "unitBuyPrice": 40,
+    "unitSellPrice": 10,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-7",
+    "kind": "gear",
+    "template": "mediumШлем1",
+    "rarity": "common",
+    "unitBuyPrice": 32,
+    "unitSellPrice": 8,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-8",
+    "kind": "gear",
+    "template": "mediumНагрудник1",
+    "rarity": "common",
+    "unitBuyPrice": 80,
+    "unitSellPrice": 20,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-9",
+    "kind": "gear",
+    "template": "mediumШтаны1",
+    "rarity": "common",
+    "unitBuyPrice": 48,
+    "unitSellPrice": 12,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-10",
+    "kind": "gear",
+    "template": "heavyШлем1",
+    "rarity": "common",
+    "unitBuyPrice": 48,
+    "unitSellPrice": 12,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-11",
+    "kind": "gear",
+    "template": "heavyНагрудник1",
+    "rarity": "common",
+    "unitBuyPrice": 112,
+    "unitSellPrice": 28,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-12",
+    "kind": "gear",
+    "template": "heavyШтаны1",
+    "rarity": "common",
+    "unitBuyPrice": 72,
+    "unitSellPrice": 18,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-13",
+    "kind": "gear",
+    "template": "sword2",
+    "rarity": "common",
+    "unitBuyPrice": 400,
+    "unitSellPrice": 100,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-14",
+    "kind": "gear",
+    "template": "greatsword2",
+    "rarity": "common",
+    "unitBuyPrice": 600,
+    "unitSellPrice": 150,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-15",
+    "kind": "gear",
+    "template": "bow2",
+    "rarity": "common",
+    "unitBuyPrice": 350,
+    "unitSellPrice": 87,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-16",
+    "kind": "gear",
+    "template": "staff2",
+    "rarity": "common",
+    "unitBuyPrice": 450,
+    "unitSellPrice": 112,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-17",
+    "kind": "gear",
+    "template": "lightШлем2",
+    "rarity": "common",
+    "unitBuyPrice": 84,
+    "unitSellPrice": 21,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-18",
+    "kind": "gear",
+    "template": "lightНагрудник2",
+    "rarity": "common",
+    "unitBuyPrice": 168,
+    "unitSellPrice": 42,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-19",
+    "kind": "gear",
+    "template": "lightШтаны2",
+    "rarity": "common",
+    "unitBuyPrice": 108,
+    "unitSellPrice": 27,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-20",
+    "kind": "gear",
+    "template": "mediumШлем2",
+    "rarity": "common",
+    "unitBuyPrice": 84,
+    "unitSellPrice": 21,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-21",
+    "kind": "gear",
+    "template": "mediumНагрудник2",
+    "rarity": "common",
+    "unitBuyPrice": 216,
+    "unitSellPrice": 54,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-22",
+    "kind": "gear",
+    "template": "mediumШтаны2",
+    "rarity": "common",
+    "unitBuyPrice": 132,
+    "unitSellPrice": 33,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-23",
+    "kind": "gear",
+    "template": "heavyШлем2",
+    "rarity": "common",
+    "unitBuyPrice": 132,
+    "unitSellPrice": 33,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-24",
+    "kind": "gear",
+    "template": "heavyНагрудник2",
+    "rarity": "common",
+    "unitBuyPrice": 300,
+    "unitSellPrice": 75,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-25",
+    "kind": "gear",
+    "template": "heavyШтаны2",
+    "rarity": "common",
+    "unitBuyPrice": 192,
+    "unitSellPrice": 48,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-26",
+    "kind": "gear",
+    "template": "sword3",
+    "rarity": "common",
+    "unitBuyPrice": 1200,
+    "unitSellPrice": 300,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-27",
+    "kind": "gear",
+    "template": "greatsword3",
+    "rarity": "common",
+    "unitBuyPrice": 1800,
+    "unitSellPrice": 450,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-28",
+    "kind": "gear",
+    "template": "bow3",
+    "rarity": "common",
+    "unitBuyPrice": 1500,
+    "unitSellPrice": 375,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-29",
+    "kind": "gear",
+    "template": "staff3",
+    "rarity": "common",
+    "unitBuyPrice": 1600,
+    "unitSellPrice": 400,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-30",
+    "kind": "gear",
+    "template": "lightШлем3",
+    "rarity": "common",
+    "unitBuyPrice": 240,
+    "unitSellPrice": 60,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-31",
+    "kind": "gear",
+    "template": "lightНагрудник3",
+    "rarity": "common",
+    "unitBuyPrice": 480,
+    "unitSellPrice": 120,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-32",
+    "kind": "gear",
+    "template": "lightШтаны3",
+    "rarity": "common",
+    "unitBuyPrice": 300,
+    "unitSellPrice": 75,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-33",
+    "kind": "gear",
+    "template": "mediumШлем3",
+    "rarity": "common",
+    "unitBuyPrice": 240,
+    "unitSellPrice": 60,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-34",
+    "kind": "gear",
+    "template": "mediumНагрудник3",
+    "rarity": "common",
+    "unitBuyPrice": 600,
+    "unitSellPrice": 150,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-35",
+    "kind": "gear",
+    "template": "mediumШтаны3",
+    "rarity": "common",
+    "unitBuyPrice": 360,
+    "unitSellPrice": 90,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-36",
+    "kind": "gear",
+    "template": "heavyШлем3",
+    "rarity": "common",
+    "unitBuyPrice": 360,
+    "unitSellPrice": 90,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-37",
+    "kind": "gear",
+    "template": "heavyНагрудник3",
+    "rarity": "common",
+    "unitBuyPrice": 840,
+    "unitSellPrice": 210,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-38",
+    "kind": "gear",
+    "template": "heavyШтаны3",
+    "rarity": "common",
+    "unitBuyPrice": 540,
+    "unitSellPrice": 135,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-39",
+    "kind": "gear",
+    "template": "sword2",
+    "rarity": "uncommon",
+    "unitBuyPrice": 720,
+    "unitSellPrice": 180,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-40",
+    "kind": "gear",
+    "template": "bow2",
+    "rarity": "uncommon",
+    "unitBuyPrice": 630,
+    "unitSellPrice": 157,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-41",
+    "kind": "gear",
+    "template": "staff2",
+    "rarity": "uncommon",
+    "unitBuyPrice": 810,
+    "unitSellPrice": 202,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-42",
+    "kind": "gear",
+    "template": "sword3",
+    "rarity": "rare",
+    "unitBuyPrice": 3600,
+    "unitSellPrice": 900,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-43",
+    "kind": "gear",
+    "template": "bow3",
+    "rarity": "rare",
+    "unitBuyPrice": 4500,
+    "unitSellPrice": 1125,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-44",
+    "kind": "gear",
+    "template": "staff3",
+    "rarity": "rare",
+    "unitBuyPrice": 4800,
+    "unitSellPrice": 1200,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-45",
+    "kind": "gear",
+    "template": "greatsword3",
+    "rarity": "epic",
+    "unitBuyPrice": 9000,
+    "unitSellPrice": 2250,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-46",
+    "kind": "gear",
+    "template": "mediumШлем2",
+    "rarity": "rare",
+    "unitBuyPrice": 252,
+    "unitSellPrice": 63,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-47",
+    "kind": "gear",
+    "template": "heavyНагрудник3",
+    "rarity": "epic",
+    "unitBuyPrice": 4200,
+    "unitSellPrice": 1050,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "smith-48",
+    "kind": "material",
+    "key": "iron",
+    "unitBuyPrice": 20,
+    "unitSellPrice": 5,
+    "stock": 10,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "smith-49",
+    "kind": "material",
+    "key": "steel",
+    "unitBuyPrice": 60,
+    "unitSellPrice": 15,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "smith-50",
+    "kind": "material",
+    "key": "alloy",
+    "unitBuyPrice": 200,
+    "unitSellPrice": 50,
+    "stock": 2,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "smith-51",
+    "kind": "material",
+    "key": "coal",
+    "unitBuyPrice": 4,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "smith-rune-stone-ford",
+    "kind": "rune",
+    "key": "rune-stone-ford",
+    "destination": "stone-ford",
+    "unitBuyPrice": 1000,
+    "unitSellPrice": 250,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   }
+  ],
+  "alchemist": [
+   {
+    "id": "alchemist-0",
+    "kind": "consumable",
+    "recipe": "potionHP1",
+    "unitBuyPrice": 20,
+    "unitSellPrice": 5,
+    "stock": 10,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-1",
+    "kind": "consumable",
+    "recipe": "potionMP1",
+    "unitBuyPrice": 22,
+    "unitSellPrice": 5,
+    "stock": 10,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-2",
+    "kind": "consumable",
+    "recipe": "potionST1",
+    "unitBuyPrice": 15,
+    "unitSellPrice": 3,
+    "stock": 10,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-3",
+    "kind": "consumable",
+    "recipe": "potionHP2",
+    "unitBuyPrice": 50,
+    "unitSellPrice": 12,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-4",
+    "kind": "consumable",
+    "recipe": "potionMP2",
+    "unitBuyPrice": 60,
+    "unitSellPrice": 15,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-5",
+    "kind": "consumable",
+    "recipe": "potionST2",
+    "unitBuyPrice": 35,
+    "unitSellPrice": 8,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-6",
+    "kind": "consumable",
+    "recipe": "potionHP3",
+    "unitBuyPrice": 110,
+    "unitSellPrice": 27,
+    "stock": 2,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-7",
+    "kind": "consumable",
+    "recipe": "potionMP3",
+    "unitBuyPrice": 130,
+    "unitSellPrice": 32,
+    "stock": 2,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-8",
+    "kind": "consumable",
+    "recipe": "potionST3",
+    "unitBuyPrice": 80,
+    "unitSellPrice": 20,
+    "stock": 2,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-9",
+    "kind": "material",
+    "key": "red",
+    "unitBuyPrice": 3,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-10",
+    "kind": "material",
+    "key": "blue",
+    "unitBuyPrice": 3,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-11",
+    "kind": "material",
+    "key": "yellow",
+    "unitBuyPrice": 3,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-12",
+    "kind": "material",
+    "key": "moon",
+    "unitBuyPrice": 45,
+    "unitSellPrice": 11,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-13",
+    "kind": "material",
+    "key": "blood",
+    "unitBuyPrice": 40,
+    "unitSellPrice": 10,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-14",
+    "kind": "material",
+    "key": "crystal",
+    "unitBuyPrice": 80,
+    "unitSellPrice": 20,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-15",
+    "kind": "material",
+    "key": "water",
+    "unitBuyPrice": 2,
+    "unitSellPrice": 1,
+    "stock": 30,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-16",
+    "kind": "material",
+    "key": "bottle",
+    "unitBuyPrice": 2,
+    "unitSellPrice": 1,
+    "stock": 30,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "alchemist-rune-stone-ford",
+    "kind": "rune",
+    "key": "rune-stone-ford",
+    "destination": "stone-ford",
+    "unitBuyPrice": 1000,
+    "unitSellPrice": 250,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   }
+  ],
+  "cook": [
+   {
+    "id": "cook-0",
+    "kind": "consumable",
+    "recipe": "food10",
+    "unitBuyPrice": 18,
+    "unitSellPrice": 4,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-1",
+    "kind": "consumable",
+    "recipe": "food11",
+    "unitBuyPrice": 16,
+    "unitSellPrice": 4,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-2",
+    "kind": "consumable",
+    "recipe": "food12",
+    "unitBuyPrice": 10,
+    "unitSellPrice": 2,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-3",
+    "kind": "consumable",
+    "recipe": "food20",
+    "unitBuyPrice": 50,
+    "unitSellPrice": 12,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-4",
+    "kind": "consumable",
+    "recipe": "food21",
+    "unitBuyPrice": 45,
+    "unitSellPrice": 11,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-5",
+    "kind": "consumable",
+    "recipe": "food22",
+    "unitBuyPrice": 35,
+    "unitSellPrice": 8,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-6",
+    "kind": "consumable",
+    "recipe": "food30",
+    "unitBuyPrice": 100,
+    "unitSellPrice": 25,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-7",
+    "kind": "consumable",
+    "recipe": "food31",
+    "unitBuyPrice": 90,
+    "unitSellPrice": 22,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-8",
+    "kind": "consumable",
+    "recipe": "food32",
+    "unitBuyPrice": 75,
+    "unitSellPrice": 18,
+    "stock": 5,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-9",
+    "kind": "material",
+    "key": "meat",
+    "unitBuyPrice": 8,
+    "unitSellPrice": 2,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-10",
+    "kind": "material",
+    "key": "fish",
+    "unitBuyPrice": 7,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-11",
+    "kind": "material",
+    "key": "grain",
+    "unitBuyPrice": 3,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-12",
+    "kind": "material",
+    "key": "mushroom",
+    "unitBuyPrice": 3,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-13",
+    "kind": "material",
+    "key": "water",
+    "unitBuyPrice": 2,
+    "unitSellPrice": 1,
+    "stock": 30,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "cook-rune-quiet-valley",
+    "kind": "rune",
+    "key": "rune-quiet-valley",
+    "destination": "quiet-valley",
+    "unitBuyPrice": 300,
+    "unitSellPrice": 75,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   }
+  ],
+  "hunter": [
+   {
+    "id": "hunter-0",
+    "kind": "material",
+    "key": "leather",
+    "unitBuyPrice": 10,
+    "unitSellPrice": 2,
+    "stock": 10,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "hunter-1",
+    "kind": "material",
+    "key": "rareleather",
+    "unitBuyPrice": 60,
+    "unitSellPrice": 15,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "hunter-2",
+    "kind": "material",
+    "key": "sinew",
+    "unitBuyPrice": 45,
+    "unitSellPrice": 11,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "hunter-3",
+    "kind": "material",
+    "key": "horn",
+    "unitBuyPrice": 140,
+    "unitSellPrice": 35,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "hunter-4",
+    "kind": "material",
+    "key": "claw",
+    "unitBuyPrice": 6,
+    "unitSellPrice": 1,
+    "stock": 10,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "hunter-5",
+    "kind": "tool",
+    "key": "knife",
+    "unitBuyPrice": 30,
+    "unitSellPrice": 7,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "hunter-rune-forest-rest",
+    "kind": "rune",
+    "key": "rune-forest-rest",
+    "destination": "forest-rest",
+    "unitBuyPrice": 300,
+    "unitSellPrice": 75,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   }
+  ],
+  "supplier": [
+   {
+    "id": "supplier-0",
+    "kind": "material",
+    "key": "ore",
+    "unitBuyPrice": 5,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "supplier-1",
+    "kind": "material",
+    "key": "wood",
+    "unitBuyPrice": 4,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "supplier-2",
+    "kind": "material",
+    "key": "coal",
+    "unitBuyPrice": 4,
+    "unitSellPrice": 1,
+    "stock": 20,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "supplier-3",
+    "kind": "material",
+    "key": "starore",
+    "unitBuyPrice": 45,
+    "unitSellPrice": 11,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "supplier-4",
+    "kind": "material",
+    "key": "oldwood",
+    "unitBuyPrice": 120,
+    "unitSellPrice": 30,
+    "stock": 3,
+    "replenishes": true,
+    "restockMinutes": 120
+   },
+   {
+    "id": "supplier-5",
+    "kind": "tool",
+    "key": "pickaxe",
+    "unitBuyPrice": 40,
+    "unitSellPrice": 10,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "supplier-6",
+    "kind": "tool",
+    "key": "axe",
+    "unitBuyPrice": 35,
+    "unitSellPrice": 8,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   },
+   {
+    "id": "supplier-rune-stone-ford",
+    "kind": "rune",
+    "key": "rune-stone-ford",
+    "destination": "stone-ford",
+    "unitBuyPrice": 1000,
+    "unitSellPrice": 250,
+    "stock": 1,
+    "replenishes": false,
+    "restockMinutes": null
+   }
+  ]
+ },
+ "runeTrade": {
+  "oneInitialCopyPerMerchant": true,
+  "stock": 1,
+  "restocks": false,
+  "source": "Только покупка у местного торговца",
+  "buyPrices": {
+   "early": 300,
+   "middle": 1000,
+   "late": 2500
+  },
+  "sellPrices": {
+   "early": 75,
+   "middle": 250,
+   "late": 625
+  },
+  "destinationsAssigned": true,
+  "destinations": [
+   {
+    "id": "quiet-valley",
+    "name": "Тихая Долина",
+    "runeId": "rune-quiet-valley",
+    "runeName": "Руна Тихой Долины",
+    "category": "early",
+    "buyPrice": 300,
+    "arrivalDescription": "Площадка рядом с колодцем",
+    "merchants": [
+     "cook"
+    ],
+    "visitRadiusMeters": 5,
+    "coordinates": null,
+    "waystoneId": "waystone-quiet-valley",
+    "oneWaystonePerSettlement": true,
+    "sharedRuneAndWaystoneArrival": true,
+    "requiresWaystoneActivationForRune": false,
+    "autoActivatesWaystoneOnVisit": false,
+    "requiresClearGround": true,
+    "outsideEnemyPatrols": true,
+    "outsideEnvironmentalHazards": true
+   },
+   {
+    "id": "forest-rest",
+    "name": "Лесной Привал",
+    "runeId": "rune-forest-rest",
+    "runeName": "Руна Лесного Привала",
+    "category": "early",
+    "buyPrice": 300,
+    "arrivalDescription": "Площадка у входа в поселение",
+    "merchants": [
+     "hunter"
+    ],
+    "visitRadiusMeters": 5,
+    "coordinates": null,
+    "waystoneId": "waystone-forest-rest",
+    "oneWaystonePerSettlement": true,
+    "sharedRuneAndWaystoneArrival": true,
+    "requiresWaystoneActivationForRune": false,
+    "autoActivatesWaystoneOnVisit": false,
+    "requiresClearGround": true,
+    "outsideEnemyPatrols": true,
+    "outsideEnvironmentalHazards": true
+   },
+   {
+    "id": "stone-ford",
+    "name": "Каменный Брод",
+    "runeId": "rune-stone-ford",
+    "runeName": "Руна Каменного Брода",
+    "category": "middle",
+    "buyPrice": 1000,
+    "arrivalDescription": "Площадь рядом с городскими воротами",
+    "merchants": [
+     "smith",
+     "alchemist",
+     "supplier"
+    ],
+    "visitRadiusMeters": 5,
+    "coordinates": null,
+    "waystoneId": "waystone-stone-ford",
+    "oneWaystonePerSettlement": true,
+    "sharedRuneAndWaystoneArrival": true,
+    "requiresWaystoneActivationForRune": false,
+    "autoActivatesWaystoneOnVisit": false,
+    "requiresClearGround": true,
+    "outsideEnemyPatrols": true,
+    "outsideEnvironmentalHazards": true
+   }
+  ],
+  "lateDestinationsStatus": "Назначаются при добавлении соответствующих регионов, цена 2500"
+ },
+ "merchantWallets": {
+  "local": 1000,
+  "city": 3000,
+  "largeSpecialist": 10000,
+  "assignments": {
+   "smith": 10000,
+   "alchemist": 3000,
+   "cook": 1000,
+   "hunter": 1000,
+   "supplier": 3000
+  },
+  "restockRule": "max(текущий, исходный)",
+  "cycleStart": "Первая покупка пополняемого основного товара",
+  "minutes": 120
+ },
+ "toolTrade": {
+  "initialCopiesPerOffer": 1,
+  "restocks": false,
+  "duplicatesAllowed": true,
+  "duplicateBenefit": false,
+  "durability": false,
+  "buyback": {
+   "sameMerchant": true,
+   "expires": false,
+   "price": "Полная цена покупки",
+   "persistsThroughSleepAndLoad": true,
+   "separateFromMainStock": true
+  }
+ }
+}

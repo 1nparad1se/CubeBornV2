@@ -17,6 +17,7 @@ import {
 import { CombatSystem, NO_COMBAT_INPUT, newCombatData, type CombatFx, type DummyRef } from '../../src/rpg2/combat/system';
 import { PLAYTHROUGH_VERSION, migratePlaythrough, restore, snapshot } from '../../src/rpg2/save';
 import { ActiveTime } from '../../src/rpg2/time';
+import { newEconomyWorld } from '../../src/rpg2/economy/world';
 import { addItem, newGrowth } from '../../src/rpg2/growth/growth';
 
 let fails = 0;
@@ -403,8 +404,8 @@ const run = (sys: CombatSystem, sec: number, aim = { x: 50, z: 60, target: null 
   const time = new ActiveTime();
   const growth = newGrowth();
   sys.data.quick = sys.data.quick.map((q) => (q ? addItem(growth, q, 'common').uid : null));
-  const snap = snapshot({ id: 't', map: 'rpg_test', name: 'И', race: 'human', hero, motor: motor.toSave(), time, combat: sys.data, growth });
-  ok(snap.version === PLAYTHROUGH_VERSION && PLAYTHROUGH_VERSION === 3, 'save format version 3');
+  const snap = snapshot({ id: 't', map: 'rpg_test', name: 'И', race: 'human', hero, motor: motor.toSave(), time, combat: sys.data, growth, world: newEconomyWorld(growth) });
+  ok(snap.version === PLAYTHROUGH_VERSION && PLAYTHROUGH_VERSION === 4, 'save format version 4');
   const back = migratePlaythrough(JSON.parse(JSON.stringify(snap)));
   ok(!back.migrated && JSON.stringify(back.save.combat) === JSON.stringify(snap.combat), 'combat state round-trips (projectiles, zones, cooldowns, participation, enemies)');
   const r = restore(back.save);
@@ -414,7 +415,7 @@ const run = (sys: CombatSystem, sec: number, aim = { x: 50, z: 60, target: null 
   delete v1.combat;
   delete v1.growth;
   const m = migratePlaythrough(v1);
-  ok(m.migrated && m.save.combat.profile === 'start' && m.save.growth.items.find((i) => i.uid === m.save.combat.quick[0])?.tpl === 'sword1' && m.save.combat.learned.length === 0, 'v1 → v3: the approved start (sword item, no skills)');
+  ok(m.migrated && m.save.combat.profile === 'start' && m.save.growth.items.find((i) => i.uid === m.save.combat.quick[0])?.tpl === 'sword1' && m.save.combat.learned.length === 0, 'v1 → v4: the approved start (sword item, no skills)');
   ok(m.save.combat.om.sword === 0 && m.save.hero.progress.mastery.sword === 1, 'v1 masteries of 1 become 0 ОМ');
   const bad = JSON.parse(JSON.stringify(snap));
   bad.combat.enemies[0].hp = 'x';
