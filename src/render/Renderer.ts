@@ -582,6 +582,27 @@ export class Renderer {
     this.overlay.draw(dt, this.rig.camera, this.menuMode ? null : this.run);
   }
 
+  /** A small JPEG of the current view (save thumbnails): renders once more and scales it down. */
+  thumbnail(w = 160, h = 90): string | null {
+    try {
+      if (this.composer) this.composer.render(0);
+      else this.gl.render(this.scene, this.rig.camera);
+      const src = this.gl.domElement;
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const g = c.getContext('2d');
+      if (!g) return null;
+      const sa = src.width / src.height;
+      const sw = sa > w / h ? src.height * (w / h) : src.width;
+      const sh = sa > w / h ? src.height : src.width / (w / h);
+      g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, w, h);
+      return c.toDataURL('image/jpeg', 0.7);
+    } catch {
+      return null;
+    }
+  }
+
   private menuFrame(dt: number) {
     const cx = this.menuX;
     const cz = this.menuZ;

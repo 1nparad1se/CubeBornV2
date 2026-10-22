@@ -50,6 +50,8 @@ export interface SlotIndex {
 
 export const INDEX_KEY = 'cubeborn.rpg2.index';
 const REC_PREFIX = 'cubeborn.rpg2.rec.';
+/** Save thumbnails live beside the records under their own keys, so the record format stays the same. */
+const THUMB_PREFIX = 'cubeborn.rpg2.thumb.';
 
 export interface KV {
   getItem(k: string): string | null;
@@ -152,7 +154,7 @@ export class SlotStore {
     if (!p) return;
     ix.playthroughs = ix.playthroughs.filter((x) => x.id !== id);
     if (ix.last === id) ix.last = null;
-    if (this.writeIndex(ix)) for (const r of p.records) this.st.removeItem(r.key);
+    if (this.writeIndex(ix)) for (const r of p.records) this.drop(r.key);
   }
 
   /** Records of a playthrough, newest first. */
@@ -233,7 +235,7 @@ export class SlotStore {
       for (const m of made) this.st.removeItem(m.key);
       return 'Не удалось записать список сохранений. Прежние записи целы.';
     }
-    for (const k of drop) this.st.removeItem(k);
+    for (const k of drop) this.drop(k);
     return made;
   }
 
@@ -245,8 +247,30 @@ export class SlotStore {
     if (!r || r.kind !== 'manual') return false;
     pt.records = pt.records.filter((x) => x !== r);
     if (!this.writeIndex(ix)) return false;
-    this.st.removeItem(key);
+    this.drop(key);
     return true;
+  }
+
+  private drop(key: string) {
+    this.st.removeItem(key);
+    this.st.removeItem(THUMB_PREFIX + key);
+  }
+
+  /** Stores a record's thumbnail (a small JPEG data URL); a full storage just skips it. */
+  setThumb(key: string, url: string) {
+    try {
+      this.st.setItem(THUMB_PREFIX + key, url);
+    } catch {
+      /* thumbnails are optional */
+    }
+  }
+
+  thumb(key: string): string | null {
+    try {
+      return this.st.getItem(THUMB_PREFIX + key);
+    } catch {
+      return null;
+    }
   }
 
   /** Reads a record (D202: a reason on error; a compatible older version is upgraded with a backup). */

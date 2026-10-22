@@ -21,6 +21,10 @@ import { buildTestSite, type TestMarker, type TestSite } from './testSite';
 import { ActiveTime } from './time';
 import { SceneHud } from './ui/hud';
 import { SceneMenus } from './ui/menus';
+import * as kit from './ui/kit';
+import { heroFigure } from './ui/figure';
+import { WEAPON_BY_ID } from './combat/data';
+import { pxIcon } from '../ui/pixelIcons';
 import { NORMAL, SKILLS, SPELLS, WEAPONS, abilityName, type WeaponFamily } from './combat/data';
 import { CombatSystem, FAMILY_NAME, applyTestProfile, arenaEnemies, newCombatData, type Aim, type CombatData } from './combat/system';
 import { CombatView } from './combat/view';
@@ -904,6 +908,8 @@ export class TestScene {
       return false;
     }
     this.stats.records += r.length;
+    const shot = this.host.renderer.thumbnail?.();
+    if (shot) for (const m of r) this.slots.setThumb(m.key, shot);
     this.lastSave = `Сохранено: ${r.map((m) => KIND_NAME[m.kind]).join(' + ')}`;
     return true;
   }
@@ -1037,8 +1043,15 @@ export class TestScene {
     this.host.exit();
   }
 
-  /** Save / load screen: the current playthrough's records, named manual saves, other playthroughs. */
-  savesMenu() {
+  /** Save / load screen (mockups hud-03 / hud-04): playthroughs, records with thumbnails, a detail panel. */
+  private savesTab: 'load' | 'save' = 'load';
+  private savesPt: string | null = null;
+  private savesSel: string | null = null;
+  private savesKind: 'all' | RecordKind = 'all';
+  private savesSort: 'new' | 'old' = 'new';
+  savesMenu(tab?: 'load' | 'save') {
+    const KIND_ICON: Record<RecordKind, string> = { start: 'flag', auto: 'clock', event: 'check', exit: 'house', quick: 'hourglass', manual: 'save' };
+    if (tab) this.savesTab = tab;
     const again = () => this.savesMenu();
     let ix: SlotIndex;
     try {
@@ -1048,60 +1061,161 @@ export class TestScene {
       return;
     }
     const cur = ix.playthroughs.find((p) => p.id === this.playthroughId) ?? null;
-    const row = (pt: PlaythroughMeta, r: RecordMeta) =>
-      h('div.r2-goods',
-        h('span', h('b', r.kind === 'manual' ? r.name : KIND_NAME[r.kind]), h('small', ` · ${fmtDate(r.savedAt)} · ур. ${r.level} · день ${r.day + 1}, ${formatClock(r.minutes)}${r.note ? ` · ${r.note}` : ''}`)),
-        h('span', ''),
-        h('div.r2-item-btns',
-          h('button.r2-btn.small', { onclick: () => this.loadRecord(pt.id, r.key) }, 'Загрузить'),
-          r.kind === 'manual' && pt.id === this.playthroughId && !this.hero.dead
-            ? h('button.r2-btn.small', { onclick: () => this.menus.confirm(`Перезаписать «${r.name}» текущим моментом?`, () => { this.hud.toast(this.save('manual', { name: r.name, replace: r.key }) ? 'Перезаписано' : this.lastSave); again(); }) }, 'Перезаписать')
-            : null,
-          r.kind === 'manual'
-            ? h('button.r2-btn.small', { onclick: () => this.menus.confirm(`Удалить «${r.name}»?`, () => { this.slots.deleteRecord(pt.id, r.key); again(); }) }, 'Удалить')
-            : null,
-        ),
-      );
-    const recs = (pt: PlaythroughMeta) => [...pt.records].sort((a, b) => b.seq - a.seq).map((r) => row(pt, r));
-    const name = document.createElement('input');
-    name.className = 'r2-input';
-    name.placeholder = 'Название записи';
-    name.value = `Запись ${(cur?.records.filter((r) => r.kind === 'manual').length ?? 0) + 1}`;
-    const others = ix.playthroughs.filter((p) => p.id !== this.playthroughId);
-    const body = h(
-      'div',
-      h('h1', 'Сохранения'),
-      h('div.r2-sub', cur ? `Текущее прохождение: ${cur.name}${cur.profile !== 'normal' ? ' (тестовый профиль)' : ''}` : 'Прохождение не выбрано'),
-      h('div.r2-rule'),
-      cur && !this.hero.dead
-        ? h('div.r2-row', name, h('button.r2-btn.primary', { onclick: () => { const n = name.value.trim() || 'Без названия'; this.hud.toast(this.save('manual', { name: n }) ? `Сохранено: ${n}` : this.lastSave); again(); } }, 'Новое ручное сохранение'))
-        : this.hero.dead ? h('p.r2-note', 'Мёртвого героя сохранить нельзя.') : null,
-      cur ? h('div', h('h3', 'Записи прохождения'), cur.records.length ? recs(cur) : h('p.r2-note', 'Записей нет.')) : null,
-      others.length
-        ? h('div', h('h3', 'Другие прохождения'), others.map((p) => h('div.r2-card',
-            h('div.r2-card-h', h('span', p.name), h('small', `${p.profile !== 'normal' ? 'тестовый профиль · ' : ''}создано ${fmtDate(p.created)}`)),
-            p.records.length ? recs(p) : h('p.r2-note', 'Записей нет.'),
-            h('button.r2-btn.small', { onclick: () => this.menus.confirm(`Удалить прохождение «${p.name}» со всеми записями?`, () => { this.slots.deletePlaythrough(p.id); again(); }) }, 'Удалить прохождение'))))
+    const pt = ix.playthroughs.find((p) => p.id === this.savesPt) ?? cur ?? ix.playthroughs[0] ?? null;
+    const thumb = (r: RecordMeta | null, cls: string) => {
+      const url = r ? this.slots.thumb(r.key) : null;
+      return url ? h('img.' + cls, { src: url, alt: '' }) : h('div.' + cls + '.r2-nothumb', pxIcon('flag', 28));
+    };
+    const when = (r: RecordMeta) => `${fmtDate(r.savedAt)} · ур. ${r.level} · день ${r.day + 1}, ${formatClock(r.minutes)}`;
+    const title = (r: RecordMeta) => (r.kind === 'manual' ? r.name : KIND_NAME[r.kind]);
+    const recRow = (p: PlaythroughMeta, r: RecordMeta, sel: boolean) =>
+      kit.row({ icon: KIND_ICON[r.kind], iconSize: 34, title: title(r), sub: `${KIND_NAME[r.kind]} · ${when(r)}${r.note ? ` · ${r.note}` : ''}`, sel, cls: 'r2-saverow', onclick: () => { this.savesPt = p.id; this.savesSel = r.key; again(); } });
+    const withThumb = (el: HTMLElement, r: RecordMeta) => (el.prepend(thumb(r, 'r2-sthumb')), el);
+    const ptList = kit.panel(
+      'Прохождения',
+      kit.scroll(
+        ix.playthroughs.length
+          ? ix.playthroughs.map((p) => {
+              const last = [...p.records].sort((a, b) => b.seq - a.seq)[0] ?? null;
+              return kit.row({ icon: p.id === this.playthroughId ? 'flag' : 'house', title: p.name, sub: `${p.id === this.playthroughId ? 'текущее · ' : ''}${p.profile !== 'normal' ? 'тестовое · ' : ''}записей: ${p.records.length}${last ? ` · ур. ${last.level}` : ''}`, sel: p === pt, onclick: () => { this.savesPt = p.id; this.savesSel = null; again(); } });
+            })
+          : kit.note('Прохождений нет.'),
+      ),
+      pt && pt.id !== this.playthroughId
+        ? kit.bigBtn('Удалить прохождение', null, () => this.menus.confirm(`Удалить прохождение «${pt.name}» со всеми записями?`, () => { this.slots.deletePlaythrough(pt.id); this.savesPt = null; again(); }), false)
         : null,
-      h('p.r2-note', 'Хранятся: стартовая запись, 3 автосохранения (каждые 10 мин активной игры), 3 событийных, 1 при выходе, 3 быстрых (F5 / F9) и любые ручные. Очереди не вытесняют друг друга.'),
-      h('button.r2-btn.small', { onclick: () => this.menus.close('saves') }, 'Закрыть'),
+      kit.bigBtn('Новое прохождение', null, () => this.chooseStart(), false),
     );
+    const KINDS: [('all' | RecordKind), string][] = [['all', 'Все типы'], ...(Object.keys(KIND_NAME) as RecordKind[]).map((k) => [k, KIND_NAME[k]] as [RecordKind, string])];
+    let recs = pt ? [...pt.records].filter((r) => this.savesKind === 'all' || r.kind === this.savesKind) : [];
+    recs.sort((a, b) => (this.savesSort === 'new' ? b.seq - a.seq : a.seq - b.seq));
+    const sel = pt?.records.find((r) => r.key === this.savesSel) ?? recs[0] ?? null;
+    const detail = (r: RecordMeta | null, p: PlaythroughMeta | null) =>
+      kit.panel(
+        r ? title(r) : 'Запись',
+        r && p
+          ? [
+              thumb(r, 'r2-bthumb'),
+              kit.table(null, [
+                ['Прохождение', p.name],
+                ['Тип', KIND_NAME[r.kind]],
+                ['Сохранено', fmtDate(r.savedAt)],
+                ['Уровень', String(r.level)],
+                ['Игровое время', `день ${r.day + 1}, ${formatClock(r.minutes)}`],
+                r.note ? ['Событие', r.note] : null,
+              ].filter((x): x is string[] => !!x), '.r2-kv'),
+              h('div.r2-grow'),
+              kit.bigBtn('Загрузить', null, () => this.loadRecord(p.id, r.key)),
+              r.kind === 'manual'
+                ? h('div.r2-btnrow',
+                    kit.bigBtn('Перезаписать', p.id !== this.playthroughId ? 'Перезаписать можно только записи текущего прохождения' : this.hero.dead ? 'Мёртвого героя сохранить нельзя.' : null, () => this.menus.confirm(`Перезаписать «${r.name}» текущим моментом?`, () => { this.hud.toast(this.save('manual', { name: r.name, replace: r.key }) ? 'Перезаписано' : this.lastSave); this.savesSel = null; again(); }), false),
+                    kit.bigBtn('Удалить', null, () => this.menus.confirm(`Удалить «${r.name}»?`, () => { this.slots.deleteRecord(p.id, r.key); this.savesSel = null; again(); }), false))
+                : kit.note('Автоматические записи заменяются по очереди; удалить можно только ручные.'),
+            ]
+          : kit.note('Выберите запись.'),
+      );
+    const RULE = 'Хранятся: стартовая запись, 3 автосохранения (каждые 10 мин активной игры), 3 событийных, 1 при выходе, 3 быстрых (F5 / F9) и любые ручные. Очереди не вытесняют друг друга.';
+    let body: HTMLElement;
+    const top = kit.tabs([['load', 'Загрузка'], ['save', 'Сохранение']] as const, this.savesTab, (t) => this.savesMenu(t));
+    if (this.savesTab === 'load') {
+      body = kit.screen('Сохранения', '340px 1fr 420px', [
+        ptList,
+        kit.panel(
+          kit.phead('Сохранения', null, pt ? pt.name : null),
+          h('div.r2-filters', kit.select(KINDS, this.savesKind, (k) => { this.savesKind = k; again(); }), kit.select([['new', 'Сначала новые'], ['old', 'Сначала старые']] as const, this.savesSort, (k) => { this.savesSort = k; again(); })),
+          kit.scroll(pt && recs.length ? recs.map((r) => withThumb(recRow(pt, r, r === sel), r)) : kit.note('Записей нет.')),
+          kit.note(RULE),
+        ),
+        detail(sel, pt),
+      ], top);
+    } else {
+      const manual = cur ? [...cur.records].filter((r) => r.kind === 'manual').sort((a, b) => b.seq - a.seq) : [];
+      const msel = manual.find((r) => r.key === this.savesSel) ?? null;
+      const name = document.createElement('input');
+      name.className = 'r2-input';
+      name.placeholder = 'Название записи';
+      name.value = `Запись ${manual.length + 1}`;
+      const last = cur ? [...cur.records].sort((a, b) => b.seq - a.seq)[0] ?? null : null;
+      const canSave = !cur ? 'Прохождение не выбрано.' : this.hero.dead ? 'Мёртвого героя сохранить нельзя.' : null;
+      const create = () => { const n = name.value.trim() || 'Без названия'; this.hud.toast(this.save('manual', { name: n }) ? `Сохранено: ${n}` : this.lastSave); again(); };
+      name.onkeydown = (e) => { if (e.key === 'Enter' && !canSave) create(); };
+      body = kit.screen('Сохранения', '1fr 1fr 1fr', [
+        kit.panel(
+          'Текущее прохождение',
+          cur
+            ? [
+                kit.row({ icon: 'flag', title: cur.name, sub: cur.profile !== 'normal' ? 'тестовый профиль' : 'обычный профиль' }),
+                thumb(last, 'r2-bthumb'),
+                kit.table(null, [
+                  ['Уровень', String(this.hero.progress.level)],
+                  ['Создано', fmtDate(cur.created)],
+                  ['Мир', `день ${this.time.clock.days + 1} · ${formatClock(this.time.clock.minutes)}`],
+                  ['Записей', String(cur.records.length)],
+                ], '.r2-kv'),
+              ]
+            : kit.note('Прохождение не выбрано.'),
+        ),
+        kit.panel(
+          'Новое сохранение',
+          h('div.r2-flabel', 'Название'),
+          name,
+          h('div.r2-psub', 'Создать отдельную ручную запись.'),
+          h('div.r2-savehero', pxIcon('save', 96), h('p', 'Количество ручных сохранений не ограничено. Новая запись не заменяет предыдущие.')),
+          kit.bigBtn('Создать сохранение', canSave, create),
+        ),
+        kit.panel(
+          'Ручные сохранения',
+          kit.scroll(cur && manual.length ? manual.map((r) => withThumb(kit.row({ title: r.name, sub: when(r), sel: r === msel, cls: 'r2-saverow', onclick: () => { this.savesSel = r.key; again(); } }), r)) : kit.note('Ручных записей нет.')),
+          msel && cur
+            ? [
+                h('div.r2-psub', `Выбрано: ${msel.name}`),
+                h('div.r2-btnrow',
+                  kit.bigBtn('Перезаписать', canSave, () => this.menus.confirm(`Перезаписать «${msel.name}» текущим моментом?`, () => { this.hud.toast(this.save('manual', { name: msel.name, replace: msel.key }) ? 'Перезаписано' : this.lastSave); this.savesSel = null; again(); }), false),
+                  kit.bigBtn('Удалить', null, () => this.menus.confirm(`Удалить «${msel.name}»?`, () => { this.slots.deleteRecord(cur.id, msel.key); this.savesSel = null; again(); }), false)),
+                h('div.r2-psub', 'Перезапись и удаление — с подтверждением.'),
+              ]
+            : h('div.r2-psub', 'Выберите запись, чтобы перезаписать или удалить её.'),
+        ),
+      ], top);
+    }
     this.menus.show('saves', body);
   }
 
-  /** D048: the start weapon is chosen before a new playthrough begins. */
+  /** D048: the start weapon is chosen before a new playthrough begins (mockup hud-02). */
+  private startPick: 'sword1' | 'bow1' | 'staff1' = 'sword1';
+  private startName = '';
   chooseStart() {
-    const pick = (id: 'sword1' | 'bow1' | 'staff1', label: string) => h('button.r2-btn', { onclick: () => this.restart(id) }, label);
-    const body = h(
-      'div',
-      h('h1', 'Новое прохождение'),
-      h('div.r2-rule'),
-      h('p', 'Выберите оружие, с которым герой начнёт путь. Лёгкая броня I, 3 малых зелья здоровья, 0 золота; умений нет. Прежние прохождения и их записи остаются.'),
-      pick('sword1', 'Железный меч'),
-      pick('bow1', 'Охотничий лук'),
-      pick('staff1', 'Посох ученика'),
-      h('button.r2-btn.small', { onclick: () => this.menus.close('start') }, 'Отмена'),
-    );
+    const again = () => this.chooseStart();
+    const n = (() => { try { return this.slots.index().playthroughs.length + 1; } catch { return 1; } })();
+    const name = document.createElement('input');
+    name.className = 'r2-input r2-bigin';
+    name.placeholder = `Прохождение ${n}`;
+    name.value = this.startName;
+    name.oninput = () => { this.startName = name.value; };
+    const arm = (s: string) => ARMOR_BY_ID[`light_${s}1`]?.mesh ?? null;
+    const equipFig = { main: WEAPON_BY_ID[this.startPick]?.mesh ?? null, off: null, head: arm('head'), hands: null, body: arm('chest'), feet: arm('legs') };
+    const opts: ['sword1' | 'bow1' | 'staff1', string, string][] = [['sword1', 'Железный меч', 'sword'], ['bow1', 'Охотничий лук', 'bow'], ['staff1', 'Посох ученика', 'staff']];
+    const go = () => this.restart(this.startPick, 'normal', this.startName.trim() || undefined);
+    const body = kit.screen('Новое прохождение', '1fr 1.1fr 1fr', [
+      kit.panel(
+        'Название прохождения',
+        name,
+        kit.rule(),
+        h('h2.r2-ph', 'Внешний вид'),
+        h('div.r2-skinrow', h('div.r2-skin.sel', { title: 'Человек' }, pxIcon('hero', 72)), ...['face-blond', 'face-dark', 'face-red'].map((f) => h('div.r2-skin.r2-off', { title: 'Облик пока недоступен' }, pxIcon(f, 72), pxIcon('lock', 22, 'r2-skinlock')))),
+        kit.note('Пока есть один облик человека. Выбор облика и цвета появится вместе с новыми обликами; внешность не влияет на характеристики.'),
+      ),
+      h('div.r2-startfig', heroFigure(equipFig, 340, 460)),
+      kit.panel(
+        'Стартовое оружие',
+        opts.map(([id, label, icon]) => kit.row({ icon, iconSize: 56, title: label, sel: id === this.startPick, right: id === this.startPick ? pxIcon('check', 26) : null, onclick: () => { this.startPick = id; again(); } })),
+        h('div.r2-psub', 'Лёгкая броня I, 3 малых зелья здоровья, 0 золота; умений нет. Прежние прохождения и их записи остаются.'),
+        kit.rule(),
+        kit.row({ title: 'Без классов', sub: 'Умения и магия изучаются у наставников' }),
+        h('div.r2-grow'),
+        kit.bigBtn('Начать игру', null, go),
+      ),
+    ]);
     this.menus.show('start', body);
   }
 
@@ -1109,12 +1223,12 @@ export class TestScene {
    * A new playthrough with its own world and history: the approved start (or, in dev mode only, a
    * test profile), day 1 08:00 at the spawn, and its start record (never evicted, D202).
    */
-  restart(start: 'sword1' | 'bow1' | 'staff1' = 'sword1', profile: 'normal' | 'test' | 'high' = 'normal') {
+  restart(start: 'sword1' | 'bow1' | 'staff1' = 'sword1', profile: 'normal' | 'test' | 'high' = 'normal', name?: string) {
     if (profile !== 'normal' && !this.dev) return;
     let pt: PlaythroughMeta;
     try {
       const n = this.slots.index().playthroughs.length + 1;
-      pt = this.slots.createPlaythrough(profile === 'normal' ? `Прохождение ${n}` : `Тестовое прохождение ${n}`, profile);
+      pt = this.slots.createPlaythrough(name ?? (profile === 'normal' ? `Прохождение ${n}` : `Тестовое прохождение ${n}`), profile);
     } catch (e) {
       this.loadError(e);
       return;
