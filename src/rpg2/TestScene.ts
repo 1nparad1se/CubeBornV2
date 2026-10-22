@@ -19,6 +19,9 @@ import { buildTestSite, type TestMarker, type TestSite } from './testSite';
 import { ActiveTime } from './time';
 import { SceneHud } from './ui/hud';
 import { SceneMenus } from './ui/menus';
+import { SKILLS, SPELLS, WEAPONS, abilityName, type WeaponFamily } from './combat/data';
+import { CombatSystem, FAMILY_NAME, applyTestProfile, arenaEnemies, newCombatData, type Aim, type CombatData } from './combat/system';
+import { CombatView } from './combat/view';
 
 /** What the RPG test scene borrows from the app. */
 export interface SceneHost {
@@ -61,6 +64,12 @@ export class TestScene {
   /** Intent of the current frame; edge presses are used by the first simulation step only. */
   private intent: MotorIntent = { ...NO_INTENT };
   private attackPress = false;
+  private rmbPress = false;
+  private swapPress = false;
+  private skillIdx: number | null = null;
+  combat!: CombatSystem;
+  private view: CombatView | null = null;
+  aim: Aim = { x: 0, z: 0, target: null };
   private playthroughId = 'test';
   private disposed = false;
   /** Last result of the save / load for tests and the dev panel. */
@@ -81,6 +90,9 @@ export class TestScene {
       this.input.freeze();
       this.motor?.releaseHeld();
       this.attackPress = false;
+      this.rmbPress = this.swapPress = false;
+      this.skillIdx = null;
+      this.combat?.onMenu();
       this.intent = { ...NO_INTENT };
       this.input.releaseLock();
     };
@@ -101,7 +113,7 @@ export class TestScene {
     this.world = this.host.createWorld(this.site, this.time.clock, cloneGear(this.gear));
     this.motor = new HeroMotor(this.site.ground, this.site.spawn.x, this.site.spawn.z);
     this.world.driver = (dt) => this.step(dt);
-    this.world.events.on('hit', () => this.hero.combatEvent());
+    this.installCombat(newCombatData('start'));
     this.addMarkers(this.site.markers);
     this.input.active = true;
     this.input.live = true;
@@ -185,6 +197,8 @@ export class TestScene {
       }
     }
     this.host.renderer.frame(this.pause.paused ? 0 : dt);
+    this.view?.update(this.pause.paused ? 0 : dt, this.aim.target);
+    this.hud.updateCombat(this.combat, this.aim);
     this.hud.update(this.world, this.hero, this.motor, this.time, HERO_NAME, rig.yaw, realDt);
     this.host.worldMap.yaw = rig.yaw;
     this.host.worldMap.draw(this.world);
@@ -233,12 +247,15 @@ export class TestScene {
       dodgePressed: pr.has('dodge'),
     };
     this.attackPress = pr.has('attack');
-    for (let i = 1; i <= 6; i++) if (pr.has(`skill${i}` as ControlAction)) this.skillPress(`skill${i}`);
+    this.rmbPress = pr.has('block');
+    this.swapPress = pr.has('weaponSwap');
+    for (let i = 1; i <= 6; i++) if (pr.has(`skill${i}` as ControlAction)) this.skillPress(i);
   }
 
-  /** Skills come in stage 2: a press only feeds the dodge buffer (D178) for now. */
-  private skillPress(id: string) {
-    if (this.motor.dodging) this.motor.pressAction(id);
+  /** A panel key: used now, or kept in the dodge buffer during the last 0.15 s of a dodge (D178). */
+  private skillPress(i: number) {
+    if (this.motor.dodging) this.motor.pressAction(`skill${i}`);
+    else this.skillIdx = i - 1;
   }
 
   /** One simulation step (called by World.update in place of the mouse-driven hero). */
@@ -246,17 +263,31 @@ export class TestScene {
     const m = this.motor;
     const hero = this.hero;
     const p = this.world.player;
+    const c = this.combat;
+    // D166 / D194 / D195: block, aim and preparation limit the speed and forbid sprint
+    const lim = c.moveLimits();
+    m.moveMul = lim.mul;
+    m.noSprint = lim.noSprint;
     const evs = m.update(dt, this.intent, hero);
     for (const e of evs) this.onMotorEvent(e);
-    // basic attack (stage 2 adds costs and skills): held button repeats, a press during a dodge is buffered
-    let want = !hero.dead && this.input.held('attack');
+    // a press during a dodge is refused and buffered in its last 0.15 s (D176 / D178)
     if (this.attackPress && m.dodging) m.pressAction('attack');
-    if (m.dodging || m.stunned || m.mode === 'swim' || hero.dead) want = false;
-    if (p.attackStep(dt, want, m.fx, m.fz)) {
-      // D012 / D016: the start of the hero's attack (dummies too) starts or extends combat
-      hero.combatEvent();
-      this.stats.attacks++;
-    }
+    const attacks0 = c.counters.attacks;
+    this.aim = c.aimAhead();
+    c.update(dt, {
+      attackHeld: !hero.dead && !m.dodging && (this.input.held('attack') || this.attackPress),
+      rmbHeld: this.input.held('block'),
+      rmbPressed: this.rmbPress,
+      skill: m.dodging ? null : this.skillIdx,
+      swap: this.swapPress,
+    }, this.aim);
+    this.rmbPress = this.swapPress = false;
+    this.skillIdx = null;
+    this.stats.attacks += c.counters.attacks - attacks0;
+    // the existing hero model plays the swing of the running action
+    const a = c.data.action;
+    p.attack = a ? ({ weapon: null, t: a.t, dur: a.dur, hitAt: Math.min(1, a.hitAt / a.dur), done: a.t >= a.hitAt, dirX: a.dirX, dirZ: a.dirZ, seq: a.rec } as unknown as typeof p.attack) : null;
+    this.syncWeapon();
     hero.tick(dt, { campfire: false }, m.sprinting);
     this.syncPlayer(dt);
   }
@@ -268,6 +299,8 @@ export class TestScene {
     switch (e.type) {
       case 'jump':
         this.stats.jumps++;
+        // D166 / D194: a jump ends the block and cancels a preparation or the charge
+        this.combat.onJump();
         if (e.air) {
           this.stats.airJumps++;
           p.airJumpT = 0;
@@ -295,11 +328,13 @@ export class TestScene {
         this.stats.dodges++;
         // D175: a started dodge cancels the unfinished part of an attack (cooldowns stay)
         p.attack = null;
+        this.combat.onDodge();
         fx.burst(m.x, 0.15, m.z, 0xd8d0c0, 7, 2, 0.12, 0.3, 'smoke');
         fx.sound('jump', 0.35);
         break;
       case 'dodgeEnd':
         if (e.buffered === 'attack') this.attackPress = true;
+        else if (e.buffered?.startsWith('skill')) this.skillIdx = Number(e.buffered.slice(5)) - 1;
         break;
       case 'sprintEmpty':
         this.hud.toast('Выносливость закончилась');
@@ -365,6 +400,7 @@ export class TestScene {
       h('div.r2-rule'),
       btn('Продолжить', () => this.resume(), true),
       btn('Персонаж', () => this.openCharacter()),
+      btn('Оружие и умения', () => this.openLoadout()),
       btn('Управление', () => this.openControls()),
       btn('Сохранить', () => {
         note.textContent = this.save('manual') ? 'Сохранено.' : this.lastSave;
@@ -428,9 +464,13 @@ export class TestScene {
         kv('Мана (MP)', `${Math.floor(hr.mp)} / ${hr.maxMp}`),
         kv('Выносливость (ST)', `${Math.floor(hr.st)} / ${hr.maxSt}`),
         h('h3', 'Мастерство'),
-        kv('Меч', pr.mastery.sword),
-        kv('Лук', pr.mastery.bow),
-        kv('Посох', pr.mastery.staff),
+        kv('Меч', `${pr.mastery.sword} (ОМ ${this.combat.data.om.sword})`),
+        kv('Лук', `${pr.mastery.bow} (ОМ ${this.combat.data.om.bow})`),
+        kv('Посох', `${pr.mastery.staff} (ОМ ${this.combat.data.om.staff})`),
+        h('h3', 'Бой'),
+        kv('Оружие', this.combat.weapon.name),
+        kv('Броня', this.combat.heroArmor),
+        kv('Побеждено противников', this.combat.data.kills),
         h('h3', 'Время'),
         kv('Игровое время', this.time.label),
         kv('Активная игра', fmtDur(this.time.seconds)),
@@ -543,7 +583,7 @@ export class TestScene {
       this.lastSave = 'Мёртвого героя сохранить нельзя.';
       return false;
     }
-    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time });
+    const s = snapshot({ id: this.playthroughId, map: this.site.map.id, name: HERO_NAME, race: 'human', hero: this.hero, motor: this.motor.toSave(), time: this.time, combat: this.combat.data });
     const ok = writePlaythrough(s);
     this.lastSave = ok ? `Сохранено (${kind})` : 'Не удалось записать сохранение: браузер отказал в хранилище.';
     return ok;
@@ -582,6 +622,7 @@ export class TestScene {
     this.time.clock.minutes = r.time.clock.minutes;
     this.time.clock.days = r.time.clock.days;
     this.motor.loadSave(s.motor);
+    this.installCombat(r.combat);
     this.world.player.attack = null;
     this.input.freeze();
     this.syncPlayer(0);
@@ -614,6 +655,7 @@ export class TestScene {
     this.time.clock.days = t.clock.days;
     const fresh = new HeroMotor(this.site.ground, this.site.spawn.x, this.site.spawn.z);
     this.motor.loadSave(fresh.toSave());
+    this.installCombat(newCombatData('start'));
     this.world.player.attack = null;
     this.playthroughId = 'test';
     this.syncPlayer(0);
@@ -666,9 +708,114 @@ export class TestScene {
     btn('Атака врага (бой)', () => this.hero.combatEvent());
     btn('Оглушить на 2 с', () => this.motor.applyStun(2));
     btn('Замедление 50 % / снять', () => (this.motor.slow = this.motor.slow ? 0 : 0.5));
+    btn('Тестовый профиль: всё оружие и умения', () => this.devProfile('test'));
+    btn('Обычный старт: меч без умений', () => this.devProfile('start'));
+    btn('Оружие и умения…', () => this.openLoadout());
+    btn('Возродить противников', () => this.combat.respawnAll());
+    btn('Разозлить Серого Клыка', () => this.combat.provoke('greyfang1'));
     for (const m of this.site.markers.filter((x) => x.tp)) btn(`Телепорт: ${m.label}`, () => this.devTeleport(m.id === 'spawn' ? this.site.spawn.x : m.x, m.id === 'spawn' ? this.site.spawn.z : m.z));
     this.devPanel = box;
     this.host.root.appendChild(box);
+  }
+
+  /** Dev mode only: switches the combat profile (ОМ, enemies and cooldowns stay). */
+  devProfile(p: 'test' | 'start') {
+    if (!this.dev) return;
+    const d = this.combat.data;
+    if (p === 'test') applyTestProfile(d);
+    else {
+      const f = newCombatData('start');
+      d.profile = 'start';
+      d.quick = f.quick;
+      d.cur = 0;
+      d.learned = [];
+      d.panels = f.panels;
+    }
+    this.combat.cancelAction();
+    this.hud.toast(p === 'test' ? 'Тестовый профиль: 4 оружия, 12 навыков, 15 заклинаний' : 'Обычный старт: железный меч, без умений');
+  }
+
+  /** Replaces the combat system (new playthrough or a loaded record): the enemies of the arena are placed if missing. */
+  private installCombat(data: CombatData) {
+    const g = this.site.ground;
+    if (!data.enemies.length) data.enemies = arenaEnemies(g);
+    const wfx = this.world.fx;
+    this.combat = new CombatSystem(g, this.hero, this.motor, () => this.world.dummies, {
+      number: (x, z, v, crit, col) => wfx.number(x, z, v, crit, col),
+      burst: (x, y, z, col, n) => wfx.burst(x, y - g.top(x, z), z, col, n, 2.4, 0.12, 0.4, 'glow'),
+      sound: (id, v) => wfx.sound(id, v),
+      toast: (t) => this.hud.toast(t),
+      dummyHit: (id, v, magic, fx, fz) => {
+        const d = this.world.dummies.find((x) => x.id === id);
+        if (d) this.world.damage(d, v, magic, fx, fz);
+      },
+    }, data);
+    // D021: respawn only when the hero is ≥ 80 m away and the spot is out of view
+    this.combat.canRespawn = (e) => {
+      const m = this.motor;
+      const dx = e.homeX - m.x;
+      const dz = e.homeZ - m.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 80) return false;
+      const [fx, fz] = this.forward();
+      const inCone = (dx * fx + dz * fz) / dist > Math.cos((60 * Math.PI) / 180);
+      return !inCone || !this.combat.los(m.x, m.y + 1.6, m.z, e.homeX, g.top(e.homeX, e.homeZ) + 0.6, e.homeZ);
+    };
+    if (this.view) this.view.root.parent?.remove(this.view.root);
+    this.view = new CombatView(this.combat);
+    this.host.renderer.addRunObject(this.view.root);
+    this.syncWeapon();
+  }
+
+  /** The drawn weapon follows the current quick slot (existing cubic item meshes). */
+  private syncWeapon() {
+    const mesh = this.combat.weapon.mesh;
+    if (this.gear.equip.main === mesh && !this.gear.equip.off) return;
+    this.gear.equip.main = mesh;
+    this.gear.equip.off = null;
+    this.world.setGear(cloneGear(this.gear));
+  }
+
+  /** D207: up to four weapons for Tab and a 1–6 panel per weapon type (a window of the pause menu). */
+  openLoadout() {
+    const c = this.combat;
+    const d = c.data;
+    const sel = (opts: [string, string][], value: string | null, on: (v: string | null) => void) => {
+      const s = document.createElement('select');
+      s.className = 'r2-select';
+      for (const [v, label] of opts) {
+        const o = document.createElement('option');
+        o.value = v;
+        o.textContent = label;
+        s.append(o);
+      }
+      s.value = value ?? '';
+      s.onchange = () => on(s.value || null);
+      return s;
+    };
+    const owned = d.profile === 'test' ? WEAPONS : WEAPONS.filter((w) => w.id === 'sword1' || d.quick.includes(w.id));
+    const wOpts: [string, string][] = [['', '— пусто —'], ...owned.map((w) => [w.id, w.name] as [string, string])];
+    const quick = h('div.r2-loadout', h('span', 'Tab'), [0, 1, 2, 3].map((i) => sel(wOpts, d.quick[i], (v) => { c.setQuick(i, v); this.openLoadout(); })), h('span', ''), h('span', ''));
+    const panels = h('div.r2-loadout');
+    for (const f of ['sword', 'bow', 'staff'] as WeaponFamily[]) {
+      const ids = (f === 'staff' ? SPELLS.map((x) => x.id) : SKILLS.filter((x) => x.family === f).map((x) => x.id)).filter((id) => d.learned.includes(id));
+      const opts: [string, string][] = [['', '— пусто —'], ...ids.map((id) => [id, abilityName(id)] as [string, string])];
+      panels.append(h('span', FAMILY_NAME[f]));
+      for (let i = 0; i < 6; i++) panels.append(sel(opts, d.panels[f][i], (v) => { d.panels[f][i] = v; }));
+    }
+    const body = h(
+      'div',
+      h('h1', 'Оружие и умения'),
+      h('div.r2-rule'),
+      h('h3', 'Быстрое переключение (до четырёх, по кругу клавишей Tab)'),
+      quick,
+      h('h3', `Панели 1–6 по типу оружия (сейчас: ${FAMILY_NAME[c.family]} — ${c.weapon.name})`),
+      d.learned.length ? panels : h('p.r2-note', 'Умения не изучены (обучение у наставников — этап 3). В режиме разработки есть «Тестовый профиль».'),
+      h('p.r2-note', 'Одноручный и двуручный меч используют один набор. Откаты сохраняются при смене оружия.'),
+      h('button.r2-btn.small', { onclick: () => this.menus.close('loadout') }, 'Закрыть'),
+    );
+    if (this.menus.isOpen('loadout')) this.menus.close('loadout');
+    this.menus.show('loadout', body);
   }
 
   /** Dev mode only: sets current resources. */

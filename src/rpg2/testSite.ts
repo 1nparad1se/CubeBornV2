@@ -62,6 +62,27 @@ function rect(t: Terrain, h: Float32Array, x0: number, z0: number, x1: number, z
   for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) h[z * t.size + x] = v;
 }
 
+/** Enemy arena (stage 2): a level clearing west of the spawn, blended into the meadow. */
+export const ARENA = { x0: 22, z0: 44, x1: 42, z1: 72, blend: 7 };
+
+/** Flattens the arena to the pad height and blends its rim in quarter-block steps (D212: walkable). */
+function flattenArena(t: Terrain, top: Float32Array) {
+  const n = t.size;
+  const a = ARENA;
+  for (let z = a.z0 - a.blend; z <= a.z1 + a.blend; z++)
+    for (let x = a.x0 - a.blend; x <= a.x1 + a.blend; x++) {
+      if (x < 0 || z < 0 || x >= n || z >= n) continue;
+      const i = z * n + x;
+      if (t.cell[i] !== CELL.floor) continue;
+      const dx = Math.max(a.x0 - x, 0, x - a.x1);
+      const dz = Math.max(a.z0 - z, 0, z - a.z1);
+      const d = Math.hypot(dx, dz);
+      const w = d <= 0 ? 1 : Math.max(0, 1 - d / a.blend);
+      if (w <= 0) continue;
+      top[i] = Math.round((top[i] + (PAD - top[i]) * w) * 4) / 4;
+    }
+}
+
 export interface TestSite extends WorldSite {
   markers: TestMarker[];
   ground: MotorGround;
@@ -74,6 +95,10 @@ export function buildTestSite(): TestSite {
   const markers: TestMarker[] = [];
   // the test pad
   rect(t, top, 57, 43, 79, 66, PAD);
+  // the enemy arena (stage 2)
+  flattenArena(t, top);
+  markers.push({ id: 'wolves', label: 'Логово волков', x: 37, z: 63, y: PAD, tp: true });
+  markers.push({ id: 'greyfang', label: 'Территория Серого Клыка', x: 35, z: 47, y: PAD, tp: true });
   // fall pillars
   for (const [x, z, hgt] of PILLARS) {
     rect(t, top, x, z, x + 1, z + 1, PAD + hgt);

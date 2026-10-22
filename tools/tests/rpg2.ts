@@ -10,6 +10,7 @@ import { ActiveTime } from '../../src/rpg2/time';
 import { AUTOSAVE_SECONDS, JUMP2, SPEED, roundDamage } from '../../src/rpg2/config';
 import { bind, defaultBinds, defaultControls, fixControls, loadControls, saveControls, CONTROLS_KEY } from '../../src/rpg2/controls';
 import { PLAYTHROUGH_VERSION, SaveError, migratePlaythrough, readPlaythrough, restore, snapshot, writePlaythrough, TEST_SAVE_KEY } from '../../src/rpg2/save';
+import { newCombatData } from '../../src/rpg2/combat/system';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -455,7 +456,7 @@ function sim(m: HeroMotor, h: HeroState, sec: number, it: Partial<MotorIntent> =
   m.update(1 / 60, NO_INTENT, h);
   m.update(1 / 60, { ...NO_INTENT, jumpPressed: true }, h);
   m.walk = true;
-  const s = snapshot({ id: 'p1', map: 'rpg_test', name: 'Испытатель', race: 'human', hero: h, motor: m.toSave(), time: t, now: 1000 });
+  const s = snapshot({ id: 'p1', map: 'rpg_test', name: 'Испытатель', race: 'human', hero: h, motor: m.toSave(), time: t, combat: newCombatData('start'), now: 1000 });
   ok(writePlaythrough(s, TEST_SAVE_KEY, kv), 'the record is written');
   const back = readPlaythrough(TEST_SAVE_KEY, kv)!;
   ok(JSON.stringify(back) === JSON.stringify(s), 'round trip: the record reads back identical');

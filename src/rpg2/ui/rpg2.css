@@ -388,3 +388,22 @@
 .mm-glyph.g-flag {
   clip-path: polygon(15% 5%, 30% 5%, 30% 12%, 90% 12%, 75% 32%, 90% 52%, 30% 52%, 30% 95%, 15% 95%);
 }
+
+/* ---- stage 2: combat HUD ---- */
+.r2-col { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.r2-weapon { padding: 3px 10px; font: 600 12px 'Rubik', sans-serif; color: var(--r2-text); }
+.r2-charge { width: 180px; height: 6px; background: #17130f; border: 1px solid #5a4a2c; visibility: hidden; }
+.r2-charge.on { visibility: visible; }
+.r2-charge i { display: block; height: 100%; background: #8a6aff; }
+.r2-slot .r2-sname { position: absolute; left: 2px; right: 2px; bottom: 3px; text-align: center; font: 700 9px 'Rubik', sans-serif; color: var(--r2-text); overflow: hidden; white-space: nowrap; }
+.r2-slot.filled { background: #2a2216; border-color: #b8913f; }
+.r2-slot.dim { opacity: 0.45; }
+.r2-slot .r2-cd { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0, 0, 0, 0.62); pointer-events: none; }
+.r2-slot .r2-cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 700 13px 'Rubik', sans-serif; color: #fff; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.r2-target { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); min-width: 220px; padding: 6px 10px; }
+.r2-target.hidden { display: none; }
+.r2-tname { font: 700 13px 'Rubik', sans-serif; color: var(--r2-text); margin-bottom: 4px; }
+.r2-tname small { font-weight: 500; color: var(--r2-dim); }
+.r2-select { background: #17130f; color: var(--r2-text); border: 1px solid #5a4a2c; font: 500 12px 'Rubik', sans-serif; padding: 3px; margin: 2px; max-width: 170px; }
+.r2-loadout { display: grid; grid-template-columns: auto repeat(6, auto); gap: 2px 4px; align-items: center; margin: 6px 0 12px; }
+.r2-loadout span { font: 600 12px 'Rubik', sans-serif; color: var(--r2-dim); }

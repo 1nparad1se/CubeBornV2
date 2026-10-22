@@ -7,6 +7,15 @@ import type { HeroMotor } from '../motor';
 import type { ActiveTime } from '../time';
 import { DODGE } from '../config';
 import { codeName, type ControlBinds } from '../controls';
+import { SKILL_BY_ID, SPELL_BY_ID, abilityName } from '../combat/data';
+import { enemyDef } from '../combat/enemy';
+import { FAMILY_NAME, type Aim, type CombatSystem } from '../combat/system';
+
+/** Short slot caption: the first letters of the ability name. */
+function shortName(id: string): string {
+  const w = abilityName(id).split(' ');
+  return w.length > 1 ? (w[0].slice(0, 3) + '.' + w[1].slice(0, 3)).toLowerCase() : w[0].slice(0, 6).toLowerCase();
+}
 
 /**
  * HUD of the RPG test scene («Экраны и визуальный стиль»): HP / MP / ST, XP and level, combat
@@ -27,6 +36,10 @@ export class SceneHud {
   private toastT = 0;
   private last: Record<string, string> = {};
   private skillKeys: HTMLElement[] = [];
+  private skillSlots: { el: HTMLElement; name: HTMLElement; cd: HTMLElement; cdText: HTMLElement }[] = [];
+  private weaponEl = h('div.r2-weapon.r2-panel');
+  private chargeEl = h('div.r2-charge', h('i'));
+  private targetEl = h('div.r2-target.r2-panel.hidden');
   private potKeys: HTMLElement[] = [];
 
   constructor(parent: HTMLElement) {
@@ -45,7 +58,12 @@ export class SceneHud {
     for (let i = 0; i < 6; i++) {
       const k = h('kbd', String(i + 1));
       this.skillKeys.push(k);
-      skills.append(h('div.r2-slot', { title: 'Пустая ячейка умения' }, k));
+      const name = h('span.r2-sname');
+      const cd = h('i.r2-cd');
+      const cdText = h('b.r2-cdt');
+      const el = h('div.r2-slot', { title: 'Пустая ячейка умения' }, name, cd, cdText, k);
+      this.skillSlots.push({ el, name, cd, cdText });
+      skills.append(el);
     }
     const pots = h('div.r2-slots.r2-panel');
     const potColors = ['#d23a2a', '#3a6ad2', '#d2a82a'];
@@ -59,7 +77,8 @@ export class SceneHud {
       'div.r2.r2-hud.hidden',
       h('div.r2-res.r2-panel', h('div.r2-name', this.name, this.lvl), hp.el, mp.el, st.el, xp.el, h('div.r2-state', tag('fight', 'Вне боя'), tag('move', 'Бег'), tag('sprint', 'Спринт'), tag('air', 'На земле'), tag('dodge', 'Уклонение'))),
       h('div.r2-tr', this.minimap.root, this.time),
-      h('div.r2-bottom', skills, pots),
+      h('div.r2-bottom', h('div.r2-col', this.chargeEl, this.weaponEl, skills), pots),
+      this.targetEl,
       this.help,
       h('div.r2-cross'),
       this.toastEl,
@@ -84,6 +103,7 @@ export class SceneHud {
     this.help.replaceChildren(
       h('div', k('moveF'), k('moveL'), k('moveB'), k('moveR'), ' — движение, мышь — обзор, ', k('attack'), ' — атака'),
       h('div', k('jump'), ' — прыжок (ещё раз в воздухе), ', k('dodge'), ' — уклонение'),
+      h('div', k('block'), ' — блок (меч) / прицел (лук) / заряд (посох), ', k('weaponSwap'), ' — смена оружия, ', k('skill1'), '–', k('skill6'), ' — умения'),
       h('div', k('sprint'), ' — спринт, ', k('walkToggle'), ' — ходьба/бег'),
       h('div', k('inventory'), ' инвентарь · ', k('map'), ' карта · ', k('character'), ' персонаж · ', h('kbd', 'Esc'), ' пауза'),
     );
@@ -146,6 +166,53 @@ export class SceneHud {
       this.toastT -= realDt;
       if (this.toastT <= 0) this.toastEl.classList.remove('show');
     }
+  }
+
+  /** Stage 2: weapon, panel slots with cooldowns, the staff charge and the aimed target. */
+  updateCombat(c: CombatSystem, aim: Aim) {
+    const w = c.weapon;
+    const mode = c.blocking ? ' · блок' : c.aiming ? ' · прицел' : c.charge !== null ? ' · заряд' : '';
+    const ws = `${FAMILY_NAME[c.family]}: ${w.name}${mode}`;
+    this.set('weapon', ws, () => (this.weaponEl.textContent = ws));
+    const ch = c.charge === null ? -1 : Math.round(c.charge * 100);
+    this.set('charge', String(ch), () => {
+      this.chargeEl.classList.toggle('on', ch >= 0);
+      (this.chargeEl.firstChild as HTMLElement).style.width = `${Math.max(0, ch)}%`;
+      this.chargeEl.title = ch >= 0 ? `Заряд: ×${(1 + ch / 100).toFixed(2)}, ${(3 + (3 * ch) / 100).toFixed(1)} MP` : '';
+    });
+    const panel = c.panel;
+    for (let i = 0; i < 6; i++) {
+      const id = panel[i];
+      const sl = this.skillSlots[i];
+      const prob = c.slotProblem(id);
+      const cd = id ? c.cooldown(id) : 0;
+      const full = id ? (SKILL_BY_ID[id]?.cd ?? SPELL_BY_ID[id]?.cd ?? 1) : 1;
+      const key = `${id}|${prob}|${cd > 0 ? cd.toFixed(1) : ''}`;
+      this.set('slot' + i, key, () => {
+        sl.name.textContent = id ? shortName(id) : '';
+        sl.el.classList.toggle('dim', !!id && !!prob);
+        sl.el.classList.toggle('filled', !!id);
+        const sk = id ? SKILL_BY_ID[id] : undefined;
+        const sp = id ? SPELL_BY_ID[id] : undefined;
+        sl.el.title = !id ? 'Пустая ячейка умения' : `${abilityName(id)} — ${sk ? `${sk.st} ST` : `${sp!.mp} MP`}, откат ${sk?.cd ?? sp!.cd} с${prob ? ` (${prob.toLowerCase()})` : ''}`;
+        sl.cd.style.height = cd > 0 ? `${Math.min(100, (cd / full) * 100)}%` : '0';
+        sl.cdText.textContent = cd > 0 ? (cd >= 10 ? String(Math.ceil(cd)) : cd.toFixed(1).replace('.', ',')) : '';
+      });
+    }
+    const t = c.target(aim.target);
+    const tk = t ? `${t.uid}|${t.enemy ? Math.ceil(t.enemy.hp) : ''}` : '';
+    this.set('target', tk, () => {
+      this.targetEl.classList.toggle('hidden', !t);
+      if (!t) return;
+      if (t.enemy) {
+        const d = enemyDef(t.enemy);
+        const pct = Math.max(0, (t.enemy.hp / d.hp) * 100);
+        this.targetEl.replaceChildren(
+          h('div.r2-tname', `${d.name}`, h('small', ` ур. ${d.level}${d.rank === 'mini' ? ' · мини-босс' : ''}`)),
+          h('div.r2-bar.hp', h('i', { style: `width:${pct}%` }), h('em', `${Math.ceil(t.enemy.hp)} / ${d.hp}`)),
+        );
+      } else this.targetEl.replaceChildren(h('div.r2-tname', t.name, h('small', ' учебная цель')));
+    });
   }
 
   dispose() {

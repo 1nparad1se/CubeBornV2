@@ -3,6 +3,8 @@ import { AUTOSAVE_SECONDS, CLOCK } from './config';
 import { HeroState, STAT_IDS, baseStats, newProgress, type Progress, type Stats } from './hero';
 import type { MotorSave } from './motor';
 import { ActiveTime } from './time';
+import { checkCombat, newCombatData, type CombatData } from './combat/system';
+import { masteryThreshold } from './combat/formulas';
 
 /**
  * Playthrough snapshot of the RPG systems (stage 1: the hero state, the movement state, the clock
@@ -12,7 +14,8 @@ import { ActiveTime } from './time';
  * (D040–D047) arrives in stage 6 and keeps this record as the snapshot body.
  */
 export const PLAYTHROUGH_FORMAT = 'cubeborn.rpg2.playthrough';
-export const PLAYTHROUGH_VERSION = 1;
+/** 1: stage 1 (hero, movement, clock). 2: stage 2 adds the combat block. */
+export const PLAYTHROUGH_VERSION = 2;
 /** The test scene's single record (stage 6 replaces it with slots and queues). */
 export const TEST_SAVE_KEY = 'cubeborn.rpg2.test';
 
@@ -40,9 +43,11 @@ export interface PlaythroughSave {
   clock: { minutes: number; days: number };
   /** Active play seconds and the active time left to the next periodic autosave (D041, D202). */
   active: { seconds: number; autosaveLeft: number };
+  /** Stage 2: weapons, panels, cooldowns, ОМ, the running action, projectiles, zones and enemies. */
+  combat: CombatData;
 }
 
-export function snapshot(o: { id: string; map: string; name: string; race: string; hero: HeroState; motor: MotorSave; time: ActiveTime; now?: number }): PlaythroughSave {
+export function snapshot(o: { id: string; map: string; name: string; race: string; hero: HeroState; motor: MotorSave; time: ActiveTime; combat: CombatData; now?: number }): PlaythroughSave {
   const h = o.hero;
   return {
     format: PLAYTHROUGH_FORMAT,
@@ -65,11 +70,12 @@ export function snapshot(o: { id: string; map: string; name: string; race: strin
     motor: { ...o.motor, dodge: o.motor.dodge ? { ...o.motor.dodge } : null },
     clock: { minutes: o.time.clock.minutes, days: o.time.clock.days },
     active: { seconds: o.time.seconds, autosaveLeft: o.time.autosaveLeft },
+    combat: JSON.parse(JSON.stringify(o.combat)),
   };
 }
 
 /** Restores the hero and the active time from a checked record. */
-export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime } {
+export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime; combat: CombatData } {
   const hero = new HeroState();
   hero.stats = { ...s.hero.stats };
   hero.progress = { ...s.hero.progress, mastery: { ...s.hero.progress.mastery } };
@@ -82,7 +88,7 @@ export function restore(s: PlaythroughSave): { hero: HeroState; time: ActiveTime
   const time = new ActiveTime(new GameClock(s.clock.minutes, s.clock.days, CLOCK.rate));
   time.seconds = s.active.seconds;
   time.autosaveLeft = s.active.autosaveLeft;
-  return { hero, time };
+  return { hero, time, combat: JSON.parse(JSON.stringify(s.combat)) };
 }
 
 export class SaveError extends Error {}
@@ -101,7 +107,19 @@ export function migratePlaythrough(raw: any): { save: PlaythroughSave; migrated:
   const v = num(raw.version, 'version');
   if (v > PLAYTHROUGH_VERSION) throw new SaveError(`Сохранение создано более новой версией игры (формат ${v}, поддерживается ${PLAYTHROUGH_VERSION})`);
   const migrated = v < PLAYTHROUGH_VERSION;
-  // (no older formats exist yet: each future version adds its step here, oldest first)
+  // each version adds its step here, oldest first
+  let combat: CombatData;
+  if (v < 2) {
+    // v1 → v2: the approved start (one sword, no skills); masteries of v1 become their ОМ thresholds
+    combat = newCombatData('start');
+    for (const k of ['sword', 'bow', 'staff'] as const) combat.om[k] = masteryThreshold(num(raw.hero?.progress?.mastery?.[k] ?? 1, `hero.progress.mastery.${k}`));
+  } else {
+    try {
+      combat = checkCombat(raw.combat);
+    } catch (e) {
+      throw new SaveError(`Повреждён боевой блок: ${(e as Error).message}`);
+    }
+  }
   const h = raw.hero ?? {};
   const stats = baseStats();
   for (const k of STAT_IDS) stats[k] = num(h.stats?.[k], `hero.stats.${k}`);
@@ -145,6 +163,7 @@ export function migratePlaythrough(raw: any): { save: PlaythroughSave; migrated:
     motor,
     clock: { minutes: num(raw.clock?.minutes, 'clock.minutes'), days: num(raw.clock?.days ?? 0, 'clock.days') },
     active: { seconds: num(raw.active?.seconds ?? 0, 'active.seconds'), autosaveLeft: num(raw.active?.autosaveLeft ?? AUTOSAVE_SECONDS, 'active.autosaveLeft') },
+    combat,
   };
   return { save, migrated };
 }
