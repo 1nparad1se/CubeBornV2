@@ -43,11 +43,10 @@ Read this before changing the game. It holds the decisions the owner has already
 ## RPG systems (GDD v1.2)
 - The spec: [docs/gdd/RPG_AI_Implementation_Package.md](docs/gdd/RPG_AI_Implementation_Package.md); what is built and the chosen parameters: [docs/rpg2/IMPLEMENTATION.md](docs/rpg2/IMPLEMENTATION.md).
 - New systems live in `src/rpg2/` and are played on «Тестовая площадка» (main menu), a separate copy of the training meadow; stages follow D202. `?dev=1` shows the dev panel.
-- Only the test scene uses keyboard + mouse (WASD, mouse look with a captured cursor, keys rebindable, D211); the main game keeps the mouse-only controls above.
 - Scale: 1 block = 1 m. The test scene follows D212 (steps up to 0.3 m on foot, jumps 1 m).
 - Its save is separate (`cubeborn.rpg2.test`, own format version); controls are stored apart from playthroughs (`cubeborn.controls`).
 
-- RPG test scene (`src/rpg2`, «Тестовая площадка»): sprint defaults to Left Alt (rebindable; the browser's Alt action is suppressed; stored controls with the old Ctrl default migrate to Alt); walkable steps stay 0.3 m (D212); the 35° cone for aim and E targeting is accepted; Hira's greeting text is accepted. Block, bow aim and staff charge have held cubic poses.
+- One controls rule for the whole game: the RPG test scene (`src/rpg2`, «Тестовая площадка») uses the same mouse controls as above (no WASD, no pointer lock; skills and attacks hit the selected target). Its extra keys: Space jump / air jump, Left Shift dodge toward the cursor, Left Alt toggles sprint (browser Alt action suppressed), Q held blocks / aims / charges, F attacks, E uses the nearest object within 3 m; keys other than the mouse buttons are rebindable. Walkable steps there stay 0.3 m (D212); without a selected target attacks use a 35° cone; Hira's greeting text is accepted. Block, bow aim and staff charge have held cubic poses.
 
 ## References
 - The owner's reference pictures live in [docs/references/](docs/references/README.md) (ground blocks 1–46, block transitions, winter, forest, desert and swamp plants, swamp and desert trees). Look there before changing ground blocks, textures, plants, trees or biomes, and match their style: small pixel squares, mixed materials blended in ragged pixel patches.
