@@ -18,6 +18,7 @@ import type { EconomyWorld } from '../economy/world';
 import { filterBar, type InvFilter } from './growthUi';
 import type { SceneMenus } from './menus';
 import { iconForKey, pxIcon } from '../../ui/pixelIcons';
+import { bigBtn } from './kit';
 
 /** Pixel portraits of the merchants and the icons of what they teach. */
 const MERCHANT_FACE: Partial<Record<MerchantId, string>> = { smith: 'npc-smith', alchemist: 'npc-mira', cook: 'npc-cook', hunter: 'npc-hunter', supplier: 'npc-supplier' };
@@ -150,6 +151,41 @@ export class EconomyScreens {
       toolRows.length ? toolRows : h('p.r2-note', 'Нет.'),
       h('p.r2-note', `Зелья: общий откат 10 с${g.potionCd > 0 ? ` (осталось ${Math.ceil(g.potionCd)} с)` : ''}, в бою можно. Еда — только вне боя. F1 / F2 / F3 — выбранные зелья HP / MP / ST.`),
     );
+  }
+
+  /** Inventory detail panel (hud-08) of a stack or a tool / rune: what it does and its actions. */
+  goodsDetail(sel: { key: string } | { uid: string }, again: () => void): HTMLElement[] {
+    const g = this.s.growth;
+    if ('key' in sel) {
+      const k = sel.key;
+      const n = g.stacks[k] ?? 0;
+      const d = consumableDef(k);
+      const st = { inCombat: this.s.inCombat(), busy: this.s.busy() };
+      const out: HTMLElement[] = [];
+      out.push(h('div', d ? d.effect : 'Материал для ремёсел и продажи.'));
+      out.push(h('div.r2-dim', `Цена покупки: ${stackBuyPrice(k)} зол. · продажа: ${sellUnit(stackBuyPrice(k))} зол.`));
+      if (n > STACK_MAX) out.push(h('div.r2-dim', `${Math.ceil(n / STACK_MAX)} стака по ${STACK_MAX}`));
+      out.push(h('div.r2-grow'));
+      if (d) {
+        const why = useProblem(g, this.s.hero, k, st);
+        out.push(bigBtn('Использовать', why, () => this.act(useConsumable(g, this.s.hero, k, st), `Использовано: ${stackName(k)}`, again)));
+        if (d.result.kind === 'potion') {
+          const slot = d.result.stat === 'HP' ? 'hp' : d.result.stat === 'MP' ? 'mp' : 'st';
+          const key = slot === 'hp' ? 'F1' : slot === 'mp' ? 'F2' : 'F3';
+          out.push(g.potionSel[slot] === k ? h('div.r2-center.r2-green', `Назначено на ${key}`) : bigBtn(`Назначить на ${key}`, null, () => { g.potionSel[slot] = k; again(); }, false));
+        }
+        out.push(h('div.r2-center.r2-dim.r2-small', `Зелья: общий откат 10 с${g.potionCd > 0 ? ` (осталось ${Math.ceil(g.potionCd)} с)` : ''}, в бою можно. Еда — только вне боя.`));
+      }
+      return out;
+    }
+    const it = g.items.find((i) => i.uid === sel.uid);
+    if (!it) return [];
+    return [
+      h('div', isRune(it.tpl) ? 'Руна перемещения: переносит к месту назначения, не расходуется.' : 'Инструмент: нужен для добычи (нож — трофеи, кирка — руда, топор — древесина).'),
+      h('div.r2-dim', `Категория: ${CAT_NAME[itemCat(it)]}`),
+      h('div.r2-grow'),
+      isRune(it.tpl) && this.s.useRune ? bigBtn('Использовать', this.s.runeProblem?.(it.tpl) ?? null, () => this.s.useRune!(it.tpl)) : h('div'),
+    ];
   }
 
   // ------------------------------------------------------------------ corpse / chest window

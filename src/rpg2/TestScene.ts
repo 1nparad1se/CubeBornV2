@@ -139,6 +139,7 @@ export class TestScene {
       toast: (t) => this.hud.toast(t),
       changed: () => this.growthChanged(),
       extraInventory: (f, again) => this.eco.goods(f, again),
+      goodsDetail: (sel, again) => this.eco.goodsDetail(sel, again),
       itemPrice: (it) => itemBuyPrice(it),
     });
     this.eco = new EconomyScreens({

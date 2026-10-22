@@ -1,10 +1,11 @@
 import '../../ui/theme.css';
 import './rpg2.css';
+import './panels.css';
 import { h } from '../../ui/dom';
 import type { PauseManager } from '../pause';
 
 /** Windows drawn as a centred framed column instead of a full screen. */
-const COMPACT = new Set(['pause', 'entry', 'death', 'confirm', 'loadError']);
+const COMPACT = new Set(['pause', 'entry', 'death', 'confirm', 'loadError', 'xptable']);
 
 /**
  * Full-screen windows of the RPG test scene. Every window goes through the PauseManager (D026):
@@ -29,9 +30,11 @@ export class SceneMenus {
    */
   show(id: string, body: HTMLElement, onClose: (() => void) | null = null) {
     const old = this.layers.get(id);
+    // panels keep their scroll positions when a window is rebuilt in place
+    const keep = old?.el ? [...old.el.querySelectorAll<HTMLElement>('.r2-scroll, .r2-pnl')].map((e) => e.scrollTop) : [];
     old?.el?.remove();
     const compact = COMPACT.has(id);
-    const win = h('div.r2-win.r2-panel', body);
+    const win = h('div.r2-win.r2-panel' + (body.classList.contains('r2-cols') ? '.r2-bare' : ''), body);
     let el: HTMLElement;
     if (compact) {
       el = h('div.r2.r2-menu.r2-compact.r2-menu-' + id, h('div.cb-logo.small.r2-cornerlogo', 'CUBEBORN'), win);
@@ -47,6 +50,7 @@ export class SceneMenus {
       );
     }
     this.parent.appendChild(el);
+    if (keep.length) el.querySelectorAll<HTMLElement>('.r2-scroll, .r2-pnl').forEach((e, i) => (e.scrollTop = keep[i] ?? 0));
     this.layers.set(id, { el, onClose });
     this.pause.open(id);
   }
