@@ -47,6 +47,8 @@ Read this before changing the game. It holds the decisions the owner has already
 - Scale: 1 block = 1 m. The test scene follows D212 (steps up to 0.3 m on foot, jumps 1 m).
 - Its save is separate (`cubeborn.rpg2.test`, own format version); controls are stored apart from playthroughs (`cubeborn.controls`).
 
+- RPG test scene (`src/rpg2`, «Тестовая площадка»): sprint defaults to Left Alt (rebindable; the browser's Alt action is suppressed; stored controls with the old Ctrl default migrate to Alt); walkable steps stay 0.3 m (D212); the 35° cone for aim and E targeting is accepted; Hira's greeting text is accepted. Block, bow aim and staff charge have held cubic poses.
+
 ## References
 - The owner's reference pictures live in [docs/references/](docs/references/README.md) (ground blocks 1–46, block transitions, winter, forest, desert and swamp plants, swamp and desert trees). Look there before changing ground blocks, textures, plants, trees or biomes, and match their style: small pixel squares, mixed materials blended in ragged pixel patches.
 
