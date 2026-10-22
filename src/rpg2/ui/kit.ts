@@ -123,7 +123,7 @@ export function chip(icon: string | null, text: Kid, cls = ''): HTMLElement {
 
 /** A rarity / state tag. */
 export function tag(text: string, color?: string, cls = ''): HTMLElement {
-  return h('span.r2-tag' + (cls ? '.' + cls : ''), { style: color ? `color:${color};border-color:${color}` : undefined }, text);
+  return h('span.r2-badge' + (cls ? '.' + cls : ''), { style: color ? `color:${color};border-color:${color}` : undefined }, text);
 }
 
 /** The wide action button (gold when primary); `problem` disables it with a hint. */

@@ -1243,7 +1243,8 @@ export class TestScene {
 
   private buildDev() {
     (window as unknown as { rpg2?: TestScene }).rpg2 = this;
-    const box = h('div.r2.r2-dev.r2-panel', h('b', 'Режим разработки'));
+    // collapsed by default so it does not cover the HUD (mockup hud-07); the title opens it
+    const box = h('div.r2.r2-dev.r2-panel', h('b', { title: 'Показать / скрыть', onclick: (e: MouseEvent) => { e.stopPropagation(); box.classList.toggle('open'); } }, 'Режим разработки'));
     const btn = (label: string, fn: () => void) => box.append(h('button', { onclick: (e: MouseEvent) => { e.stopPropagation(); fn(); } }, label));
     btn('Полные HP / MP / ST', () => this.devSet({ hp: this.hero.maxHp, mp: this.hero.maxMp, st: this.hero.maxSt }));
     btn('ST = 0', () => this.devSet({ st: 0 }));

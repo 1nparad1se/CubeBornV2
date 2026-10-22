@@ -171,7 +171,7 @@ export class GrowthScreens {
     const into = p.xp - xpForLevel(p.level);
     const need = top ? 1 : xpForLevel(p.level + 1) - xpForLevel(p.level);
     const res = (ico: string, name: string, v: number, max: number, cls: string) =>
-      h('div.r2-resrow', pxIcon(ico, 34), h('b', name), h('div.r2-resbar', h('small', `${Math.floor(v)} / ${max}`), bar(v / max, undefined, cls)));
+      h('div.r2-crow', pxIcon(ico, 34), h('b', name), h('div.r2-resbar', h('small', `${Math.floor(v)} / ${max}`), bar(v / max, undefined, cls)));
     const left = panel(
       phead(this.s.name, null, `Человек · Уровень ${p.level}`),
       h('div.r2-figbox', heroFigure(this.figureEquip(), 260, 330)),

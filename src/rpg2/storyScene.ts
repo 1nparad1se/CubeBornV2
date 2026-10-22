@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { h } from '../ui/dom';
+import { pxIcon } from '../ui/pixelIcons';
 import type { CombatSystem } from './combat/system';
 import { enemyDef, type EnemyState } from './combat/enemy';
 import type { GrowthData } from './growth/growth';
@@ -242,11 +243,14 @@ export class StoryScene {
       const c = this.ctx();
       lines = d.objectives.map((o, i) => {
         const n = objectiveCount(c, d.id, i);
-        return `${n >= o.count ? '✓' : '·'} ${o.text}: ${Math.min(n, o.count)} / ${o.count}`;
+        return `${n >= o.count ? '✓' : ''}${o.text}: ${Math.min(n, o.count)} / ${o.count}`;
       });
       if (isReady(c, d.id)) lines.push(`Сдать: ${npcName(d.npc)}`);
       key = d.name + '|' + lines.join('|');
-      if (key !== this.trackKey) this.track.replaceChildren(h('b', d.name), ...lines.map((l) => h('div', l)));
+      // mockup hud-07: the quest name, each objective with the quest's icon, «J — Журнал»
+      const ico = ({ collect: 'red', kill: 'wolf', deliver: 'scroll', talk: 'chat', explore: 'map' } as Record<string, string>)[d.type] ?? 'quest';
+      if (key !== this.trackKey)
+        this.track.replaceChildren(h('b', d.name), ...lines.map((l) => h('div.r2-trow', pxIcon(l.startsWith('Сдать') ? 'mark-turnin' : ico, 24), l)), h('small.r2-tkey', 'J — Журнал'));
     }
     this.trackKey = key;
     this.track.style.display = key ? '' : 'none';

@@ -45,7 +45,7 @@ interface WolfParts {
   deadT: number;
 }
 
-function wolfModel(color: number, scale: number, seed: number): Omit<WolfParts, 'label' | 'labelKey' | 'canvas' | 'tex' | 'tele' | 'deadT'> {
+export function wolfModel(color: number, scale: number, seed: number): Omit<WolfParts, 'label' | 'labelKey' | 'canvas' | 'tex' | 'tele' | 'deadT'> {
   const fur = new THREE.MeshLambertMaterial({ map: furTexture(color, seed) });
   const light = new THREE.MeshLambertMaterial({ map: furTexture(new THREE.Color(color).offsetHSL(0, 0, 0.18).getHex(), seed + 7) });
   const dark = new THREE.MeshLambertMaterial({ color: 0x1c1a18 });
@@ -104,7 +104,7 @@ function wolfModel(color: number, scale: number, seed: number): Omit<WolfParts, 
 }
 
 /** A cubic humanoid (bandits): the same animated parts as the wolf (legs swing, «tail» = the sword). */
-function humanModel(color: number, scale: number): Omit<WolfParts, 'label' | 'labelKey' | 'canvas' | 'tex' | 'tele' | 'deadT'> {
+export function humanModel(color: number, scale: number): Omit<WolfParts, 'label' | 'labelKey' | 'canvas' | 'tex' | 'tele' | 'deadT'> {
   const cloth = new THREE.MeshLambertMaterial({ color });
   const skin = new THREE.MeshLambertMaterial({ color: 0xc89070 });
   const pants = new THREE.MeshLambertMaterial({ color: 0x3a3228 });

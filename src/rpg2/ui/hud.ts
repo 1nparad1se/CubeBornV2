@@ -196,10 +196,16 @@ export class SceneHud {
       this.tags.fight.classList.toggle('fight', hero.inCombat);
     });
     const mv = m.mode === 'swim' ? 'Плавание' : m.walk ? 'Ходьба' : 'Бег';
-    this.set('move', mv, () => (this.tags.move.textContent = mv));
+    this.set('move', mv, () => {
+      this.tags.move.textContent = mv;
+      this.tags.move.classList.toggle('on', mv !== 'Бег');
+    });
     this.set('sprint', String(m.sprinting), () => this.tags.sprint.classList.toggle('on', m.sprinting));
     const air = m.mode === 'air' ? (m.airJumpReady ? 'В воздухе (есть прыжок)' : 'В воздухе') : m.mode === 'swim' ? 'В воде' : 'На земле';
-    this.set('air', air, () => (this.tags.air.textContent = air));
+    this.set('air', air, () => {
+      this.tags.air.textContent = air;
+      this.tags.air.classList.toggle('on', air !== 'На земле');
+    });
     const dg = m.dodging ? (m.invulnerable ? 'Уклонение: неуязвим' : 'Уклонение') : m.stunned ? 'Оглушён' : 'Уклонение';
     this.set('dodge', dg + m.dodging + m.stunned, () => {
       this.tags.dodge.firstChild!.textContent = dg;
