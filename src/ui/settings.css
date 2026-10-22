@@ -453,3 +453,144 @@
     justify-content: flex-start;
   }
 }
+
+/* ==================================================================================================
+   Mockup look (docs/references/hud/hud-06): framed section list with pixel icons, the selected
+   section filled gold; framed main panel with a heavy cream heading over a gold rule; gold
+   segmented choices, square check box, gold sliders; gold «Применить».
+   ================================================================================================== */
+.st {
+  grid-template-columns: 392px 1fr;
+  gap: 22px;
+  max-width: 1560px;
+  height: calc(100vh / var(--ui-scale, 1) - 190px);
+}
+.st-side {
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-img) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+  padding: 6px;
+}
+.st-nav {
+  gap: 16px;
+}
+.st-tab,
+.st-tab:hover {
+  min-height: 92px;
+  gap: 22px;
+  padding: 0 24px;
+  font: 400 32px var(--cb-title);
+  color: var(--cb-cream);
+  background: rgba(14, 12, 10, 0.92);
+  border: 2px solid var(--cb-edge);
+  border-radius: 6px;
+  box-shadow: inset 0 0 0 1px #000, 0 0 0 1px #000;
+  text-shadow: 0 2px 0 #000;
+}
+.st-tab:hover {
+  border-color: var(--cb-gold);
+}
+.st-tab.sel,
+.st-tab.sel:hover {
+  color: #2a1606;
+  text-shadow: none;
+  background: linear-gradient(180deg, #f9c058, #e8992c);
+  border-color: #ffd98a;
+  box-shadow: 0 0 0 2px #3a2208, inset 0 -4px 0 rgba(140, 70, 0, 0.3), 0 0 18px rgba(255, 170, 50, 0.3);
+}
+.st-pxico {
+  filter: drop-shadow(0 2px 0 rgba(0, 0, 0, 0.6));
+}
+.st-main {
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-img) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+.st-head {
+  margin: 0 10px;
+  padding: 8px 4px 10px;
+  border-bottom: 3px solid var(--cb-gold-dk);
+}
+.st-head h2 {
+  font: 400 48px/1.1 var(--cb-title);
+  color: var(--cb-cream);
+  text-shadow: 0 3px 0 #9a7a54, 0 5px 0 #2a1a0a;
+}
+.st-head::after {
+  display: none;
+}
+.st-row {
+  border-bottom: 1px solid rgba(122, 93, 54, 0.45);
+}
+.st-label > span {
+  font: 400 24px var(--cb-title);
+  color: var(--cb-cream);
+}
+.st-label small {
+  font-family: var(--cb-body);
+}
+.st-seg button {
+  min-width: 64px;
+  padding: 8px 14px;
+  font: 500 19px var(--cb-body);
+  color: var(--cb-text);
+  background: rgba(14, 12, 10, 0.92);
+  border: 2px solid var(--cb-edge);
+  border-radius: 5px;
+}
+.st-seg button.sel {
+  color: #2a1606;
+  font-weight: 700;
+  background: linear-gradient(180deg, #f9c058, #e8992c);
+  border-color: #ffd98a;
+  box-shadow: 0 0 10px rgba(255, 170, 50, 0.3);
+}
+.st-toggle {
+  border-radius: 4px;
+}
+.st-range::-webkit-slider-runnable-track {
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, #f2b043 var(--p), #2a2420 var(--p));
+  border: 2px solid #4f3d27;
+}
+.st-range::-webkit-slider-thumb {
+  width: 26px;
+  height: 34px;
+  margin-top: -12px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #ffd98a, #e8992c);
+  border: 2px solid #3a2208;
+}
+.st-val {
+  font: 500 24px var(--cb-body);
+  color: var(--cb-cream);
+}
+.st-foot {
+  border-top: 3px solid var(--cb-gold-dk);
+  margin: 0 10px;
+}
+.st-btn {
+  min-width: 230px;
+  padding: 10px 22px;
+  font: 400 22px var(--cb-title);
+  color: var(--cb-cream);
+  background: rgba(14, 12, 10, 0.92);
+  border: 3px solid var(--cb-orange);
+  border-radius: 6px;
+}
+.st-btn.primary,
+.st.dirty .st-btn.primary:not([disabled]) {
+  color: #2a1606;
+  background: linear-gradient(180deg, #f9c058, #e8992c);
+  border-color: #ffd98a;
+}
+.st-dialog-box {
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-img) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+  background: none;
+}

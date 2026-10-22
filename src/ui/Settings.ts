@@ -5,6 +5,7 @@ import { QUALITY_PRESETS, defaultKeybinds, defaultSettings, type BindAction, typ
 import type { MenuApi } from './Menus';
 import { tr } from './tr';
 import './settings.css';
+import { pxIcon } from './pixelIcons';
 
 const RESOLUTIONS: [number, number][] = [
   [1280, 720],
@@ -24,6 +25,8 @@ function availableResolutions(): string[] {
 }
 
 type Section = 'screen' | 'graphics' | 'game' | 'audio' | 'controls' | 'other';
+/** Pixel icons of the section list (src/ui/pixelIcons.ts). */
+const ST_ICON: Record<string, string> = { monitor: 'monitor', gem: 'crystal', sword: 'sword', note: 'speaker', keys: 'gamepad', dots: 'interface' };
 const SECTIONS: { id: Section; icon: string; ru: string; en: string }[] = [
   { id: 'screen', icon: 'monitor', ru: 'Экран', en: 'Display' },
   { id: 'graphics', icon: 'gem', ru: 'Графика', en: 'Graphics' },
@@ -447,7 +450,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
             drawNav();
             renderBody();
           },
-        }, h('i.st-ico.i-' + sc.icon), h('span', tr(sc.ru, sc.en))),
+        }, pxIcon(ST_ICON[sc.icon] ?? 'gear', 40, 'st-pxico'), h('span', tr(sc.ru, sc.en))),
       );
   };
 

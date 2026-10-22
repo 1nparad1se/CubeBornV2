@@ -6,6 +6,7 @@ import { playableRaces, RACE_BY_ID, type RaceDef } from '../rpg/races';
 import { WILD_MAP } from '../world/wild';
 import { settingsPanel, leaveSettings } from './Settings';
 import { tr } from './tr';
+import './theme.css';
 import './menu.css';
 
 export interface MenuApi {
@@ -185,8 +186,8 @@ export class Menus {
       'div.mm',
       h(
         'div.mm-side',
-        h('div.mm-logo', h('div.mm-logo-title', 'CUBEBORN'), h('div.mm-logo-sub', t('game_subtitle'))),
-        nav,
+        h('div.mm-logo', h('div.mm-logo-title.cb-logo', 'CUBEBORN'), h('div.mm-logo-sub', t('game_subtitle'))),
+        h('div.mm-panel.cb-frame', nav),
         note,
         cur ? h('div.mm-last', tr('Последний персонаж: ', 'Last character: '), h('b', cur.name), ` · ${RACE_BY_ID[cur.race]?.name ?? ''}`) : null,
       ),
@@ -210,7 +211,7 @@ export class Menus {
     }
     return h(
       'div.mm-frame' + cls,
-      h('div.mm-top', h('button.mm-back', { title: 'Esc', onclick: () => this.back() }, '←'), h('h1.mm-title', title), bar),
+      h('div.mm-top', h('button.mm-back.cb-back', { title: 'Esc', onclick: () => this.back() }), h('h1.mm-title.cb-title', title), bar, h('div.cb-logo.small.mm-toplogo', 'CUBEBORN')),
       h('div.mm-body', body),
     );
   }

@@ -1,0 +1,168 @@
+/* ==================================================================================================
+   CubeBorn interface theme (owner's mockups docs/references/hud/hud-01…24): near-black panels in a
+   thin orange-gold pixel frame with stepped corners, cream heavy titles with a dark drop, gold
+   primary buttons, dark rows with brown edges, gold-lit selection. Shared by the main menu, the
+   settings, the pause screens, the RPG test scene HUD and its windows.
+   ================================================================================================== */
+:root {
+  --cb-frame-img: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAl0lEQVR42mNgoDFgZGBgYOBgY/lPC8N//PrDyALjfN8Xw8DAwMDA6bSEgYGBgeFchQZJhhl13MBqDhOtgwjuA5iN6MBqwv3P+Aw4VqDIi8xHN4d+PiA1zNEBun5YnNDPB8SGOSH16HFCcx+MWjBqAQ3yAXo6JrUsGjgfwMoOcssmdP309wF6TURsGKMDutdoNK/0ae0BBgCaCjN7Iwtr7AAAAABJRU5ErkJggg==');
+  --cb-frame-dim: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAiElEQVR42mNgoDFgxCbIwcZyghzDfvz6Y4EuxoJLcYSLjjkphq/Yc+UkNnEmWgcRCyEFW47ffYtP3sdSWZigBeSGOaG4+/HrjwULuWFOKM5gcUL/OCAU5oTUo8cJzX0wasGoBTTIB+jpmNKyiH4+QC/PqVUfsGCriehSoxEbxgOeimhe6dMcAADneTT4fLpW3AAAAABJRU5ErkJggg==');
+  --cb-frame-sel: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABgAAAAYCAYAAADgdz34AAAAhUlEQVR42mNgoDFgxCbIwcbynxzDfvz6g2EeCy7F79ZYkWS4UMgxrOJMtA4iFkIK7IoufMQnf6jPgJ+gBeSGOaG4+/HrDyMLuWFOKM5gcUL/OCAU5oTUo8cJzX0wasGoBTTIB+jpmNKyiH4+QC/PqVUfsGCriehSoxEbxgOeimhe6dMcAAAEVjHMjjS0rQAAAABJRU5ErkJggg==');
+  --cb-panel: rgba(16, 14, 11, 0.95);
+  --cb-row: rgba(24, 21, 17, 0.92);
+  --cb-row-hi: rgba(46, 34, 18, 0.95);
+  --cb-edge: #4f3d27;
+  --cb-edge-hi: #7a5d36;
+  --cb-orange: #d67e2c;
+  --cb-gold: #f2b043;
+  --cb-gold-hi: #ffd47a;
+  --cb-gold-dk: #b9741c;
+  --cb-text: #f4ecdc;
+  --cb-cream: #fff2d6;
+  --cb-dim: #b9ad96;
+  --cb-mute: #8c826f;
+  --cb-green: #6ee05a;
+  --cb-red: #ff6a52;
+  --cb-blue: #5ec8ff;
+  --cb-purple: #c07aff;
+  --cb-yellow: #ffd23f;
+  --cb-title: 'Russo One', 'Rubik', system-ui, sans-serif;
+  --cb-body: 'Rubik', system-ui, sans-serif;
+}
+
+/* pixel icons (src/ui/pixelIcons.ts) */
+.px-ico {
+  display: inline-block;
+  flex: none;
+  vertical-align: middle;
+  background: center / 100% 100% no-repeat;
+  image-rendering: pixelated;
+}
+
+/* framed panel: 9-slice pixel frame, 2× scale */
+.cb-frame {
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-img) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+  background: none;
+}
+.cb-frame-dim {
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-dim) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+}
+
+/* the CUBEBORN word mark with its gold rule and centre square */
+.cb-logo {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: stretch;
+  font: 400 44px/1 'Press Start 2P', var(--cb-title);
+  color: var(--cb-cream);
+  letter-spacing: 1px;
+  text-shadow: 0 3px 0 #8a6a44, 0 6px 0 #2a1a0a, 0 0 18px rgba(0, 0, 0, 0.6);
+  pointer-events: none;
+  user-select: none;
+}
+.cb-logo::after {
+  content: '';
+  height: 10px;
+  margin: 14px 8% 0;
+  background:
+    linear-gradient(var(--cb-gold), var(--cb-gold)) center / 10px 10px no-repeat,
+    linear-gradient(var(--cb-gold-dk), var(--cb-gold-dk)) left center / calc(50% - 10px) 3px no-repeat,
+    linear-gradient(var(--cb-gold-dk), var(--cb-gold-dk)) right center / calc(50% - 10px) 3px no-repeat;
+}
+.cb-logo.small {
+  font-size: 26px;
+}
+.cb-logo.small::after {
+  height: 7px;
+  margin-top: 8px;
+  background-size: 7px 7px, calc(50% - 7px) 2px, calc(50% - 7px) 2px;
+}
+
+/* big cream screen title with a dark 3D drop */
+.cb-title {
+  margin: 0;
+  font: 400 60px/1.05 var(--cb-title);
+  color: var(--cb-cream);
+  text-shadow: 0 3px 0 #9a7a54, 0 6px 0 #2a1a0a, 0 0 22px rgba(0, 0, 0, 0.55);
+  letter-spacing: 0.5px;
+}
+
+/* square back button with a chevron */
+.cb-back {
+  width: 64px;
+  height: 64px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  background: rgba(16, 14, 11, 0.9);
+  border: 3px solid var(--cb-orange);
+  border-radius: 6px;
+  box-shadow: 0 0 0 2px #000, inset 0 0 0 2px #000;
+  cursor: pointer;
+  color: var(--cb-cream);
+}
+.cb-back::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  margin-left: 6px;
+  border: solid currentColor;
+  border-width: 0 0 5px 5px;
+  transform: rotate(45deg);
+}
+.cb-back:hover {
+  border-color: var(--cb-gold-hi);
+}
+
+/* buttons */
+.cb-btn {
+  font: 400 20px var(--cb-title);
+  color: var(--cb-text);
+  background: var(--cb-row);
+  border: 2px solid var(--cb-edge);
+  border-radius: 4px;
+  box-shadow: inset 0 0 0 1px #000;
+  padding: 10px 18px;
+  cursor: pointer;
+}
+.cb-btn:hover {
+  border-color: var(--cb-gold);
+}
+.cb-btn.gold {
+  color: #2a1606;
+  background: linear-gradient(180deg, #f9bf55, #e79a2c);
+  border-color: #ffd98a;
+  box-shadow: 0 0 0 2px #3a2208, inset 0 -3px 0 rgba(120, 60, 0, 0.35), 0 0 16px rgba(255, 170, 50, 0.25);
+}
+
+/* chips: "Мир на паузе", key hints */
+.cb-paused {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  font: 500 20px var(--cb-body);
+  color: var(--cb-cream);
+  text-shadow: 0 2px 2px #000;
+}
+.cb-paused::before {
+  content: '';
+  width: 22px;
+  height: 26px;
+  background: linear-gradient(90deg, var(--cb-cream) 0 8px, transparent 8px 14px, var(--cb-cream) 14px);
+}
+.cb-kbd {
+  display: inline-block;
+  min-width: 24px;
+  padding: 2px 8px;
+  font: 400 15px var(--cb-title);
+  color: var(--cb-cream);
+  background: rgba(16, 14, 11, 0.9);
+  border: 2px solid var(--cb-orange);
+  border-radius: 4px;
+  text-align: center;
+}

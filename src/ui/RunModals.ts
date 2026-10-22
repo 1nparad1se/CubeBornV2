@@ -39,7 +39,7 @@ export class RunModals {
   }
 
   pause(_run: World, a: PauseActions) {
-    const side = h('div.pz-side');
+    const side = h('div.pz-side.cb-frame');
     const note = h('div.mm-note');
     const btn = (icon: string, label: string, fn: () => void, primary = false) =>
       h('button.mm-btn' + (primary ? '.primary' : ''), { onclick: fn }, h('i.mm-glyph.g-' + icon), h('span.mm-label', label), h('span.mm-arrow', '›'));
@@ -47,7 +47,8 @@ export class RunModals {
       this.escape = () => false;
       clear(side);
       side.append(
-        h('h1.pz-title', tr('ПАУЗА', 'PAUSED')),
+        h('h1.pz-title', tr('Пауза', 'Paused')),
+        h('div.pz-sub.cb-paused', tr('Мир на паузе', 'World paused')),
         h('div.pz-rule', h('i')),
         h(
           'nav.mm-nav',
@@ -70,6 +71,7 @@ export class RunModals {
           }),
         ),
         note,
+        h('div.pz-esc', h('span.cb-kbd', 'Esc'), tr(' — вернуться в игру', ' — back to the game')),
       );
     };
     const showSettings = () => {
@@ -83,6 +85,6 @@ export class RunModals {
       };
     };
     showMain();
-    this.open(h('div.pz', side));
+    this.open(h('div.pz', h('div.cb-logo.small.pz-logo', 'CUBEBORN'), side));
   }
 }

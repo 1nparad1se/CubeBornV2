@@ -439,3 +439,291 @@
     font-size: 48px;
   }
 }
+
+/* ==================================================================================================
+   Mockup look (docs/references/hud/hud-01, hud-05): framed panel of wide buttons under the
+   CUBEBORN mark, gold first button with a chevron, dark buttons with brown edges, no glyphs.
+   ================================================================================================== */
+.mm-side {
+  width: min(640px, 100%);
+  padding: calc(92px + var(--sat)) 36px 24px calc(76px + var(--sal));
+  background: linear-gradient(90deg, rgba(8, 7, 6, 0.45), rgba(8, 7, 6, 0.15) 70%, transparent);
+}
+.mm-logo {
+  margin: 0 0 30px 6px;
+  width: 516px;
+  max-width: 100%;
+}
+.mm-logo-title.cb-logo {
+  display: flex;
+  font-size: 58px;
+  text-align: center;
+  align-items: center;
+}
+.mm-logo-sub {
+  margin-top: 8px;
+  text-align: center;
+  font: 500 14px var(--cb-body);
+  color: var(--cb-dim);
+  text-shadow: 0 1px 2px #000;
+}
+.mm-panel {
+  width: 524px;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 18px 12px;
+}
+.mm-nav {
+  gap: 14px;
+}
+.mm-btn,
+.mm-btn:hover,
+.mm-btn.primary,
+.mm-btn.off:hover {
+  min-height: 80px;
+  padding: 0 36px 0 40px;
+  border-radius: 4px;
+  font: 400 31px var(--cb-title);
+  color: var(--cb-cream);
+  background: rgba(14, 12, 10, 0.92);
+  border: 2px solid var(--cb-edge);
+  box-shadow: inset 0 0 0 1px #000, 0 0 0 1px #000;
+  text-shadow: 0 2px 0 #000;
+}
+.mm-btn .mm-glyph {
+  display: none;
+}
+.mm-btn .mm-arrow {
+  visibility: hidden;
+  font: 400 40px var(--cb-title);
+  color: #2a1606;
+}
+.mm-btn:hover {
+  border-color: var(--cb-gold);
+}
+.mm-btn.primary,
+.mm-btn.primary:hover {
+  color: #2a1606;
+  text-shadow: none;
+  background: linear-gradient(180deg, #f9c058, #e8992c);
+  border-color: #ffd98a;
+  box-shadow: 0 0 0 2px #3a2208, inset 0 -4px 0 rgba(140, 70, 0, 0.3), 0 0 18px rgba(255, 170, 50, 0.3);
+}
+.mm-btn.primary .mm-arrow,
+.mm-btn:hover .mm-arrow {
+  visibility: visible;
+}
+.mm-btn:not(.primary):hover .mm-arrow {
+  color: var(--cb-gold);
+}
+.mm-note {
+  color: var(--cb-gold-hi);
+  text-shadow: 0 1px 2px #000;
+}
+.mm-last {
+  margin-top: 12px;
+  color: var(--cb-dim);
+  text-shadow: 0 1px 2px #000;
+}
+
+/* inner screens: back button, big title, small word mark on the right */
+.mm-frame,
+.mm-frame.mm-left,
+.mm-frame.mm-full {
+  background: linear-gradient(180deg, rgba(6, 5, 4, 0.55), rgba(6, 5, 4, 0.25) 160px, rgba(6, 5, 4, 0.35));
+  padding-top: calc(48px + var(--sat));
+  padding-left: calc(58px + var(--sal));
+  padding-right: calc(58px + var(--sar));
+}
+.mm-top {
+  border-bottom: none;
+  gap: 26px;
+  flex-wrap: nowrap;
+}
+.mm-top .mm-tabs {
+  display: none;
+}
+.mm-toplogo {
+  margin-left: auto;
+}
+.mm-body {
+  padding-top: 26px;
+}
+.mm-back.cb-back {
+  width: 74px;
+  height: 74px;
+}
+.mc-row,
+.mc-detail,
+.mc-empty {
+  background: rgba(16, 14, 11, 0.95);
+  border: 2px solid var(--cb-edge);
+  border-radius: 4px;
+}
+.mc-row.sel,
+.mc-row:hover {
+  background: var(--cb-row-hi);
+  border-color: var(--cb-gold);
+  box-shadow: 0 0 12px rgba(255, 180, 60, 0.35);
+}
+.mc-detail {
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-img) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+  background: none;
+}
+.mm-big,
+.mm-small.primary {
+  font: 400 24px var(--cb-title);
+  color: #2a1606;
+  background: linear-gradient(180deg, #f9c058, #e8992c);
+  border: 2px solid #ffd98a;
+  box-shadow: 0 0 0 2px #3a2208, inset 0 -4px 0 rgba(140, 70, 0, 0.3);
+}
+.mm-small {
+  font: 400 18px var(--cb-title);
+  background: rgba(14, 12, 10, 0.92);
+  border: 2px solid var(--cb-edge);
+}
+.mm-dialog-box {
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-img) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+  background: none;
+  border-radius: 0;
+}
+
+/* pause (hud-05): centred framed column, logo top left */
+.pz {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, rgba(6, 5, 4, 0.35), rgba(6, 5, 4, 0.7));
+  backdrop-filter: blur(2.5px);
+}
+.pz-logo {
+  position: absolute;
+  left: calc(38px + var(--sal));
+  top: calc(30px + var(--sat));
+}
+.pz-side.cb-frame {
+  width: min(552px, calc(100% - 32px));
+  box-sizing: border-box;
+  max-height: calc(100% - 40px);
+  padding: 22px 22px 18px;
+  text-align: center;
+}
+.pz-title {
+  font: 400 92px/1 var(--cb-title);
+  color: var(--cb-cream);
+  text-shadow: 0 4px 0 #9a7a54, 0 8px 0 #2a1a0a;
+  letter-spacing: 1px;
+}
+.pz-sub {
+  justify-content: center;
+  margin-top: 10px;
+  color: var(--cb-dim);
+}
+.pz-sub::before {
+  background: linear-gradient(90deg, var(--cb-gold) 0 8px, transparent 8px 14px, var(--cb-gold) 14px);
+}
+.pz-rule {
+  height: 3px;
+  margin: 18px 30px 24px;
+  background: var(--cb-gold-dk);
+}
+.pz-rule i {
+  top: -4px;
+  width: 11px;
+  height: 11px;
+  margin-left: -6px;
+  border: none;
+  background: var(--cb-gold);
+  transform: none;
+}
+.pz .mm-nav {
+  text-align: left;
+}
+.pz .mm-btn {
+  min-height: 72px;
+  font-size: 31px;
+}
+.pz-esc {
+  margin-top: 34px;
+  font: 500 19px var(--cb-body);
+  color: var(--cb-dim);
+}
+.pz .pz-side:has(.pz-settings) {
+  width: min(1400px, calc(100% - 32px));
+  text-align: left;
+}
+.mm-title.cb-title {
+  font: 400 60px/1.05 var(--cb-title);
+  color: var(--cb-cream);
+  text-shadow: 0 3px 0 #9a7a54, 0 6px 0 #2a1a0a, 0 0 22px rgba(0, 0, 0, 0.55);
+}
+.pz-side.cb-frame {
+  width: min(600px, calc(100% - 32px));
+}
+.pz .mm-btn {
+  font-size: 28px;
+}
+
+/* character creation (hud-02): framed panel, cream section headings, gold selection */
+.menus .cc-panel {
+  width: 540px;
+  border: 16px solid transparent;
+  border-image: var(--cb-frame-img) 8 fill / 16px stretch;
+  image-rendering: pixelated;
+  background: none;
+  box-shadow: none;
+  padding: 10px 14px;
+}
+.menus .cc-sec {
+  font: 400 26px var(--cb-title);
+  color: var(--cb-cream);
+  text-transform: none;
+  letter-spacing: 0;
+  margin: 10px 0 10px;
+}
+.menus .cc-sec small {
+  font: 500 15px var(--cb-body);
+  color: var(--cb-dim);
+}
+.menus .cc-race {
+  background: rgba(14, 12, 10, 0.92);
+  border: 2px solid var(--cb-edge);
+  border-radius: 6px;
+}
+.menus .cc-race.sel {
+  border: 3px solid var(--cb-gold);
+  box-shadow: 0 0 14px rgba(255, 180, 60, 0.4);
+}
+.menus .cc-desc,
+.menus .cc-note {
+  font: 500 15px var(--cb-body);
+  color: var(--cb-dim);
+}
+.menus .cc-base > div {
+  background: rgba(14, 12, 10, 0.92);
+  border: 2px solid var(--cb-edge);
+  border-radius: 4px;
+}
+.menus .cc-name {
+  font: 400 26px var(--cb-title);
+  color: var(--cb-cream);
+  background: rgba(14, 12, 10, 0.92);
+  border: 2px solid var(--cb-edge);
+  border-radius: 6px;
+  padding: 14px 20px;
+}
+.menus .cc-name:focus {
+  outline: none;
+  border-color: var(--cb-gold);
+  box-shadow: 0 0 12px rgba(255, 180, 60, 0.35);
+}
+.menus .cc-go {
+  width: 100%;
+  margin-top: 12px;
+  font-size: 30px;
+}
