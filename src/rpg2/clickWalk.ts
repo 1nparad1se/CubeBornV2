@@ -1,6 +1,7 @@
 import { clearLine, findPath } from '../game/arpg/Path';
 import type { Terrain } from '../game/Terrain';
 import type { HeroMotor, MotorGround } from './motor';
+import { SUPPORT } from './config';
 
 /**
  * Mouse walking of the test scene, the same as the main game (owner's decision): a left click on the
@@ -43,7 +44,7 @@ export class ClickWalk {
 
   /**
    * The unit walking direction for this step (or null when there is nothing to walk), and whether
-   * to press jump: on the ground before a step the motor cannot walk (> 0.3 m), and once more in
+   * to press jump: on the ground before a step the motor cannot walk (> SUPPORT.step, 0.5 m), and once more in
    * the air near the top of the jump while the step is still higher than the feet.
    */
   steer(m: HeroMotor, dt: number): { dx: number; dz: number; jump: boolean } | null {
@@ -81,7 +82,9 @@ export class ClickWalk {
     const dz = (tz - m.z) / d;
     const ahead = this.ground.top(m.x + dx * 0.6, m.z + dz * 0.6);
     let jump = false;
-    if (m.mode === 'ground') jump = ahead - m.y > 0.3 + 1e-3;
+    // owner (update 7): steps up to SUPPORT.step (0.5 m) are walked, never hopped; only a whole-block
+    // rise that the path planned as a climb takes a jump (otherwise the hero would stand stuck)
+    if (m.mode === 'ground') jump = ahead - m.y > SUPPORT.step + 0.05;
     else if (m.mode === 'air') jump = m.airJumpReady && m.vy < 0.8 && ahead > m.y + 0.05;
     return { dx, dz, jump };
   }

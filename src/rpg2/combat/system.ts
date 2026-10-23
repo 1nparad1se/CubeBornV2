@@ -483,30 +483,11 @@ export class CombatSystem {
   }
 
   /**
-   * Soft aim for the follow camera (technical): the target closest to the body's facing within a
-   * 35° cone, in sight and within `maxRange`; the aim point is that target, or 8 m ahead.
+   * Aim without a selected target (owner: no auto-targeting): the point 8 m ahead of the body's
+   * facing, never an enemy picked by itself.
    */
-  aimAhead(maxRange = 30, coneDeg = 35): Aim {
+  aimAhead(): Aim {
     const m = this.motor;
-    const chest = this.heroChest();
-    let best: Target | null = null;
-    let bs = Infinity;
-    const cone = (coneDeg * Math.PI) / 180;
-    for (const t of this.targets()) {
-      const dx = t.x - m.x;
-      const dz = t.z - m.z;
-      const d = Math.hypot(dx, dz);
-      if (d - t.radius > maxRange || d < 1e-6) continue;
-      const ang = Math.acos(Math.max(-1, Math.min(1, (dx * m.fx + dz * m.fz) / d)));
-      if (ang > cone + Math.atan2(t.radius, d)) continue;
-      if (!this.losTo(t, chest)) continue;
-      const score = ang * 12 + d * (t.enemy ? 0.8 : 1);
-      if (score < bs) {
-        bs = score;
-        best = t;
-      }
-    }
-    if (best) return { x: best.x, z: best.z, target: best.uid };
     return { x: m.x + m.fx * 8, z: m.z + m.fz * 8, target: null };
   }
 

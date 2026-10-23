@@ -120,7 +120,6 @@ export class SceneHud {
       this.weaponEl,
       this.targetEl,
       this.help,
-      h('div.r2-cross'),
       this.toastEl,
     );
     this.tags.dodge.append(this.dodgeBar);

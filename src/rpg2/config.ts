@@ -63,8 +63,11 @@ export const JUMP_V0 = Math.sqrt(2 * GRAVITY * JUMP2.height);
 /** D212: support and steps. Block tops are flat (0°), block sides are walls (90°). */
 export const SUPPORT = {
   maxSlopeDeg: 45,
-  /** Steps up to this height are walked; down to it are stepped (deeper drops are falls). */
-  step: 0.3,
+  /**
+   * Steps up to this height are walked; down to it are stepped (deeper drops are falls). Owner,
+   * update 7: 0.5 m (quarter and half blocks are walked smoothly, no hop; was D212's 0.3 m).
+   */
+  step: 0.5,
   /** Feet may slip this far below a ledge top and still count as above it while in the air. */
   airTol: 0.03,
 };

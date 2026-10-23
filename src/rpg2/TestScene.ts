@@ -31,7 +31,7 @@ import { CombatSystem, FAMILY_NAME, applyTestProfile, arenaEnemies, newCombatDat
 import { CombatView } from './combat/view';
 import { MENTORS, addItem, applyHeroMods, combatBonuses, equip, itemOf, newGrowth, totalArmor, type GrowthData, type MentorId } from './growth/growth';
 import { ARMOR_BY_ID, RARITIES, RARITY, isItemTpl, isWeapon, itemName, type Rarity } from './growth/items';
-import { XP_CAP, addXp } from './growth/levels';
+import { XP_CAP, addXp, xpForLevel } from './growth/levels';
 import { GrowthScreens } from './ui/growthUi';
 import { EconomyScreens } from './ui/economyUi';
 import { EconomyScene } from './economyScene';
@@ -146,6 +146,7 @@ export class TestScene {
       extraInventory: (f, again) => this.eco.goods(f, again),
       goodsDetail: (sel, again) => this.eco.goodsDetail(sel, again),
       itemPrice: (it) => itemBuyPrice(it),
+      trainXp: (v) => this.trainXp(v),
     });
     this.eco = new EconomyScreens({
       get hero() { return self.hero; },
@@ -497,8 +498,11 @@ export class TestScene {
     // facing: the selected target while attacking or holding block / aim / charge, else the way walked
     let fx = m.fx;
     let fz = m.fz;
-    const busy = inReach || inp.held('attack') || inp.held('block') || !!this.combat.data.action || this.combat.charge !== null;
-    if (tgt && (busy || (!st && Math.hypot(tgt.x - m.x, tgt.z - m.z) < 30))) {
+    // owner: the hero turns to the selected target only while an attack, a skill or a held
+    // block / aim / charge actually runs; otherwise he faces the way he walks (or keeps his facing)
+    const c = this.combat;
+    const busy = !!c.data.action || c.blocking || c.aiming || c.charge !== null;
+    if (tgt && busy) {
       const l = Math.hypot(tgt.x - m.x, tgt.z - m.z) || 1;
       fx = (tgt.x - m.x) / l;
       fz = (tgt.z - m.z) / l;
@@ -563,7 +567,8 @@ export class TestScene {
     if (this.attackPress && m.dodging) m.pressAction('attack');
     const attacks0 = c.counters.attacks;
     const sel = c.target(this.selected);
-    this.aim = sel ? { x: sel.x, z: sel.z, target: sel.uid } : c.aimAhead();
+    // owner: never pick a target by itself; without a clicked target attacks go where the hero faces
+    this.aim = sel ? { x: sel.x, z: sel.z, target: sel.uid } : { x: m.x + m.fx * 8, z: m.z + m.fz * 8, target: null };
     c.update(dt, {
       attackHeld: !hero.dead && !m.dodging && (this.input.held('attack') || this.attackPress || this.autoInReach),
       rmbHeld: this.input.held('block'),
@@ -1606,6 +1611,19 @@ export class TestScene {
       const up = addXp(this.hero.progress, v.xp);
       if (up) this.hud.toast(`Новый уровень: ${this.hero.progress.level}`);
     }
+  }
+
+  /**
+   * Test scene training aid (owner's request): the mentor window raises the level or adds XP.
+   * The test scene is the only place it exists; the big world has no such buttons.
+   */
+  trainXp(v: { levels?: number; xp?: number }) {
+    const pr = this.hero.progress;
+    let amount = v.xp ?? 0;
+    if (v.levels) amount += Math.max(0, xpForLevel(Math.min(60, pr.level + v.levels)) - pr.xp);
+    const up = addXp(pr, amount);
+    this.growthChanged();
+    this.hud.toast(up ? `Новый уровень: ${pr.level}` : amount > 0 ? `+${amount} XP` : 'Максимальный уровень');
   }
 
   /** Dev mode only: every material ×n. */

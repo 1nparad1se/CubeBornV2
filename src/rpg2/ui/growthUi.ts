@@ -37,6 +37,8 @@ export interface GrowthHost {
   goodsDetail?(sel: { key: string } | { uid: string }, again: () => void): HTMLElement[];
   /** Stage 4: buy price of an item, for sorting by price. */
   itemPrice?(it: Item): number;
+  /** Test scene: the training aid of the mentor window raises the hero's level / XP. */
+  trainXp?(v: { levels?: number; xp?: number }): void;
 }
 
 /** Inventory search, category filter and sort (stage 4, kept while the window is rebuilt). */
@@ -601,6 +603,12 @@ export class GrowthScreens {
       h('div.r2-iconline', pxIcon(md.teaches === 'magic' ? 'staff' : md.teaches, 30), teachesLine),
       h('div.r2-iconline', pxIcon('refresh', 30), 'Сброс талантов'),
       note('Требуется личное взаимодействие.'),
+      this.s.trainXp ? h('div.r2-box', h('h3.r2-h3', 'Тренировка (тестовая площадка)'),
+        h('div.r2-dim.r2-small', `Уровень ${hero.progress.level} · XP ${hero.progress.xp}`),
+        h('div.r2-hrow',
+          this.btn('+1 уровень', null, () => { this.s.trainXp!({ levels: 1 }); again(); }, true),
+          this.btn('+1000 XP', null, () => { this.s.trainXp!({ xp: 1000 }); again(); }),
+          this.btn('+10 000 XP', null, () => { this.s.trainXp!({ xp: 10000 }); again(); }))) : null,
     );
     let mid: HTMLElement;
     let right: HTMLElement;

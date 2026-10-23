@@ -293,7 +293,8 @@ export class HeroMotor {
         ev.push({ type: 'dodgeEnd', buffered: b });
       }
     }
-    this.stepY *= Math.exp(-30 * dt);
+    // visual easing of a walked step: the body glides up / down a quarter or half block
+    this.stepY *= Math.exp(-11 * dt);
     if (Math.abs(this.stepY) < 1e-3) this.stepY = 0;
     return ev;
   }

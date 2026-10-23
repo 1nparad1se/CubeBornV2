@@ -107,7 +107,7 @@ export function buildTestSite(): TestSite {
   // staircase of 1 m steps (jump each) up to 6 m, north-west of the pillars
   for (let i = 0; i < 6; i++) rect(t, top, 57 + i * 2, 43, 58 + i * 2, 44, PAD + 1 + i);
   markers.push({ id: 'stairs', label: 'Ступени по 1 м', x: 57, z: 45.2, y: PAD });
-  // step strip: 0.25, 0.5, 0.75 m rises (D212: 0.3 m is walked, higher needs a jump)
+  // step strip: 0.25, 0.5, 0.75 m rises (update 7: up to 0.5 m is walked, higher needs a jump)
   rect(t, top, 58, 50, 59, 52, PAD + 0.25);
   rect(t, top, 58, 53, 59, 55, PAD + 0.5);
   rect(t, top, 58, 56, 59, 58, PAD + 0.75);
