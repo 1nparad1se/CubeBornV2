@@ -29,7 +29,8 @@ const STEP = {
  * wall (cliff, rock face); a drop taller than `fall` is a fall.
  */
 export const SLOPE = {
-  maxTan: Math.tan((40 * Math.PI) / 180),
+  /** Owner (update 8, D212): smooth slopes up to 45° are walked, steeper ones are blocked. */
+  maxTan: Math.tan((45 * Math.PI) / 180),
   /** Half blocks (and quarter blocks) are stepped up on foot; a whole block needs a jump. */
   lip: 0.55,
   fall: 0.6,
@@ -40,6 +41,13 @@ export const SLOPE = {
   jump: 1.2,
   doubleJump: 2.2,
 };
+
+/** Surface height of liquid cells over their elevation: water and lava below the banks, the void a chasm. */
+export function liquidLevel(name: string): number {
+  if (/void/.test(name)) return -6;
+  if (/lava/.test(name)) return -0.5;
+  return -0.62;
+}
 
 export class Terrain {
   readonly cell: Uint8Array;
@@ -82,6 +90,15 @@ export class Terrain {
    * water), set by the generator for the water's surface animation.
    */
   flow: Uint8Array | null = null;
+  /**
+   * Smooth ground (owner, update 8): one height per cell corner, (size + 1)² vertices shared by all
+   * neighbouring dry cells, so the surface has no steps (bilinear inside a cell, smooth normals).
+   * Built from `top` by buildSmooth. Water cells take the same vertices, kept just under their
+   * surface at the banks; `hard` cells keep their own flat top with sheer sides (real cliffs).
+   */
+  vert: Float32Array | null = null;
+  /** Cells kept as flat-topped blocks with sheer sides (test-scene pillars and steps), or null. */
+  hard: Uint8Array | null = null;
   constructor(readonly size: number, tall = false) {
     this.cell = new Uint8Array(size * size);
     this.tile = new Uint8Array(size * size);
@@ -106,9 +123,136 @@ export class Terrain {
     return this.inLocal(cx, cz) ? this.elev[cz * this.size + cx] : 0;
   }
 
-  /** The four walking-surface corners of cell i , or null before buildSurface. */
-  private cornersOf(i: number): Float32Array | null {
-    return this.corner ? this.corner.subarray(i * 4, i * 4 + 4) : null;
+  private cbuf = new Float32Array(4);
+  private cbuf2 = new Float32Array(4);
+  /** The four walking-surface corners of cell i (k = dx + 2 dz), or null on flat-block ground. */
+  private cornersOf(i: number, out = this.cbuf): Float32Array | null {
+    if (this.corner) return this.corner.subarray(i * 4, i * 4 + 4);
+    if (!this.vert) return null;
+    for (let k = 0; k < 4; k++) out[k] = this.cornerH(i, k);
+    return out;
+  }
+
+  /** Surface height of a water cell (water and lava sit below the banks, the void is a chasm). */
+  waterLevel(i: number): number {
+    return this.elev[i] + liquidLevel(this.tileNames[this.tile[i]] ?? '');
+  }
+
+  /** Height of corner k (dx + 2 dz) of cell i on the smooth ground. */
+  cornerH(i: number, k: number): number {
+    if (this.corner) return this.corner[i * 4 + k];
+    const V = this.vert;
+    if (!V) return this.top ? this.top[i] : this.elev[i];
+    if (this.hard && this.hard[i]) return this.top![i];
+    const n = this.size;
+    const x = i % n;
+    const z = (i / n) | 0;
+    const v = V[(z + (k >> 1)) * (n + 1) + x + (k & 1)];
+    return isWater(this.cell[i]) ? Math.min(v, this.waterLevel(i) - 0.12) : v;
+  }
+
+  /**
+   * Turns the per-cell heights in `top` into the smooth ground (`vert`): each vertex takes the mean
+   * of the dry cells around it (water beds where it has none), then `iters` passes of smoothing;
+   * a vertex beside water never sinks below that water's surface (banks above the water).
+   */
+  buildSmooth(iters = 2) {
+    const n = this.size;
+    const N = n + 1;
+    const top = this.top!;
+    const V = new Float32Array(N * N);
+    const floor = new Float32Array(N * N).fill(-Infinity);
+    const dry = new Uint8Array(N * N);
+    for (let vz = 0; vz < N; vz++)
+      for (let vx = 0; vx < N; vx++) {
+        let sd = 0, cd = 0, sw = 0, cw = 0, sh = 0, chd = 0;
+        let wl = -Infinity;
+        for (let k = 0; k < 4; k++) {
+          const cx = vx - 1 + (k & 1);
+          const cz = vz - 1 + (k >> 1);
+          if (cx < 0 || cz < 0 || cx >= n || cz >= n) continue;
+          const i = cz * n + cx;
+          if (this.hard && this.hard[i]) {
+            sh += top[i];
+            chd++;
+          } else if (isWater(this.cell[i])) {
+            sw += top[i];
+            cw++;
+            wl = Math.max(wl, this.waterLevel(i));
+          } else {
+            sd += top[i];
+            cd++;
+          }
+        }
+        const v = vz * N + vx;
+        V[v] = cd ? sd / cd : cw ? sw / cw : chd ? sh / chd : 0;
+        if (cd) {
+          dry[v] = 1;
+          if (cw) floor[v] = wl + 0.06;
+          V[v] = Math.max(V[v], floor[v]);
+        }
+      }
+    let A = V;
+    let B = new Float32Array(N * N);
+    for (let it = 0; it < iters; it++) {
+      for (let vz = 0; vz < N; vz++)
+        for (let vx = 0; vx < N; vx++) {
+          const v = vz * N + vx;
+          if (!dry[v]) {
+            B[v] = A[v];
+            continue;
+          }
+          let s = A[v] * 4;
+          let c = 4;
+          if (vx > 0 && dry[v - 1]) (s += A[v - 1]), c++;
+          if (vx < n && dry[v + 1]) (s += A[v + 1]), c++;
+          if (vz > 0 && dry[v - N]) (s += A[v - N]), c++;
+          if (vz < n && dry[v + N]) (s += A[v + N]), c++;
+          B[v] = Math.max(s / c, floor[v]);
+        }
+      [A, B] = [B, A];
+    }
+    this.vert = A;
+  }
+
+  /** Whether cells i and j (neighbours) meet with a step (a sheer face) rather than smooth ground. */
+  stepBetween(i: number, j: number): boolean {
+    if (!this.corner && !this.vert) return true;
+    const n = this.size;
+    const dx = (j % n) - (i % n);
+    const dz = ((j / n) | 0) - ((i / n) | 0);
+    const ca = this.cornersOf(i, this.cbuf);
+    const cb = this.cornersOf(j, this.cbuf2);
+    if (!ca || !cb) return true;
+    const k = (x: number, z: number) => x + 2 * z;
+    let d: number;
+    if (dx && dz) {
+      const vx = dx > 0 ? 1 : 0;
+      const vz = dz > 0 ? 1 : 0;
+      d = Math.abs(ca[k(vx, vz)] - cb[k(1 - vx, 1 - vz)]);
+    } else if (dx) {
+      const ea = dx > 0 ? 1 : 0;
+      d = Math.max(Math.abs(ca[k(ea, 0)] - cb[k(1 - ea, 0)]), Math.abs(ca[k(ea, 1)] - cb[k(1 - ea, 1)]));
+    } else {
+      const ea = dz > 0 ? 1 : 0;
+      d = Math.max(Math.abs(ca[k(0, ea)] - cb[k(0, 1 - ea)]), Math.abs(ca[k(1, ea)] - cb[k(1, 1 - ea)]));
+    }
+    return d > 0.05;
+  }
+
+  /**
+   * A sheer rise (a step, not a slope) on the line from (x, z) along (dx, dz) within `dist`: the
+   * height of the rise above the feet, or 0 when the ground ahead is smooth (no jump needed).
+   */
+  ledgeAhead(x: number, z: number, dx: number, dz: number, dist: number, feet: number): number {
+    let prev = this.groundY(x, z);
+    for (let s = 0.1; s <= dist + 1e-6; s += 0.1) {
+      const g = this.groundY(x + dx * s, z + dz * s);
+      // steeper than ~70° over a tenth of a block: a face, not a slope
+      if (g - prev > 0.28) return Math.max(0, this.groundY(x + dx * dist, z + dz * dist) - feet);
+      prev = g;
+    }
+    return 0;
   }
 
   /** Ground height (world y) under (x, z): the sloped surface (bilinear in the cell's corners). */
@@ -120,7 +264,7 @@ export class Terrain {
     const cz = Math.floor(z);
     if (!this.inLocal(cx, cz)) return 0;
     const i = cz * this.size + cx;
-    if (this.top) return this.top[i];
+    if (this.top && !this.vert) return this.top[i];
     const c = this.cornersOf(i);
     if (!c) return this.elev[i];
     const fx = x - cx;
@@ -137,7 +281,7 @@ export class Terrain {
   private slopeL(x: number, z: number): [number, number] {
     const cx = Math.floor(x);
     const cz = Math.floor(z);
-    if (!this.inLocal(cx, cz) || this.top) return [0, 0];
+    if (!this.inLocal(cx, cz) || (this.top && !this.vert)) return [0, 0];
     const c = this.cornersOf(cz * this.size + cx);
     if (!c) return [0, 0];
     const fx = x - cx;
@@ -147,19 +291,19 @@ export class Terrain {
 
   /** Height of the walking surface at the centre of cell i. */
   centerY(i: number): number {
-    if (this.top) return this.top[i];
+    if (this.top && !this.vert) return this.top[i];
     const c = this.cornersOf(i);
     return c ? (c[0] + c[1] + c[2] + c[3]) * 0.25 : this.elev[i];
   }
 
   /** Lowest / highest corner of cell i (shots stop at the highest). */
   minCorner(i: number): number {
-    if (this.top) return this.top[i];
+    if (this.top && !this.vert) return this.top[i];
     const c = this.cornersOf(i);
     return c ? Math.min(c[0], c[1], c[2], c[3]) : this.elev[i];
   }
   maxCorner(i: number): number {
-    if (this.top) return this.top[i];
+    if (this.top && !this.vert) return this.top[i];
     const c = this.cornersOf(i);
     return c ? Math.max(c[0], c[1], c[2], c[3]) : this.elev[i];
   }
@@ -219,9 +363,9 @@ export class Terrain {
     const dist = dx && dz ? Math.SQRT2 : 1;
     if (Math.abs(ha - hb) > SLOPE.maxTan * dist + 0.04) return false;
     // block ground: neighbours join when the step between their tops can be walked
-    if (this.top) return Math.abs(ha - hb) <= SLOPE.lip;
-    const ca = this.cornersOf(i);
-    const cb = this.cornersOf(j);
+    if (this.top && !this.vert) return Math.abs(ha - hb) <= SLOPE.lip;
+    const ca = this.cornersOf(i, this.cbuf);
+    const cb = this.cornersOf(j, this.cbuf2);
     if (!ca || !cb) return Math.abs(this.elev[i] - this.elev[j]) <= 1;
     // the shared edge (or corner) must meet without a step
     const k = (x: number, z: number) => x + 2 * z;
@@ -450,7 +594,7 @@ export class Terrain {
     if (!this.inLocal(cx, cz)) return true;
     const i = cz * this.size + cx;
     // terrain rising above the shot's height (a hill or cliff face) stops it
-    if ((this.corner || this.top ? this.maxCorner(i) : this.elev[i]) > y) return true;
+    if ((this.corner || this.top || this.vert ? this.maxCorner(i) : this.elev[i]) > y) return true;
     const c = this.cell[i];
     if (c === CELL.wall) return true;
     if (c !== CELL.solid) return false;

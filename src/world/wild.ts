@@ -575,24 +575,10 @@ export function generateWild(n = WILD_SIZE): WildWorld {
       }
       raw[k] = h;
     }
-  // blocks: flat tops cut into steps by steepness (quarter blocks on gentle ground, half blocks
-  // on slopes, whole blocks on steep mountain sides), a little jitter for ragged terraces
+  // smooth ground (owner, update 8): the land keeps its own height (no block steps); the cell
+  // heights become a smooth surface at the end (Terrain.buildSmooth)
   const top = new Float32Array(N2);
-  for (let z = 0; z < n; z++)
-    for (let x = 0; x < n; x++) {
-      const k = z * n + x;
-      const h = raw[k];
-      if (kind[k] === 1) {
-        top[k] = Math.floor(h * 4) / 4;
-        continue;
-      }
-      const gx = raw[z * n + Math.min(n - 1, x + 1)] - raw[z * n + Math.max(0, x - 1)];
-      const gz = raw[Math.min(n - 1, z + 1) * n + x] - raw[Math.max(0, z - 1) * n + x];
-      const steep = Math.hypot(gx, gz) * 0.5;
-      const q = bankBand[k] ? 0.25 : steep < 0.4 ? 0.25 : steep < 0.9 ? 0.5 : 1;
-      const jt = bankBand[k] ? 0 : (hash2(x, z, 507) - 0.5) * 0.5 * q;
-      top[k] = Math.max(0, (bankBand[k] ? Math.floor : Math.round)((h + jt) / q) * q);
-    }
+  for (let k = 0; k < N2; k++) top[k] = Math.max(0, raw[k]);
   // ------------------------------------------------------------------ cells and blocks
   const stats = { riverCells: 0, lakeCells: 0, oceanCells: 0, swampCells: 0, roadCells: 0, waterfalls: 0, land: 0, ms: 0 };
   const g = {
@@ -772,7 +758,7 @@ export function generateWild(n = WILD_SIZE): WildWorld {
         if (d > clear.r + 6 || isWaterCell(t.cell[k])) continue;
         // level inside, easing into the land around it
         const w = smooth(clear.r, clear.r + 6, d);
-        top[k] = Math.round((base * (1 - w) + top[k] * w) * 4) / 4;
+        top[k] = base * (1 - w) + top[k] * w;
         t.elev[k] = Math.floor(top[k]);
         t.shadeElev[k] = Math.round(top[k] * 4) & 255;
         if (d < clear.r) t.tile[k] = g.grass;
@@ -788,6 +774,9 @@ export function generateWild(n = WILD_SIZE): WildWorld {
   // the floor under the trees: what falls from them (leaves, needles, twigs), roots by the
   // big trunks, moss and peat under the swamp trees
   forestFloor(t, n, trees, roads.mask, g, sRain);
+  // the smooth ground over the final heights; trees stand on it
+  t.buildSmooth(1);
+  for (let i = 0; i < trees.count; i++) trees.y[i] = t.groundY(trees.x[i], trees.z[i]);
   stats.ms = Math.round((typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0);
   return { map: WILD_MAP, terrain: t, spawn, dummies, trees, coarse: { m, biome: BIO, temp: TEMP, rain: RAIN, flow, level: fill, down, river: RIVER }, stats };
 }

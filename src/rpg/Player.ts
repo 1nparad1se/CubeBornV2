@@ -237,7 +237,9 @@ export class RpgPlayer {
       const sz = this.z + fz * ahead + fx * this.radius * side;
       top = Math.max(top, this.w.terrain.groundY(sx, sz));
     }
-    const rise = top - this.y;
+    // smooth slopes are walked, never hopped: only a sheer step ahead takes a jump
+    const ledge = this.w.terrain.ledgeAhead(this.x, this.z, fx, fz, ahead, this.y);
+    const rise = ledge > 0 ? top - this.y : 0;
     if (this.jumpPhase === 'ground' && rise > SLOPE.lip + 0.01 && rise <= SLOPE.doubleJump) {
       this.requestJump();
       this.climbTo = rise > SLOPE.jump ? top : -Infinity;

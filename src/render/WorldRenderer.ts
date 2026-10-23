@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import type { MapDef } from '../data/types';
-import { CELL, isWater, type Terrain } from '../game/Terrain';
+import { CELL, isWater, liquidLevel, type Terrain } from '../game/Terrain';
 import { hash2, noise2 } from '../core/Rng';
 import { ATLAS_VARIANTS, BUSH_TOP, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_BUSH, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { bushSpots } from './flora';
@@ -42,12 +42,6 @@ function waterLook(name: string): { kind: number; depth: number } {
   return { kind, depth: m ? Number(m[2]) : 0 };
 }
 
-/** Surface height of liquid cells: water and lava sit below the banks, the void is a chasm. */
-function liquidLevel(name: string): number {
-  if (/void/.test(name)) return -6;
-  if (/lava/.test(name)) return -0.5;
-  return -0.62;
-}
 
 type SpriteW = [number, number][];
 interface FoliageRule {
@@ -333,7 +327,7 @@ export class WorldRenderer {
 
     // ambient occlusion on the ground from taller neighbours: cliff feet, walls
     const top = new Float32Array(n * n);
-    const C0 = t.corner || t.top;
+    const C0 = t.corner || t.top || t.vert;
     for (let i = 0; i < n * n; i++) {
       const c = t.cell[i];
       top[i] = C0 ? t.centerY(i) : t.elev[i];
@@ -401,6 +395,7 @@ export class WorldRenderer {
       sh.uniforms.uWLin = { value: wtex.lin };
       sh.uniforms.uWBody = { value: wtex.body };
       sh.uniforms.uBeds = { value: beds ? 1 : 0 };
+      sh.uniforms.uSmooth = { value: t.vert ? 1 : 0 };
       sh.uniforms.uAtlas = { value: atlas };
       sh.uniforms.uAO = { value: ao };
       sh.uniforms.uTime = u.uTime;
@@ -441,6 +436,7 @@ uniform sampler2D uInfo;
 uniform float uSize;
 uniform float uTiles;
 uniform float uBeds;
+uniform float uSmooth;
 vec3 gEmit = vec3(0.0);
 ${GLSL_NOISE}
 ${GLSL_WATER}
@@ -593,6 +589,8 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     vec4 nz = cellAt(cell + vec2(0.0, local.y < 0.5 ? -1.0 : 1.0));
     float tx = tileOf(nx);
     float tz = tileOf(nz);
+    // smooth ground: neighbours always meet on one surface (no step between them)
+    if (uSmooth > 0.5) { nx.a = cd.a; nz.a = cd.a; }
     // two meadow grounds meet in a wide colour blend (stepped per texture pixel, a little noisy)
     // instead of a ragged seam; other neighbours keep the ragged pixel border
     bool gMe = grassOf(tile);
@@ -627,6 +625,8 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     float m = vnoise(xz * 0.07) * 0.6 + vnoise(xz * 0.23) * 0.4;
     col *= 0.9 + m * 0.2;
     col *= texture2D(uAO, xz / uSize).r;
+    // smooth slopes turned away from the sun stay readable (like the old terrace sides)
+    gEmit = col * 0.32 * smoothstep(0.06, 0.35, tilt);
     float spark = step(0.985, h21(floor(pxc * 16.0) + cell * 17.0 + floor(uTime * 2.0)));
     if (ua == 2.0) gEmit = col * (0.85 + 0.15 * sin(uTime * 2.0 + cell.x * 0.7)) + vec3(1.0, 0.8, 0.3) * spark * 0.6;
     if (ua == 3.0) {
@@ -670,6 +670,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
     // banks, waterfalls); raised geometry goes into its own mesh so it can cast shadows
     const per = Math.ceil(n / GCHUNK);
     const C = t.corner;
+    const smooth = !!t.vert;
     const liq = (i: number) => isWater(t.cell[i]);
     /** Height of corner k (dx + 2 dz) of cell (x, z): water flat at its level, the edge skirt below. */
     const ch = (x: number, z: number, k: number): number => {
@@ -677,16 +678,20 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
       if (x < 0 || z < 0 || x >= n || z >= n) return t.shadeElev ? ch(Math.max(0, Math.min(n - 1, x)), Math.max(0, Math.min(n - 1, z)), k) - 6 : SKIRT;
       const i = z * n + x;
       // water cells: the bed when it is known (the water layer draws the surface), else the surface
+      if (smooth) return t.cornerH(i, k);
       if (liq(i)) return beds ? t.top![i] : level[i];
       return C ? C[i * 4 + k] : t.top ? t.top[i] : level[i];
     };
     // per-cell surface gradient, for smooth vertex normals across linked cells
     const grad = new Float32Array(n * n * 2);
-    if (C)
+    if (C || smooth)
       for (let i = 0; i < n * n; i++) {
-        if (liq(i)) continue;
-        grad[i * 2] = (C[i * 4 + 1] - C[i * 4] + C[i * 4 + 3] - C[i * 4 + 2]) * 0.5;
-        grad[i * 2 + 1] = (C[i * 4 + 2] - C[i * 4] + C[i * 4 + 3] - C[i * 4 + 1]) * 0.5;
+        if (liq(i) && !smooth) continue;
+        const x = i % n;
+        const z = (i / n) | 0;
+        const c0 = ch(x, z, 0), c1 = ch(x, z, 1), c2 = ch(x, z, 2), c3 = ch(x, z, 3);
+        grad[i * 2] = (c1 - c0 + c3 - c2) * 0.5;
+        grad[i * 2 + 1] = (c2 - c0 + c3 - c1) * 0.5;
       }
     const vnorm = (x: number, z: number, k: number, out: number[]) => {
       const h = ch(x, z, k);
@@ -700,7 +705,7 @@ bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         const az = vz - 1 + (j >> 1);
         if (ax < 0 || az < 0 || ax >= n || az >= n) continue;
         const a = az * n + ax;
-        if (liq(a) || Math.abs(ch(ax, az, 3 - j) - h) > 1e-3) continue;
+        if ((liq(a) && !smooth) || Math.abs(ch(ax, az, 3 - j) - h) > 1e-3) continue;
         gx += grad[a * 2];
         gz += grad[a * 2 + 1];
         c++;

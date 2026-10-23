@@ -1,4 +1,4 @@
-import { fbm2, hash2, noise2 } from '../core/Rng';
+import { fbm2, noise2 } from '../core/Rng';
 import type { MapDef } from '../data/types';
 import { CELL, Terrain } from '../game/Terrain';
 
@@ -113,18 +113,11 @@ function landHeight(x: number, z: number, n: number): number {
 }
 
 /**
- * Block height of a cell: the land height cut into steps whose size follows the steepness of the
- * ground — quarter blocks on gentle hills, half blocks on slopes, whole blocks on steep mountain
- * sides — with a little jitter so the terraces have ragged, natural edges.
+ * Ground height at the centre of a cell (owner, update 8: smooth ground, no block steps; the
+ * cell heights become one smooth surface in Terrain.buildSmooth).
  */
 export function reliefHeight(x: number, z: number, n: number): number {
-  const h = landHeight(x + 0.5, z + 0.5, n);
-  const gx = landHeight(x + 1.5, z + 0.5, n) - landHeight(x - 0.5, z + 0.5, n);
-  const gz = landHeight(x + 0.5, z + 1.5, n) - landHeight(x + 0.5, z - 0.5, n);
-  const steep = Math.hypot(gx, gz) * 0.5;
-  const q = steep < 0.32 ? 0.25 : steep < 0.8 ? 0.5 : 1;
-  const jitter = (hash2(x, z, 507) - 0.5) * 0.5 * q;
-  return Math.max(0, Math.round((h + jitter) / q) * q);
+  return landHeight(x + 0.5, z + 0.5, n);
 }
 
 export function buildTestMap(): Terrain {
@@ -139,13 +132,18 @@ export function buildTestMap(): Terrain {
       if (Math.min(x, z, n - 1 - x, n - 1 - z) < RIM) t.cell[i] = CELL.wall;
       height[i] = reliefHeight(x, z, n);
     }
-  // the obstacles stand on small level pads, one block above them
+  // the obstacles stand on small level pads, one block above them (sheer-sided blocks)
+  t.hard = new Uint8Array(n * n);
   for (const [x0, z0, x1, z1] of OBSTACLES) {
     const pad = height[Math.round((z0 + z1) / 2) * n + Math.round((x0 + x1) / 2)];
     for (let z = z0 - 4; z <= z1 + 4; z++) for (let x = x0 - 4; x <= x1 + 4; x++) height[z * n + x] = pad;
-    for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) height[z * n + x] = pad + 1;
+    for (let z = z0; z <= z1; z++)
+      for (let x = x0; x <= x1; x++) {
+        height[z * n + x] = pad + 1;
+        t.hard[z * n + x] = 1;
+      }
   }
-  // every cell is one block with a flat top at its own height
+  // the cell heights, made into one smooth surface below
   t.top = height;
   t.shadeElev = new Uint8Array(n * n);
   for (let i = 0; i < n * n; i++) {
@@ -153,5 +151,6 @@ export function buildTestMap(): Terrain {
     // the ground shader's level channel, in quarter blocks (same-level blending)
     t.shadeElev[i] = Math.round(height[i] * 4) & 255;
   }
+  t.buildSmooth(2);
   return t;
 }

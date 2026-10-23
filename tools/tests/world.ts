@@ -45,26 +45,29 @@ const place = (w: World, x: number, z: number) => {
   ok(TEST_MAP.size === 100 && t.size === 100, 'test map is exactly 100 × 100');
   ok(w.dummies.length === 3 && DUMMIES.length === 3, 'exactly three dummies');
   ok(OBSTACLES.every(([x0, z0, x1, z1]) => Math.min(x0, z0, 99 - x1, 99 - z1) <= 16), 'obstacles stand near the edges');
-  // relief: blocks of whole, half and quarter heights; hills, lowlands and mountains
+  // relief (update 8): one smooth surface, gentle and steep slopes; hills, lowlands and mountains
   const H = (x: number, z: number) => t.centerY(z * 100 + x);
   const steps = new Set<number>();
   let lo = 99;
   let hi = 0;
-  let quarters = true;
+  let smoothOk = true;
   for (let z = 4; z < 96; z++)
     for (let x = 4; x < 96; x++) {
       const h = H(x, z);
       lo = Math.min(lo, h);
       hi = Math.max(hi, h);
-      if (Math.abs(h * 4 - Math.round(h * 4)) > 1e-4) quarters = false;
+      const i = z * 100 + x;
+      const soft = (j: number) => t.cell[j] === CELL.floor && !t.hard?.[j];
+      if (soft(i) && soft(i + 1) && t.stepBetween(i, i + 1)) smoothOk = false;
+      if (soft(i) && soft(i + 100) && t.stepBetween(i, i + 100)) smoothOk = false;
       const d = Math.abs(h - H(x + 1, z));
-      if (d > 0) steps.add(Math.round(d * 4) / 4);
+      steps.add(d < 0.05 ? 0 : d < 0.3 ? 1 : d < 0.7 ? 2 : 3);
     }
-  ok(quarters, 'every block top stands at a multiple of a quarter block');
-  ok(steps.has(0.25) && steps.has(0.5) && steps.has(1), 'steps of 1/4, 1/2 and 1 block all occur');
+  ok(smoothOk, 'the ground is one smooth surface: neighbouring cells meet without a step');
+  ok(steps.has(0) && steps.has(1) && steps.has(2), 'flat ground, gentle and steeper slopes all occur');
   ok(lo <= 0.5 && hi >= 6, `lowlands down to ${lo} and mountains up to ${hi} blocks`);
   const base = H(SPAWN.x, SPAWN.z);
-  ok(DUMMIES.every((d) => H(Math.floor(d.x), Math.floor(d.z)) === base) && H(51, 55) === base, `the training clearing (spawn and dummies) is level at ${base}`);
+  ok(DUMMIES.every((d) => Math.abs(H(Math.floor(d.x), Math.floor(d.z)) - base) < 0.05) && Math.abs(H(51, 55) - base) < 0.05, `the training clearing (spawn and dummies) is level at ${base}`);
   // walking across the relief by a click: always standing on the blocks, never in or above them
   const reach = t.computeReach(SPAWN.x, SPAWN.z);
   let goal = -1;
@@ -160,11 +163,17 @@ const place = (w: World, x: number, z: number) => {
   const n = terrain.size;
   const base = terrain.top![56 * n + 44];
   const raise = (x0: number, z0: number, h: number) => {
-    for (let z = z0; z < z0 + 3; z++) for (let x = x0; x < x0 + 3; x++) terrain.top![z * n + x] = base + h;
+    for (let z = z0; z < z0 + 3; z++)
+      for (let x = x0; x < x0 + 3; x++) {
+        terrain.top![z * n + x] = base + h;
+        terrain.hard![z * n + x] = 1;
+      }
   };
   raise(44, 56, 1);
   raise(50, 59, 2);
   raise(55, 56, 3);
+  // the raised blocks are sheer-sided (real steps) on the smooth ground
+  terrain.buildSmooth(2);
   const mk = () => new World(NullFx, new GameClock(), 'human', wield('sword_recruit'), trainingSite(terrain));
   const go = (w: World, x: number, z: number, sec: number) => {
     w.ctl.clickMove = { x, z };
@@ -201,7 +210,7 @@ const place = (w: World, x: number, z: number) => {
   ok(e.player.y === base + 1, 'part of the feet on the block: the hero stands on its edge');
   e.player.z = 59.6;
   run(e, 0.8);
-  ok(e.player.y === base && !e.player.airborne, 'off the edge entirely: down onto the ground below');
+  ok(Math.abs(e.player.y - e.terrain.groundY(e.player.x, e.player.z)) < 0.12 && e.player.y < base + 0.3 && !e.player.airborne, `off the edge entirely: down onto the ground below (y ${(e.player.y - base).toFixed(3)})`);
 }
 
 // ---------------------------------------------------------------- 1-block obstacle
@@ -225,7 +234,7 @@ const place = (w: World, x: number, z: number) => {
   w.ctl.moveZ = 0;
   ok(w.player.z < z0, `jumping clears the 1-block obstacle (z ${w.player.z.toFixed(2)} past ${z0})`);
   ok(onTop || w.player.z < z0, 'passes over the block, never through its side');
-  ok(!w.player.airborne && w.player.y === pad, 'correct landing on the far side');
+  ok(!w.player.airborne && Math.abs(w.player.y - w.terrain.groundY(w.player.x, w.player.z)) < 0.12 && Math.abs(w.player.y - pad) < 0.3, `correct landing on the far side (y ${(w.player.y - pad).toFixed(3)})`);
 }
 
 // ---------------------------------------------------------------- dummies take damage and stay

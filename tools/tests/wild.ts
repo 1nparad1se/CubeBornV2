@@ -65,20 +65,25 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
       peak = Math.max(peak, top[k]);
     }
   ok(count > 20000 && peak > SEA + 38 && peak < SEA + 60, `mountains: ${count} blocks above ${SEA + 22}, peaks up to ${peak} (low, rounded ranges)`);
-  // a gentle land: most neighbouring blocks are level or a quarter step apart, few whole blocks
+  // a gentle land on one smooth surface (update 8, was: few whole-block steps): neighbouring dry
+  // cells meet without a step, few slopes are steeper than the 45° the hero can walk
   let pairs = 0;
-  let whole = 0;
+  let steep = 0;
+  let seams = 0;
   let sum = 0;
   for (let z = 1; z < n - 1; z += 2)
     for (let x = 1; x < n - 1; x += 2) {
       const k = z * n + x;
       if (t.cell[k] !== CELL.floor || t.cell[k + 1] !== CELL.floor) continue;
-      const d = Math.abs(top[k] - top[k + 1]);
+      const [gx, gz] = t.slopeAt(x + 0.5, z + 0.5);
+      const g = Math.hypot(gx, gz);
       pairs++;
-      sum += d;
-      if (d >= 1) whole++;
+      sum += g;
+      if (g > 1) steep++;
+      if (t.stepBetween(k, k + 1) || (t.cell[k + n] === CELL.floor && t.stepBetween(k, k + n))) seams++;
     }
-  ok(whole / pairs < 0.05 && sum / pairs < 0.2, `gentle relief: ${((whole / pairs) * 100).toFixed(1)} % whole-block steps, ${(sum / pairs).toFixed(2)} blocks on average`);
+  ok(seams === 0, `smooth ground: no step between neighbouring dry cells (${seams})`);
+  ok(steep / pairs < 0.05 && sum / pairs < 0.2, `gentle relief: ${((steep / pairs) * 100).toFixed(1)} % of the land steeper than 45°, slope ${(sum / pairs).toFixed(2)} on average`);
   // the biggest ranges are elongated: their extent is long compared with their area
   const seen = new Uint8Array(n * n);
   const ranges: { area: number; len: number }[] = [];
@@ -162,6 +167,12 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
       const surf = t.elev[k] - 0.62;
       if (top[k] > surf - 0.2) dry++;
       for (const o of [1, -1, n, -n]) if (t.cell[k + o] === CELL.floor && top[k + o] < surf) hanging++;
+      // the smooth surface too: the bank's corners on the shared edge stand above the water
+      for (const [o, ka, kb] of [[1, 0, 2], [-1, 1, 3], [n, 0, 1], [-n, 2, 3]]) {
+        const j = k + o;
+        if (t.cell[j] !== CELL.floor) continue;
+        if (Math.min(t.cornerH(j, ka), t.cornerH(j, kb)) < surf) hanging++;
+      }
       const nm = t.tileNames[t.tile[k]];
       kinds.set(nm, (kinds.get(nm) ?? 0) + 1);
     }
@@ -334,7 +345,7 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   for (let z = Math.floor(w.spawn.z) - 60; z < w.spawn.z + 60; z++)
     for (let x = Math.floor(w.spawn.x) - 60; x < w.spawn.x + 60; x++) if (t.tileNames[t.tile[z * n + x]] === 'dirt_packed') near++;
   ok(near > 50, `a road starts near the spawn (${near} blocks of packed earth within 60)`);
-  // roads are walked: along a road the ground never steps more than half a block
+  // roads are walked: along a road the smooth ground never rises more than half a block per block
   let steps = 0;
   let steep = 0;
   for (let z = 1; z < n - 1; z++)
@@ -346,7 +357,7 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
         const j = k + o;
         if (t.cell[j] !== CELL.floor || !roadTiles.has(t.tileNames[t.tile[j]])) continue;
         steps++;
-        if (Math.abs(top[k] - top[j]) > 0.5) steep++;
+        if (Math.abs(t.centerY(k) - t.centerY(j)) > 0.5) steep++;
       }
     }
   ok(steep / steps < 0.01, `roads are gentle: ${steep} of ${steps} road steps over half a block`);
