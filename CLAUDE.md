@@ -32,7 +32,7 @@ Read this before changing the game. It holds the decisions the owner has already
 - Saves must not break. When the save format changes, bump the version and migrate.
 - Controls: no walking keys (no WASD). Left click on the ground walks there (pathfinding over the relief); left click on a dummy selects it, a second left click on it starts the auto attack; a ground click stops the attack.
 - Camera: the right button held and dragged orbits the hero (full circle) and tilts it between 25° and 50°; it never passes into the terrain.
-- Relief: every cell is a flat-topped block at a multiple of 1/4 block; quarter and half steps are walked, a whole block needs a jump.
+- Relief (owner, update 8; replaces «every cell is a flat-topped block at 1/4 steps»): the ground is one smooth heightfield. `Terrain.buildSmooth` turns the per-cell heights (`top`) into shared corner heights (`vert`, bilinear inside a cell, smooth normals); steep ground is a smooth rock slope (the ground shader paints soil, then stone, by tilt), never a vertical step. Slopes up to 45° are walked (D212), steeper ones are blocked for walking and paths; smooth ground never makes the hero jump. Only cells marked `hard` (test-scene pillars, steps, obstacles) keep a flat top with sheer sides; jumps and falls happen there. Water cells share the same corners, held just under the surface at the banks; bank corners never lie below the water.
 - Two-handed weapons are held with both hands on the handle (idle, run and attack).
 - Maps and the minimap are turned like the camera: up on the screen is up on the map.
 - Grass and bushes are decor: no wind (they stand still), they only bend away from the hero, they never block movement.
@@ -40,12 +40,14 @@ Read this before changing the game. It holds the decisions the owner has already
 - World generation follows cause and effect: ranges shape the relief, the relief steers the rivers (always downhill to the sea), water and climate (temperature by latitude and height, rain from the west wind with rain shadows) choose biomes, blocks and trees. Keep it that way; `tools/tests/wild.ts` checks it.
 - Trees are solid at the trunk (one block); crowns are visual. Near models use 1/6-block leaf and trunk cubes and 1/8-block branch cubes (ragged crowns with gaps, still cubic); keep the species heights. Trees are never one flat colour: the tree material paints a 1/16-block pixel texture (leaves, bark, rings) over the faces. Detail steps down 1/6 → 1/3 → 1/2 → 1 block at 18 / 34 / 56 blocks, all from one shape description.
 - Ground blocks live in `src/world/blocks.ts`: the 46 reference blocks plus 10 mixed blocks for the transitions, each a multi-colour pixel pattern. Borders between grounds use the mixed blocks; the choice of block follows cause and effect (rock by slope and range, litter by the tree above it, silt under water).
-- Relief stays gentle: ranges about 40–50 blocks over the sea, few whole-block steps (the test checks it).
+- Relief stays gentle: ranges about 40–50 blocks over the sea, few slopes steeper than 45°, no step between neighbouring dry cells (the test checks it).
 - Bushes (`src/render/bushModels.ts`): 20 voxel species, mostly very small (0.15) and small (0.3 block), about a third medium (0.5); decor like the grass.
 - Roads and paths (`src/world/roads.ts`) join places along the easiest ways with smooth curves; their surface follows the land they cross.
 - Fog is a player setting (on/off, density, start); keep distant things fading into it rather than popping.
 - Water is a see-through layer over a real bed (`src/render/water.ts`): the deeper, the darker and less see-through. Nine kinds (plain, deep, shallow, rapids, waterfall, calm lake, swamp, sea, frozen); no glossy highlights. Banks never lie below the water beside them.
-- Jumps: the hero lands on a block as soon as the feet reach its top; paths may climb one block with a jump and two with a double jump, never more.
+- Jumps: the hero lands as soon as the feet reach the ground; paths may climb a real (hard) step of one block with a jump and two with a double jump, never more; on smooth ground paths never jump.
+- Colours (owner, update 8, reference `docs/references/style/muted-colors.png`): a soft, slightly cool, low-saturation look on every quality setting: a CSS grade on the 3D canvas (saturation, contrast, lifted blacks) plus a cool veil (`.grade-tint`), set by «Насыщенность цвета» (default 75 %, 100 % = original colours); grass, moss and water ground textures are toned down in the atlas. The interface is not graded.
+- Maps zoom (update 8): the world map (M) zooms with the mouse wheel around the cursor and pans by dragging (double click resets), in the main game and in the test scene.
 
 ## RPG systems (GDD v1.2)
 - The spec: [docs/gdd/RPG_AI_Implementation_Package.md](docs/gdd/RPG_AI_Implementation_Package.md); what is built and the chosen parameters: [docs/rpg2/IMPLEMENTATION.md](docs/rpg2/IMPLEMENTATION.md).
