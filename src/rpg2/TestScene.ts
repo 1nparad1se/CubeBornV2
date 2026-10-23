@@ -116,6 +116,7 @@ export class TestScene {
   selected: string | null = null;
   autoAttack = false;
   private autoInReach = false;
+  private lastHp = Infinity;
   private sprintOn = false;
   private steerHeld = false;
   private steerT = 0;
@@ -664,6 +665,10 @@ export class TestScene {
     p.vz = m.vz;
     p.stepY = m.stepY;
     p.jumpPhase = m.mode === 'air' ? 'air' : 'ground';
+    // a flinch on every hit taken
+    if (this.hero.hp < this.lastHp - 0.01) p.hurtT = 0;
+    else p.hurtT += dt;
+    this.lastHp = this.hero.hp;
     p.jumpV = m.vy;
     const sp = m.speed;
     p.moving = sp > 0.3;

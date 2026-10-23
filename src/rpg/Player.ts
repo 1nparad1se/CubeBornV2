@@ -65,6 +65,8 @@ export class RpgPlayer {
   airJumps = 0;
   /** Seconds since the double jump started (renderer: somersault), -1 when none is playing. */
   airJumpT = -1;
+  /** Seconds since the hero was last hit (the model plays a flinch); large when not hit lately. */
+  hurtT = 99;
   /** Visual offset easing a step up or down (renderer draws the body at y + stepY). */
   stepY = 0;
   /** Walking a path without getting anywhere: time and the spot it was measured from. */

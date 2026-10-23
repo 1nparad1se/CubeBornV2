@@ -107,6 +107,7 @@ export class RpgEntities {
       flip: p.airJumpT >= 0 ? p.airJumpT / JUMP.flipTime : 0,
       move,
       combat: this.combatT > 0,
+      hurt: p.hurtT,
     });
     // dummies wobble when hit
     w.dummies.forEach((dm, i) => this.dummies[i].wobble(dm.wobble, dm.wobX, dm.wobZ, w.time));

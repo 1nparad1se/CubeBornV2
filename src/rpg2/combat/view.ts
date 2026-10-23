@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { HumanModel } from '../../render/human/HumanModel';
 import { ENEMY_BY_ID, SPELL_BY_ID } from './data';
 import { enemyDef, type EnemyState } from './enemy';
 import type { CombatSystem, ProjState, ZoneState } from './system';
@@ -43,9 +44,21 @@ interface WolfParts {
   tex: THREE.CanvasTexture;
   tele: THREE.Group;
   deadT: number;
+  /** Bandits: the shared character model (the wolf parts above are unused then). */
+  human?: HumanModel;
+  /** Animation memory: last HP (hit flinch), time since the hit, the last windup, its follow-through, last position. */
+  lastHp: number;
+  hurtT: number;
+  wasWindup: { kind: 'normal' | 'special' } | null;
+  afterT: number;
+  px: number;
+  pz: number;
+  vx: number;
+  vz: number;
+  fightT: number;
 }
 
-export function wolfModel(color: number, scale: number, seed: number): Omit<WolfParts, 'label' | 'labelKey' | 'canvas' | 'tex' | 'tele' | 'deadT'> {
+export function wolfModel(color: number, scale: number, seed: number): Pick<WolfParts, 'root' | 'body' | 'legs' | 'head' | 'tail'> {
   const fur = new THREE.MeshLambertMaterial({ map: furTexture(color, seed) });
   const light = new THREE.MeshLambertMaterial({ map: furTexture(new THREE.Color(color).offsetHSL(0, 0, 0.18).getHex(), seed + 7) });
   const dark = new THREE.MeshLambertMaterial({ color: 0x1c1a18 });
@@ -104,7 +117,7 @@ export function wolfModel(color: number, scale: number, seed: number): Omit<Wolf
 }
 
 /** A cubic humanoid (bandits): the same animated parts as the wolf (legs swing, «tail» = the sword). */
-export function humanModel(color: number, scale: number): Omit<WolfParts, 'label' | 'labelKey' | 'canvas' | 'tex' | 'tele' | 'deadT'> {
+export function humanModel(color: number, scale: number): Pick<WolfParts, 'root' | 'body' | 'legs' | 'head' | 'tail'> {
   const cloth = new THREE.MeshLambertMaterial({ color });
   const skin = new THREE.MeshLambertMaterial({ color: 0xc89070 });
   const pants = new THREE.MeshLambertMaterial({ color: 0x3a3228 });
@@ -194,7 +207,17 @@ export class CombatView {
     let w = this.wolves.get(e.uid);
     if (w) return w;
     const d = enemyDef(e);
-    const m = d.model === 'human' ? humanModel(d.color, d.scale) : wolfModel(d.color, d.scale, e.uid.length * 97 + d.hp);
+    let human: HumanModel | undefined;
+    let m: Pick<WolfParts, 'root' | 'body' | 'legs' | 'head' | 'tail'>;
+    if (d.model === 'human') {
+      // bandits share the hero's character model: a red-brown shirt, dark trousers and hood-dark hair, a sword
+      const c = new THREE.Color(d.color);
+      human = new HumanModel('human', true, { tint: { shirt: [c.r * 1.6, c.g * 1.6, c.b * 1.6], trousers: [0.55, 0.5, 0.48], hair: [0.35, 0.3, 0.28], boots: [0.7, 0.65, 0.6] }, wear: [{ set: 'scout', slots: ['head'] }], height: d.scale });
+      human.setEquip({ main: 'vox:ref_sword', off: null, head: null, hands: null, feet: null, body: null });
+      const g = new THREE.Group();
+      g.add(human.root);
+      m = { root: g, body: g, legs: [], head: g, tail: new THREE.Mesh() };
+    } else m = wolfModel(d.color, d.scale, e.uid.length * 97 + d.hp);
     const canvas = document.createElement('canvas');
     canvas.width = 256;
     canvas.height = 64;
@@ -206,7 +229,7 @@ export class CombatView {
     const tele = cubeRing(d.special?.radius ?? 1, 0xff3020, 0.85);
     tele.visible = false;
     this.root.add(m.root, label, tele);
-    w = { ...m, label, labelKey: '', canvas, tex, tele, deadT: 0 };
+    w = { ...m, label, labelKey: '', canvas, tex, tele, deadT: 0, human, lastHp: e.hp, hurtT: 9, wasWindup: null, afterT: 9, px: e.x, pz: e.z, vx: 0, vz: 0, fightT: 0 };
     this.wolves.set(e.uid, w);
     return w;
   }
@@ -236,6 +259,61 @@ export class CombatView {
     w.tex.needsUpdate = true;
   }
 
+  /**
+   * Wolf animation: a trot with diagonal leg pairs (faster and longer with speed), the body bobbing
+   * twice a stride and the head nodding; at rest breathing, a slow look around and a wagging tail;
+   * the bite: a crouch back on the haunches, then a lunge with the head snapping forward and up,
+   * then back; the pounce (special) crouches and leaps; a hit makes it flinch; stunned, the head hangs.
+   */
+  private animateWolf(w: WolfParts, e: { moving: boolean; anim: number; homeX: number; ctl: { stunLeft: number } }, wu: { kind: 'normal' | 'special'; t: number; dur: number } | null, lastKind: 'normal' | 'special' | null, hurt: number, dead: boolean) {
+    const speed = Math.hypot(w.vx, w.vz);
+    const run = Math.min(1, speed / 5);
+    const mv = e.moving && !dead ? Math.min(1, speed / 1.2) : 0;
+    const ph = e.anim * 1.25;
+    const amp = (0.35 + run * 0.45) * mv;
+    const s = Math.sin(ph);
+    w.legs[0].rotation.x = s * amp;
+    w.legs[3].rotation.x = s * amp;
+    w.legs[1].rotation.x = -s * amp;
+    w.legs[2].rotation.x = -s * amp;
+    const t = this.time;
+    const breathe = (1 - mv) * Math.sin(t * 2.2 + e.homeX) * 0.012;
+    let crouch = 0;
+    let lunge = 0;
+    let hop = 0;
+    let headX = Math.abs(Math.cos(ph)) * 0.08 * mv - (1 - mv) * Math.sin(t * 0.6 + e.homeX) * 0.06;
+    let headY = (1 - mv) * Math.sin(t * 0.45 + e.homeX * 3) * 0.35;
+    let pitch = 0;
+    if (wu) {
+      const k = wu.t / wu.dur;
+      if (wu.kind === 'special') {
+        crouch = Math.min(1, k * 1.6) * 0.2;
+        hop = k > 0.75 ? Math.sin(((k - 0.75) / 0.25) * Math.PI) * 0.8 : 0;
+        pitch = k < 0.75 ? 0.12 * Math.min(1, k * 2) : -0.25;
+      } else {
+        // back on the haunches, then the lunge into the bite
+        crouch = k < 0.7 ? Math.sin((k / 0.7) * Math.PI * 0.5) * 0.16 : 0.16 * (1 - (k - 0.7) / 0.3);
+        lunge = k < 0.7 ? -0.12 * (k / 0.7) : -0.12 + ((k - 0.7) / 0.3) * 0.5;
+        pitch = k < 0.7 ? 0.15 * (k / 0.7) : 0.15 - ((k - 0.7) / 0.3) * 0.3;
+        headX = k < 0.7 ? 0.25 * (k / 0.7) : -0.35;
+      }
+      headY = 0;
+    } else if (w.afterT < 0.35 && lastKind === 'normal') {
+      // the bite lands, then the wolf pulls back
+      const k = w.afterT / 0.35;
+      lunge = 0.38 * (1 - k);
+      headX = -0.35 * (1 - k);
+      pitch = -0.15 * (1 - k);
+    }
+    w.body.position.y = -crouch + hop + Math.abs(Math.cos(ph)) * 0.04 * mv * (0.5 + run) + breathe;
+    w.body.position.z = lunge - hurt * 0.12;
+    w.body.rotation.x = pitch + hurt * 0.12;
+    w.head.rotation.x = e.ctl.stunLeft > 0 ? 0.55 : headX - hurt * 0.4;
+    w.head.rotation.y = headY;
+    w.tail.rotation.x = 0.6 - run * 0.35 + Math.sin(t * 3 + e.homeX) * 0.08;
+    w.tail.rotation.y = Math.sin(t * (mv > 0 ? 9 : 4) + e.homeX) * (wu ? 0.05 : 0.35);
+  }
+
   update(dt: number, aimUid: string | null) {
     this.time += dt;
     const data = this.sys.data;
@@ -248,31 +326,35 @@ export class CombatView {
       w.root.visible = !dead || w.deadT < 3;
       w.label.visible = !dead;
       w.root.position.set(e.x, e.y, e.z);
-      w.root.rotation.y = Math.atan2(e.fx, e.fz);
+      const yaw = Math.atan2(e.fx, e.fz);
+      w.root.rotation.y = yaw;
       w.root.rotation.z = dead ? Math.min(Math.PI / 2, w.deadT * 6) : 0;
-      const swing = e.moving ? Math.sin(e.anim) * 0.6 : 0;
-      w.legs[0].rotation.x = swing;
-      w.legs[3].rotation.x = swing;
-      w.legs[1].rotation.x = -swing;
-      w.legs[2].rotation.x = -swing;
-      w.tail.rotation.x = 0.6 + Math.sin(this.time * 3 + e.homeX) * 0.12;
-      const wu = e.windup;
-      let crouch = 0;
-      let lunge = 0;
-      let hop = 0;
-      if (wu) {
-        const k = wu.t / wu.dur;
-        if (wu.kind === 'special') {
-          crouch = Math.min(1, k * 1.6) * 0.18;
-          hop = k > 0.75 ? Math.sin(((k - 0.75) / 0.25) * Math.PI) * 0.8 : 0;
-        } else {
-          crouch = k < 0.7 ? k * 0.15 : 0;
-          lunge = k >= 0.7 ? ((k - 0.7) / 0.3) * 0.35 : 0;
-        }
+      // animation memory: velocity, hits, the end of a windup (the strike's follow-through)
+      if (dt > 0) {
+        const kv = 1 - Math.exp(-10 * dt);
+        w.vx += ((e.x - w.px) / dt - w.vx) * kv;
+        w.vz += ((e.z - w.pz) / dt - w.vz) * kv;
       }
-      w.body.position.y = -crouch + hop;
-      w.body.position.z = lunge;
-      w.head.rotation.x = e.ctl.stunLeft > 0 ? 0.5 : -crouch;
+      w.px = e.x;
+      w.pz = e.z;
+      if (e.hp < w.lastHp - 0.01) w.hurtT = 0;
+      else w.hurtT += dt;
+      w.lastHp = e.hp;
+      const wu = e.windup;
+      if (!wu && w.wasWindup) w.afterT = 0;
+      else w.afterT += dt;
+      const lastKind = wu ? wu.kind : w.wasWindup?.kind ?? null;
+      w.wasWindup = wu ? { kind: wu.kind } : w.afterT < 0.35 ? w.wasWindup : null;
+      const fighting = e.mode !== 'idle' && e.mode !== 'return' && !dead;
+      w.fightT = fighting || wu ? 4 : Math.max(0, w.fightT - dt);
+      const hurt = w.hurtT < 0.35 ? Math.sin(Math.min(1, w.hurtT / 0.05) * Math.PI * 0.5) * (1 - w.hurtT / 0.35) : 0;
+      if (w.human) {
+        // bandit: the character model walks, guards and swings like the hero (windup → the strike)
+        const c = Math.cos(yaw);
+        const sn = Math.sin(yaw);
+        const atk = wu ? { t: (wu.t / wu.dur) * 0.45, hitAt: 0.45, seq: e.life * 1000 + Math.floor(e.anim), kind: 'normal' as const } : w.afterT < 0.35 && lastKind ? { t: 0.45 + (w.afterT / 0.35) * 0.55, hitAt: 0.45, seq: e.life * 1000 + Math.floor(e.anim), kind: 'normal' as const } : null;
+        w.human.pose({ walk: 0, moving: e.moving ? 1 : 0, airborne: false, vy: 0, attack: dead ? null : atk, time: this.time, move: dead ? { x: 0, z: 0 } : { x: w.vx * c - w.vz * sn, z: w.vx * sn + w.vz * c }, combat: w.fightT > 0, hurt: w.hurtT });
+      } else this.animateWolf(w, e, wu, lastKind, hurt, dead);
       w.tele.visible = !!wu && wu.kind === 'special';
       if (wu && wu.kind === 'special') w.tele.position.set(wu.sx, this.sys.groundTop(wu.sx, wu.sz) + 0.02, wu.sz);
       w.label.position.set(e.x, e.y + 1.45 * d.scale + 0.35, e.z);

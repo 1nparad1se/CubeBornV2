@@ -125,7 +125,7 @@ function sword(great: boolean): VoxWeapon {
   box(cells, -1, 1, gy, gy + 2, -guardW / 2, guardW / 2, (_x, y, z) => (y === gy + 1 && Math.abs(z + 0.5) < 2 ? PAL.guardHi : PAL.guard));
   box(cells, -1, 1, gy + 2, gy + 3, -guardW / 2, -guardW / 2 + 2, PAL.guard);
   box(cells, -1, 1, gy + 2, gy + 3, guardW / 2 - 2, guardW / 2, PAL.guard);
-  // blade: 1 cell thick (x = 0), a ridge of 2 down the middle (x = -1..0)
+  // blade along y, its width along z (the edges), its flat faces along ±x
   const by = gy + 2;
   for (let i = 0; i < blade; i++) {
     const y = by + i;
@@ -137,7 +137,8 @@ function sword(great: boolean): VoxWeapon {
       const edge = z === z0 || z === z0 + w - 1;
       const c = edge ? PAL.steelHi : noise(0, y, z) > 0.75 ? PAL.steelLo : PAL.steel;
       cells.push([0, y, z, c]);
-      if (!edge && w > 2) cells.push([-1, y, z, PAL.steel]);
+      // two cells thick (a solid grey blade), the very tip one cell
+      if (w > 1) cells.push([-1, y, z, edge ? PAL.steelHi : noise(1, y, z) > 0.8 ? PAL.steelLo : PAL.steel]);
     }
   }
   const total = by + blade;
