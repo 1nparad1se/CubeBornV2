@@ -3,7 +3,7 @@
 Read this before changing the game. It holds the decisions the owner has already made.
 
 ## What the game is
-- A browser RPG built with TypeScript, Three.js and Vite: stylised smooth characters, weapons and armour in a smooth (non-cubic) world.
+- A browser RPG built with TypeScript, Three.js and Vite: blocky Minecraft-style characters, weapons and armour in a smooth (non-cubic) world.
 - Current stage:
   - the open world «Дикие земли», 2000×2000 blocks (`src/world/wild.ts`): an irregular continent with low rounded mountain ranges (about 50 blocks), gentle hills, rivers, lakes, waterfalls, swamps, climate zones, roads and paths, 18 tree species and 20 bush species; the three training dummies stand on a clearing at the spawn;
   - the 100×100 training meadow stays for the tests and the menu backdrop;
@@ -18,10 +18,8 @@ Read this before changing the game. It holds the decisions the owner has already
 
 ## Rules from the owner
 - All UI text is in Russian. Reply to the owner in Russian.
-- Characters are no longer Minecraft-like (owner): a stylised smooth figure (`src/render/human/figure.ts`) with a slightly large rounded head and a readable face (eyes, brows, nose, mouth, ears), shaped hair, a neck, a broad chest narrowing to the waist, tapered limbs with elbows and knees, hands and feet, softly painted vertex colours. Armour is shaped shells over that figure. The joints and the animation hooks stay the same.
-- Weapons and the shield are proportionate smooth models in metres (`src/render/human/itemMeshes.ts`): bevelled steel, leather-wrapped grips, gold fittings, turned wood; a one-handed sword about 1.1 m, the two-handed about 1.7 m, the bow about 1.55 m with a string, staffs with a glowing crystal (the two-handed one taller than the shoulder). Inventory icons are rendered from the same models.
-- The inventory (`src/ui/Inventory.ts`) uses the dark-gold frame of the menus: equipment and a live hero preview on the left, the bag grid with category tabs, the purse and an item card (stats, comparison with what is worn, buttons) on the right.
-- The world is not cubic (owner, smooth world): smooth relief, smooth shores, organic trees, bushes and grass. 
+- Characters, weapons and armor are strictly Minecraft-style: cubic shapes and pixel textures, with no rounded or realistic models.
+- The world is not cubic (owner, smooth world): smooth relief, smooth shores, organic trees, bushes and grass. Only characters, weapons and armour stay blocky.
 - Colours (owner): the original bright palette, lighting, day/night, fog and water colours stay (the dark painted grade was rejected). The original block ground textures are drawn on the smooth surface. The «Насыщенность цвета» setting (100 % = original) scales the post-processing grade.
 - Original assets only, no Mojang assets.
 - Do not add classes, skill trees, monsters or quests until the owner asks (the big world was asked for). Active skills will come later and are tested on the dummies.

@@ -1,8 +1,7 @@
 import * as THREE from 'three';
 import { item } from '../rpg/items';
-import { itemMaterial, shieldModel, weaponModel } from '../render/human/itemMeshes';
-import { armorParts } from '../render/human/figure';
-import { PX } from '../render/human/skinAtlas';
+import { shieldModel, weaponModel } from '../render/human/itemMeshes';
+import { armorIcon, spriteCanvas } from '../render/human/sprites';
 
 /**
  * Inventory icons drawn from the very 3D models the hero carries (weapons, shield, armour
@@ -57,19 +56,6 @@ function iconObject(id: string): { obj: THREE.Object3D; dispose(): void } | null
     s.root.rotation.set(-0.15, 0.35, 0);
     return { obj: s.root, dispose: s.dispose };
   }
-  if (def.armorSet) {
-    const g = new THREE.Group();
-    const parts = armorParts(def.slot, def.armorSet, PX);
-    const offs: Record<string, [number, number, number]> = { armR: [-0.32, 0, 0], armL: [0.32, 0, 0], legR: [-0.13, 0, 0], legL: [0.13, 0, 0] };
-    for (const { part, geo } of parts) {
-      const m = new THREE.Mesh(geo, itemMaterial());
-      const o = offs[part] ?? [0, 0, 0];
-      m.position.set(o[0], o[1], o[2]);
-      g.add(m);
-    }
-    g.rotation.set(0.2, -0.45, 0);
-    return { obj: g, dispose: () => parts.forEach((p) => p.geo.dispose()) };
-  }
   return null;
 }
 
@@ -101,7 +87,9 @@ const cache = new Map<string, string>();
 export function itemIcon(id: string, _scale = 3, size = 40): HTMLElement {
   let url = cache.get(id);
   if (url === undefined) {
-    url = render(id);
+    const d = item(id);
+    // armour keeps the pixel icons of its blocky look; weapons and the shield come from the 3D models
+    url = d?.armorSet && !d.weapon && d.slot !== 'off' ? spriteCanvas(armorIcon(d.slot as 'head' | 'hands' | 'feet' | 'body', d.armorSet), 3).toDataURL() : render(id);
     cache.set(id, url);
   }
   const img = document.createElement('img');
