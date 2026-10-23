@@ -585,6 +585,17 @@
   border: 3px solid #000;
   box-shadow: inset 2px 2px 0 #555;
   image-rendering: pixelated;
+  cursor: grab;
+  touch-action: none;
+}
+.wm-canvas:active {
+  cursor: grabbing;
+}
+.wm-hint {
+  margin-top: 6px;
+  text-align: center;
+  font-size: 11px;
+  color: #555;
 }
 .wm-legend {
   display: flex;
