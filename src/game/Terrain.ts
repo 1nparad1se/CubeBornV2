@@ -1,4 +1,5 @@
 import { WALLS } from '../config/walls';
+import { noise2 } from '../core/Rng';
 
 /** Cell kinds on the navigation grid (1 cell = 1 world unit = 1 block). */
 export const CELL = {
@@ -147,8 +148,7 @@ export class Terrain {
     const n = this.size;
     const x = i % n;
     const z = (i / n) | 0;
-    const v = V[(z + (k >> 1)) * (n + 1) + x + (k & 1)];
-    return isWater(this.cell[i]) ? Math.min(v, this.waterLevel(i) - 0.12) : v;
+    return V[(z + (k >> 1)) * (n + 1) + x + (k & 1)];
   }
 
   /**
@@ -212,7 +212,83 @@ export class Terrain {
         }
       [A, B] = [B, A];
     }
+    this.shoreline(A, dry);
     this.vert = A;
+  }
+
+  /**
+   * Smooth shorelines: the water's edge is where the smooth ground crosses the water surface, not a
+   * cell edge. Vertices shared by water and land sit a little under the water (by a smooth noise),
+   * the dry vertices next to them a little over it (by another), the vertices inside the water on
+   * its bed; so the shore curves through the bank cells in organic bays and points while every dry
+   * cell keeps its middle above the water (see shoreY).
+   */
+  private shoreline(V: Float32Array, dry: Uint8Array) {
+    const n = this.size;
+    const N = n + 1;
+    const wl = new Float32Array(N * N).fill(-Infinity);
+    const wet = new Uint8Array(N * N);
+    for (let vz = 0; vz < N; vz++)
+      for (let vx = 0; vx < N; vx++) {
+        const v = vz * N + vx;
+        for (let k = 0; k < 4; k++) {
+          const cx = vx - 1 + (k & 1);
+          const cz = vz - 1 + (k >> 1);
+          if (cx < 0 || cz < 0 || cx >= n || cz >= n) continue;
+          const i = cz * n + cx;
+          if (isWater(this.cell[i]) && !(this.hard && this.hard[i])) {
+            wet[v] = 1;
+            wl[v] = Math.max(wl[v], this.waterLevel(i));
+          }
+        }
+      }
+    const ox = this.ox;
+    const oz = this.oz;
+    const nz = (x: number, z: number, s: number) => {
+      const v = noise2((x + ox) * 0.23, (z + oz) * 0.23, s) * 0.6 + noise2((x + ox) * 0.7, (z + oz) * 0.7, s + 7) * 0.4;
+      const k = Math.max(0, Math.min(1, (v - 0.28) / 0.44));
+      return k * k * (3 - 2 * k);
+    };
+    // the lowest water level next to each dry vertex (for the ring of bank vertices)
+    const ring = new Float32Array(N * N).fill(-Infinity);
+    for (let vz = 0; vz < N; vz++)
+      for (let vx = 0; vx < N; vx++) {
+        const v = vz * N + vx;
+        if (!wet[v]) continue;
+        if (dry[v]) V[v] = wl[v] - 0.03 - 0.25 * nz(vx, vz, 31);
+        else V[v] = Math.min(V[v], wl[v] - 0.3);
+        for (let dz = -1; dz <= 1; dz++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const ax = vx + dx;
+            const az = vz + dz;
+            if (ax < 0 || az < 0 || ax > n || az > n) continue;
+            const a = az * N + ax;
+            if (!wet[a]) ring[a] = Math.max(ring[a], wl[v]);
+          }
+      }
+    for (let v = 0; v < N * N; v++) if (ring[v] > -Infinity) V[v] = Math.max(V[v], ring[v] + 0.3 + 0.3 * nz(v % N, (v / N) | 0, 47));
+    // a bank cell squeezed between waters (a spit, an islet) still keeps its middle above them:
+    // its shore corners rise until it does
+    for (let pass = 0; pass < 3; pass++)
+      for (let z = 0; z < n; z++)
+        for (let x = 0; x < n; x++) {
+          const i = z * n + x;
+          if (isWater(this.cell[i]) || (this.hard && this.hard[i])) continue;
+          const vs = [z * N + x, z * N + x + 1, (z + 1) * N + x, (z + 1) * N + x + 1];
+          let w = -Infinity;
+          let s = 0;
+          let c = 0;
+          for (const v of vs) {
+            s += V[v];
+            if (wet[v]) {
+              w = Math.max(w, wl[v]);
+              c++;
+            }
+          }
+          if (!c || s / 4 > w + 0.08) continue;
+          const d = ((w + 0.1) * 4 - s) / c;
+          for (const v of vs) if (wet[v]) V[v] += d;
+        }
   }
 
   /** Whether cells i and j (neighbours) meet with a step (a sheer face) rather than smooth ground. */

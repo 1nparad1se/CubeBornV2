@@ -75,15 +75,17 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
     for (let x = 1; x < n - 1; x += 2) {
       const k = z * n + x;
       if (t.cell[k] !== CELL.floor || t.cell[k + 1] !== CELL.floor) continue;
+      // (bank cells are shaped by the shoreline, checked with the water below)
+      if ([k - 1, k + 2, k - n, k + n, k + 1 - n, k + 1 + n].some((j) => t.cell[j] !== CELL.floor)) continue;
       const [gx, gz] = t.slopeAt(x + 0.5, z + 0.5);
       const g = Math.hypot(gx, gz);
       pairs++;
-      sum += g;
+      sum += Math.abs(t.centerY(k) - t.centerY(k + 1));
       if (g > 1) steep++;
       if (t.stepBetween(k, k + 1) || (t.cell[k + n] === CELL.floor && t.stepBetween(k, k + n))) seams++;
     }
   ok(seams === 0, `smooth ground: no step between neighbouring dry cells (${seams})`);
-  ok(steep / pairs < 0.05 && sum / pairs < 0.2, `gentle relief: ${((steep / pairs) * 100).toFixed(1)} % of the land steeper than 45°, slope ${(sum / pairs).toFixed(2)} on average`);
+  ok(steep / pairs < 0.05 && sum / pairs < 0.2, `gentle relief: ${((steep / pairs) * 100).toFixed(1)} % of the land steeper than 45°, ${(sum / pairs).toFixed(2)} blocks of rise per block on average`);
   // the biggest ranges are elongated: their extent is long compared with their area
   const seen = new Uint8Array(n * n);
   const ranges: { area: number; len: number }[] = [];
@@ -156,6 +158,8 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   // every water cell has its bed under the surface; no dry neighbour lies below the water
   let dry = 0;
   let hanging = 0;
+  let banks = 0;
+  let curved = 0;
   let wet = 0;
   const kinds = new Map<string, number>();
   for (let z = 1; z < n - 1; z++)
@@ -167,17 +171,23 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
       const surf = t.elev[k] - 0.62;
       if (top[k] > surf - 0.2) dry++;
       for (const o of [1, -1, n, -n]) if (t.cell[k + o] === CELL.floor && top[k + o] < surf) hanging++;
-      // the smooth surface too: the bank's corners on the shared edge stand above the water
+      // the smooth surface too: the shoreline curves through the bank cells (their shared corners
+      // dip a little under the water), but every bank cell keeps its middle above the water and
+      // never sinks deep under it
       for (const [o, ka, kb] of [[1, 0, 2], [-1, 1, 3], [n, 0, 1], [-n, 2, 3]]) {
         const j = k + o;
         if (t.cell[j] !== CELL.floor) continue;
-        if (Math.min(t.cornerH(j, ka), t.cornerH(j, kb)) < surf) hanging++;
+        banks++;
+        const lo = Math.min(t.cornerH(j, ka), t.cornerH(j, kb));
+        if (t.centerY(j) <= surf || lo < surf - 0.35) hanging++;
+        if (lo < surf) curved++;
       }
       const nm = t.tileNames[t.tile[k]];
       kinds.set(nm, (kinds.get(nm) ?? 0) + 1);
     }
   ok(dry === 0, `every water block has its bed at least 0.2 under the surface (${dry} of ${wet} too shallow)`);
   ok(hanging === 0, `no bank lies below the water beside it (${hanging})`);
+  ok(curved > banks * 0.5, `shorelines are smooth curves through the bank cells, not cell edges (${curved} of ${banks} bank edges)`);
   const want = ['water_sea_4', 'water_lake_3', 'water_river_2', 'water_fast_2', 'water_swamp_1'];
   ok(want.every((nm) => (kinds.get(nm) ?? 0) > 500), `all water bodies present: ${want.map((nm) => `${nm.split('_')[1]} ${kinds.get(nm) ?? 0}`).join(', ')}`);
   // swamps: standing water on wet, low, flat land
