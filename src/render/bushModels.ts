@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { hash2 } from '../core/Rng';
-import { FRUIT, Grid, LEAF, WOOD, h3, mesh, tone, type Out } from './treeModels';
+import { FRUIT, Grid, LEAF, WOOD, h3, tone } from './treeModels';
+import { smoothOut, surfaceNets, toGeometry } from './smoothModels';
 
 /**
  * Small bushes of the wild world (owner's references, docs/references/plants): twenty species of
- * low plants built from voxels of 1/24 block, the scale of the grass pixels, so they sit among
- * the grass like the references show. A model is about half a block across at full size; the
+ * low plants sketched in voxels of 1/24 block and wrapped into soft rounded shapes (surface
+ * nets), so they sit among the grass like the references show. A model is about half a block across at full size; the
  * world places most of them at a third or less of that (see BUSH_SIZES).
  */
 
@@ -352,16 +353,18 @@ function build(kind: number, variant: number): Painter {
   return p;
 }
 
-/** Mesh of a bush species variant: base centred on the origin, blocks as units. */
+/**
+ * Mesh of a bush species variant: base centred on the origin, blocks as units. The voxel sketch
+ * is wrapped by surface nets and smoothed into soft rounded leaf masses and stems (owner: the
+ * world's plants are no longer cubic).
+ */
 export function bushGeometry(kind: number, variant: number): THREE.BufferGeometry {
   const p = build(kind, variant);
-  const out: Out = { pos: [], nor: [], col: [], surf: [], idx: [] };
-  mesh(p.g, out);
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(out.pos, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(out.nor, 3));
-  g.setAttribute('color', new THREE.Float32BufferAttribute(out.col, 3));
-  g.setIndex(out.idx);
-  g.computeBoundingBox();
-  return g;
+  const g = p.g;
+  const o = smoothOut();
+  const org: [number, number, number] = [(g.i0 - g.sh) * g.res, 0, (g.k0 - g.sh) * g.res];
+  surfaceNets(o, g.nx, g.ny, g.nz, g.res, org, (i, j, k) => g.c[g.idx(i, j, k)], (i, j, k) => (g.kind[g.idx(i, j, k)] === LEAF ? 0 : g.kind[g.idx(i, j, k)] === FRUIT ? 2 : 1), 2);
+  const geo = toGeometry(o, false);
+  geo.computeBoundingBox();
+  return geo;
 }

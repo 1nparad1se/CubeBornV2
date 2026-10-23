@@ -25,9 +25,9 @@ const GHOST_ALPHA = 0.32;
 const FADE_RATE = 4;
 
 /**
- * Tree material: vertex colours (clumps, shade) plus a pixel texture of 1/16 block painted in the
- * model's own space, so the leaves of one cube already differ (light and dark leaves, a yellower
- * or bluer one here and there) and bark runs in grooves and plates, at no geometry cost.
+ * Tree material: vertex colours (clumps, shade) plus soft painted dabs in the model's own space
+ * (light and dark leaf masses, a warmer or cooler patch, bark in vertical strokes), at no
+ * geometry cost.
  */
 export function treeMaterial(opts: THREE.MeshLambertMaterialParameters = {}): THREE.MeshLambertMaterial {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
@@ -41,36 +41,23 @@ export function treeMaterial(opts: THREE.MeshLambertMaterialParameters = {}): TH
         '#include <color_fragment>',
         `#include <color_fragment>
 {
-  vec3 an = abs(vObjN);
-  bool top = an.y > 0.5;
-  // face coordinates: across and up on the sides, x and z on top and bottom
-  vec2 uv = an.x > 0.5 ? vObj.zy : an.z > 0.5 ? vObj.xy : vObj.xz;
-  vec2 p = floor(uv * 16.0 + 0.001);
+  // painted surfaces in the model's own space: soft dabs of light and dark leaves, bark in long
+  // vertical brush strokes; the underside of every mass sinks into shade
   float t = 1.0;
   vec3 tint = vec3(1.0);
+  float up = normalize(vObjN).y;
   if (vSurf < ${(SURF.leaf + 0.5).toFixed(1)}) {
-    // leaves: single dark and light leaves, little clusters a shade apart, a few warmer or cooler
-    float r = h21(p + vObjN.xz * 31.0);
-    float cl = h21(floor(p / 3.0) + vObjN.xy * 17.0 + 5.0);
-    t = r < 0.12 ? 0.72 : r < 0.3 ? 0.87 : r > 0.92 ? 1.18 : r > 0.8 ? 1.07 : 1.0;
-    t *= 0.92 + cl * 0.16;
-    if (r > 0.86) tint = vec3(1.07, 1.05, 0.84);
-    else if (r < 0.06) tint = vec3(0.9, 1.0, 1.06);
+    float d = vnoise(vObj.xy * 4.2 + vObj.z * 2.7) * 0.55 + vnoise(vObj.zy * 9.0 + vObj.x * 3.3 + 7.0) * 0.45;
+    float db = floor(d * 4.0);
+    d = (db + smoothstep(0.3, 0.7, d * 4.0 - db)) / 4.0;
+    t = 0.66 + d * 0.56;
+    t *= mix(0.6, 1.08, smoothstep(-0.5, 0.9, up));
+    tint = mix(vec3(0.9, 1.0, 1.04), vec3(1.05, 1.02, 0.9), smoothstep(0.45, 0.8, vnoise(vObj.xz * 1.7 + vObj.y)));
   } else if (vSurf < ${(SURF.wood + 0.5).toFixed(1)}) {
-    if (top) {
-      // the cut top of a trunk: growth rings
-      float ring = fract(length(floor(uv * 16.0) / 16.0) * 5.0);
-      t = ring < 0.25 ? 0.82 : 0.96 + h21(p) * 0.08;
-    } else {
-      // bark: vertical grooves, plates of slightly different shade, a few light flecks
-      float lane = h21(vec2(p.x, 3.0));
-      float plate = h21(vec2(p.x, floor((p.y + lane * 7.0) / 4.0)));
-      t = lane < 0.22 ? 0.74 : 0.9 + plate * 0.18;
-      if (h21(p + 9.0) > 0.95) t = 1.15;
-    }
+    float g = vnoise(vec2((vObj.x + vObj.z) * 11.0, vObj.y * 1.4)) * 0.6 + vnoise(vec2((vObj.x - vObj.z) * 23.0, vObj.y * 3.0)) * 0.4;
+    t = 0.72 + smoothstep(0.25, 0.75, g) * 0.34;
   } else {
-    // fruit and flowers: a bright spot and a darker side
-    t = h21(p) > 0.75 ? 1.2 : 0.95;
+    t = 0.9 + smoothstep(0.2, 0.9, up) * 0.25;
   }
   diffuseColor.rgb *= t * tint;
 }`,
@@ -224,7 +211,8 @@ export class TreeRenderer {
   private matrix(i: number, out: THREE.Matrix4) {
     const L = this.trees;
     const s = L.scale[i];
-    _r.makeRotationY((L.turn[i] * Math.PI) / 2);
+    // any turn (organic trees have no grid to line up with)
+    _r.makeRotationY((L.turn[i] + (((i * 2246822519) >>> 0) / 4294967296)) * (Math.PI / 2));
     out.makeScale(s, s, s).premultiply(_r);
     out.setPosition(L.x[i], L.y[i], L.z[i]);
     return out;

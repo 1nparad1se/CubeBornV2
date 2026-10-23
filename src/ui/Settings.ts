@@ -36,7 +36,7 @@ const SECTIONS: { id: Section; icon: string; ru: string; en: string }[] = [
 /** Settings each section owns ("По умолчанию" resets only these). */
 const SECTION_KEYS: Record<Section, (keyof Settings)[]> = {
   screen: ['displayMode', 'resolution', 'vsync', 'fpsLimit', 'uiScale'],
-  graphics: ['quality', 'shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing', 'fog', 'fogDensity', 'fogStart'],
+  graphics: ['quality', 'shadows', 'effects', 'particles', 'viewDistance', 'antiAliasing', 'textures', 'postProcessing', 'fog', 'fogDensity', 'fogStart', 'colorSat'],
   game: ['cameraZoom', 'screenShake', 'damageNumbers', 'showFps', 'showHints', 'autoPause'],
   audio: ['master', 'music', 'sfx', 'ambient', 'ui'],
   controls: ['keybinds', 'swapMouse', 'invertWheel'],
@@ -345,6 +345,8 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
           toggle(tr('Туман', 'Fog'), () => st.fog, (v) => (st.fog = v), tr('Даль плавно растворяется в дымке. Без тумана видно до края дальности прорисовки.', 'The distance fades into haze. Without fog you see out to the view distance.')),
           slider(tr('Плотность тумана', 'Fog density'), () => st.fogDensity, (v) => (st.fogDensity = v), { hint: tr('Насколько быстро даль уходит в дымку.', 'How quickly the distance fades.') }),
           slider(tr('Начало тумана', 'Fog start'), () => st.fogStart, (v) => (st.fogStart = v), { hint: tr('С какого расстояния появляется дымка: меньше — ближе к герою.', 'How far away the haze begins: lower is closer.') }),
+          group(tr('Цвет', 'Colour')),
+          slider(tr('Насыщенность цвета', 'Colour saturation'), () => st.colorSat, (v) => (st.colorSat = v), { max: 150, hint: tr('Сила красок мира: меньше — блёклее и мрачнее, больше — ярче.', 'How vivid the world is: lower is duller and gloomier.') }),
           seg(tr('Сглаживание', 'Anti-aliasing'), [
             { id: 'off', name: off() },
             { id: 'msaa', name: 'MSAA' },

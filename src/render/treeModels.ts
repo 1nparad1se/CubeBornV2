@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TREE, TREE_SPECS, treeHeight } from '../world/trees';
+import { clump, icosphere, limb, smoothOut, tier, toGeometry } from './smoothModels';
 
 /**
  * Blocky tree models. Each species variant is first described as a few primitives in block units
@@ -1007,12 +1008,101 @@ function extent(shape: Shape): [number, number] {
 
 const shapes = new Map<number, Shape>();
 
+/** Detail per level of detail: clump subdivisions, limb sides, conifer tier sides. */
+const SMOOTH_LOD = [
+  { sub: 2, sides: 8, tierSides: 14, fine: true },
+  { sub: 1, sides: 6, tierSides: 10, fine: false },
+  { sub: 1, sides: 5, tierSides: 8, fine: false },
+  { sub: 0, sides: 4, tierSides: 6, fine: false },
+];
+
+/**
+ * The painted, organic model of a species variant (owner: trees are no longer cubic): the same
+ * primitives as the voxel sketch, drawn as rounded tapering trunks and limbs, lumpy soft leaf
+ * clumps and drooping conifer tiers. Coarser levels use fewer facets and drop the twigs.
+ */
+function smoothTree(shape: Shape, lod: TreeLod): THREE.BufferGeometry {
+  const L = SMOOTH_LOD[lod];
+  const o = smoothOut();
+  for (const p of shape.prims) {
+    if (p.t === 'box') {
+      // a trunk: round, a little tapered, flaring at the roots
+      const cx = (p.min[0] + p.max[0]) / 2;
+      const cz = (p.min[2] + p.max[2]) / 2;
+      const r = Math.max(0.05, ((p.max[0] - p.min[0]) / 2) * 0.82);
+      const y0 = Math.max(0, p.min[1]);
+      const y1 = p.max[1];
+      const ground = y0 < 0.05;
+      const seed = Math.round(cx * 7 + cz * 13);
+      const wob = (t: number): [number, number] => [(noise3(t * 3, 0.5, seed, 5) - 0.5) * r * 0.5, (noise3(t * 3, 1.5, seed, 6) - 0.5) * r * 0.5];
+      if (ground) limb(o, [cx, y0 - 0.1, cz], [cx, Math.min(y1, y0 + 0.35), cz], r * 1.45, r * 1.02, L.sides, 1, p.color, SURF.wood);
+      limb(o, [cx, ground ? Math.min(y1, y0 + 0.35) : y0, cz], [cx, y1, cz], ground ? r * 1.02 : r, r * 0.8, L.sides, lod === 0 ? 4 : 2, p.color, SURF.wood, true, lod === 0 ? wob : undefined);
+    } else if (p.t === 'seg') {
+      if (lod > 0 && p.w < 0.2 && !p.leaf) continue;
+      if (lod > 1 && p.w < 0.2 && p.leaf && p.thin) continue;
+      const r = Math.max(0.03, p.w * (p.leaf ? 0.4 : 0.45));
+      const sides = p.leaf ? Math.max(3, L.sides - 3) : Math.max(4, L.sides - 2);
+      limb(o, p.a, p.b, r, p.leaf ? r * 0.85 : r * 0.7, sides, 1, p.color, p.leaf ? SURF.leaf : SURF.wood, true);
+    }
+  }
+  for (const p of shape.prims) {
+    if (p.t === 'blob') {
+      // small clumps on the far models are left to the big ones around them
+      const big = Math.max(...p.r);
+      if (lod >= 2 && big < 0.35) continue;
+      const sub = big < 0.4 ? Math.max(0, L.sub - 1) : L.sub;
+      const bump = (x: number, y: number, z: number) => {
+        // broad lobes, and on the near models a cauliflower of smaller leaf masses
+        let k = 1 + (noise3(x / 0.7, y / 0.7, z / 0.7, p.seed) - 0.5) * (p.rough * 1.3 + 0.15);
+        if (L.fine) k += (noise3(x / 0.32, y / 0.32, z / 0.32, p.seed + 3) - 0.5) * 0.34;
+        return k;
+      };
+      const col = (x: number, y: number, z: number, low: number) => leafColor(p.pal, p.seed, x, y, z, low, false);
+      clump(o, p.c, p.r, sub, bump, col, SURF.leaf, 0.25);
+      if (shape.fruit && lod <= 1) {
+        // fruit or blossom on the clump's surface
+        const sp = icosphere(sub);
+        for (let i = 0; i < sp.v.length; i += 3) {
+          if (sp.v[i + 1] < -0.3 || h3(i, p.seed, 3, 77) >= shape.fruit.rate * 0.6) continue;
+          const fx = p.c[0] + sp.v[i] * p.r[0] * 1.02;
+          const fy = p.c[1] + sp.v[i + 1] * p.r[1] * 1.02;
+          const fz = p.c[2] + sp.v[i + 2] * p.r[2] * 1.02;
+          const fc = pick(shape.fruit.pal, h3(i, p.seed, 4, 78));
+          clump(o, [fx, fy, fz], [0.08, 0.08, 0.08], 0, () => 1, () => fc, SURF.fruit);
+        }
+      }
+    } else if (p.t === 'cone') {
+      // conifer: overlapping drooping tiers from the foot of the crown to its tip
+      const n = Math.max(2, Math.round((p.y1 - p.y0) / p.tier / (lod >= 2 ? 1.6 : 1)));
+      const step = (p.y1 - p.y0) / n;
+      for (let t = 0; t < n; t++) {
+        const y = p.y0 + t * step;
+        const f = (y - p.y0) / (p.y1 - p.y0);
+        const r = p.r * (1 - f) * 1.05 + 0.3;
+        const top = t === n - 1 ? p.y1 + 0.2 : y + step * 1.9;
+        const jag = (a: number) => 0.82 + noise3(Math.cos(a) * 2 + t * 3.1, Math.sin(a) * 2, p.seed, 9) * 0.36;
+        const col = (x: number, yy: number, z: number, low: number) => leafColor(p.pal, p.seed, x, yy, z, 0.35 + low * 0.65, false);
+        tier(o, y, top, r, L.tierSides, jag, col, SURF.leaf);
+      }
+    }
+  }
+  return toGeometry(o);
+}
+
 /**
  * Mesh of one species variant: base of the trunk centred on the origin, y up, blocks as units.
  * `lod` 0 is the near model (1/6-block leaves and trunk, 1/8-block branches), 1..3 the coarser
  * ones (1/3, 1/2 and 1 block voxels, twigs left out) for trees farther away.
  */
 export function treeGeometry(kind: number, variant: number, lod: TreeLod = 0): THREE.BufferGeometry {
+  const key = kind * 16 + variant;
+  let shape = shapes.get(key);
+  if (!shape) shapes.set(key, (shape = build(kind, variant)));
+  return smoothTree(shape, lod);
+}
+
+/** The old blocky model (voxels of LOD_RES), kept for reference renders and comparisons. */
+export function voxelTreeGeometry(kind: number, variant: number, lod: TreeLod = 0): THREE.BufferGeometry {
   const key = kind * 16 + variant;
   let shape = shapes.get(key);
   if (!shape) shapes.set(key, (shape = build(kind, variant)));
@@ -1025,9 +1115,7 @@ export function treeGeometry(kind: number, variant: number, lod: TreeLod = 0): T
   for (const p of shape.prims) {
     if (p.t === 'box') box(leaf, p);
     else if (p.t === 'seg') {
-      // twigs are too thin for the coarse models
       if (lod > 0 && p.w < 0.2 && !p.leaf) continue;
-      // so are thin strands and spikes on the far ones
       if (lod > 1 && p.w < 0.2 && p.leaf && p.thin) continue;
       seg(p.leaf ? leaf : wood, p);
     }

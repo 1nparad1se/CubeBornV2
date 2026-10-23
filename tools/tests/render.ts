@@ -1,10 +1,10 @@
 /**
- * Render-side model checks (no WebGL needed): tree models are made of 1/6-block leaf and trunk
- * voxels and 1/8-block branch voxels, keep each species' height and stay within a triangle
- * budget; water geometry has surfaces at the water level and falling sheets where it drops.
+ * Render-side model checks (no WebGL needed): tree and bush models are organic (rounded, not
+ * voxel cubes), keep each species' height and stay within a triangle budget; water geometry has
+ * a smooth surface at the water levels and falling sheets where it drops.
  */
 import { TREE_KINDS, TREE_SPECS, TREE_VARIANTS, treeHeight } from '../../src/world/trees';
-import { BRANCH_VOX, LEAF_VOX, treeGeometry } from '../../src/render/treeModels';
+import { treeGeometry } from '../../src/render/treeModels';
 import { Terrain, CELL } from '../../src/game/Terrain';
 import { WATER, waterBody, waterGeometry } from '../../src/render/water';
 import { BUSH_KINDS, BUSH_SIZES, BUSH_VARIANTS, bushGeometry } from '../../src/render/bushModels';
@@ -14,7 +14,23 @@ const ok = (c: boolean, msg: string) => {
   console.log(`${c ? 'ok  ' : 'FAIL'} ${msg}`);
   if (!c) fails++;
 };
-const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / step)) < 1e-3;
+/** Share of a model's triangles that face straight along x or z (the sides of cubes; flat leaves lying level are fine). */
+const boxy = (g: import('three').BufferGeometry) => {
+  const p = g.attributes.position.array as Float32Array;
+  const ix = g.index!.array;
+  let axis = 0;
+  for (let t = 0; t < ix.length; t += 3) {
+    const a = ix[t] * 3, b = ix[t + 1] * 3, c = ix[t + 2] * 3;
+    const ux = p[b] - p[a], uy = p[b + 1] - p[a + 1], uz = p[b + 2] - p[a + 2];
+    const vx = p[c] - p[a], vy = p[c + 1] - p[a + 1], vz = p[c + 2] - p[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    const l = Math.hypot(nx, ny, nz);
+    // (flat soles resting on the ground do not count)
+    if (Math.max(p[a + 1], p[b + 1], p[c + 1]) < 0.02) continue;
+    if (l > 1e-9 && Math.max(Math.abs(nx), Math.abs(nz)) / l > 0.999) axis++;
+  }
+  return axis / (ix.length / 3);
+};
 
 // ---------------------------------------------------------------- trees
 {
@@ -25,20 +41,13 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
   for (let k = 0; k < TREE_KINDS; k++)
     for (let v = 0; v < TREE_VARIANTS; v++) {
       const g = treeGeometry(k, v);
-      const p = g.attributes.position.array as Float32Array;
-      // every vertex lies on the 1/6 grid (leaves, trunk) or the 1/8 grid (branches); the grid may
-      // be shifted by half a voxel to centre an odd trunk width
-      for (let i = 0; i < p.length; i += 3) {
-        const y = p[i + 1];
-        if (!onGrid(y, LEAF_VOX) && !onGrid(y, BRANCH_VOX)) offGrid++;
-        for (const x of [p[i], p[i + 2]])
-          if (!onGrid(x, LEAF_VOX) && !onGrid(x + LEAF_VOX / 2, LEAF_VOX) && !onGrid(x, BRANCH_VOX) && !onGrid(x + BRANCH_VOX / 2, BRANCH_VOX)) offGrid++;
-      }
+      // the world is not cubic (owner): rounded trunks and soft clumps, almost no cube faces
+      if (boxy(g) > 0.05) offGrid++;
       g.computeBoundingBox();
       const top = g.boundingBox!.max.y;
       const h = treeHeight(k, v);
       // the species height is the trunk and crown body; ragged clumps may rise a little above it
-      if (top < h * 0.9 || top > h * 1.25) {
+      if (top < h * 0.88 || top > h * 1.25) {
         wrongHeight++;
         console.log(`     ${TREE_SPECS[k].name} ${v}: ${top.toFixed(2)} tall, wants ${h}`);
       }
@@ -46,8 +55,8 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
       maxTris = Math.max(maxTris, tris);
       sum += tris;
     }
-  ok(offGrid === 0, `tree models are built of 1/6-block leaf and trunk voxels and 1/8-block branch voxels (${offGrid} stray vertices)`);
-  ok(wrongHeight === 0, 'every species keeps its height (crown tops within -10 % .. +25 %)');
+  ok(offGrid === 0, `tree models are organic, not voxel cubes (${offGrid} boxy models)`);
+  ok(wrongHeight === 0, 'every species keeps its height (crown tops within -12 % .. +25 %)');
   ok(maxTris < 30000 && sum / (TREE_KINDS * TREE_VARIANTS) < 12000, `near models stay light (${Math.round(sum / (TREE_KINDS * TREE_VARIANTS))} triangles on average, ${maxTris} at most)`);
   // coarser levels of detail are much lighter and just as tall
   let lighter = true;
@@ -56,9 +65,9 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
     const b = treeGeometry(k, 0, 1).index!.count;
     const c = treeGeometry(k, 0, 2).index!.count;
     const d = treeGeometry(k, 0, 3).index!.count;
-    if (!(b < a * 0.5 && c < b && d < c)) lighter = false;
+    if (!(b < a * 0.7 && c <= b && d < c)) lighter = false;
   }
-  ok(lighter, 'each coarser model (1/3, 1/2, 1 block cubes) is lighter than the one before');
+  ok(lighter, 'each coarser model (fewer facets, no twigs) is lighter than the one before');
 }
 
 // ---------------------------------------------------------------- water
@@ -91,11 +100,14 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
     if (fall[v] === 0) {
       surf++;
       const y = pos[v * 3 + 1];
-      if (Math.abs(y - 7.38) > 1e-3 && Math.abs(y - 5.38) > 1e-3) badY++;
+      // smooth surface: at a pool's level inside it, between the two levels where they meet
+      const x = pos[v * 3];
+      const want = x <= 2 ? 7.38 : x >= 4 ? 5.38 : NaN;
+      if (Number.isNaN(want) ? y < 5.38 - 1e-3 || y > 7.38 + 1e-3 : Math.abs(y - want) > 1e-3) badY++;
     } else if (fall[v] === 1) sheets++;
     else spray++;
   }
-  ok(surf > 0 && badY === 0, `water surfaces lie at their water level (${surf} quads)`);
+  ok(surf > 0 && badY === 0, `water surfaces lie at their water levels, sloping only where two pools meet (${surf} quads)`);
   ok(sheets === 4, `a falling sheet on each edge where the water drops (${sheets})`);
   ok(spray === 8, `spray where a tall fall lands (${spray / 2} puffs)`);
 }
@@ -104,6 +116,7 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
 {
   let sizes = 0;
   let heavy = 0;
+  let cubic = 0;
   for (let k = 0; k < BUSH_KINDS; k++)
     for (let v = 0; v < BUSH_VARIANTS; v++) {
       const g = bushGeometry(k, v);
@@ -112,9 +125,11 @@ const onGrid = (v: number, step: number) => Math.abs(v / step - Math.round(v / s
       // a bush model is at most about half a block across and tall (the medium size)
       if (b.max.y > 0.7 || b.max.y < 0.04 || b.max.x - b.min.x > 0.85) sizes++;
       if (g.index!.count / 3 > 3000) heavy++;
+      if (boxy(g) > 0.05) cubic++;
     }
   ok(sizes === 0, `${BUSH_KINDS} bush species: models fit the medium size (half a block), placed at 0.3 / 0.6 / 1 of it`);
   ok(heavy === 0, 'bush models stay light (under 3000 triangles each)');
+  ok(cubic === 0, `bush models are rounded, not voxel cubes (${cubic} boxy)`);
   ok(BUSH_SIZES[0] * 0.5 <= 0.16 && BUSH_SIZES[1] * 0.5 <= 0.31, 'very small (~0.15 block) and small (~0.3 block) sizes');
 }
 

@@ -53,6 +53,8 @@ export interface Settings {
   fog: boolean;
   fogDensity: number;
   fogStart: number;
+  /** Colour saturation over the painted grade (0..1.5, 1 = as designed). */
+  colorSat: number;
   /** 0..1 */
   screenShake: number;
   // gameplay
@@ -116,6 +118,7 @@ export function defaultSettings(): Settings {
     fog: true,
     fogDensity: 0.5,
     fogStart: 0.5,
+    colorSat: 1,
     screenShake: 1,
     damageNumbers: true,
     showFps: false,

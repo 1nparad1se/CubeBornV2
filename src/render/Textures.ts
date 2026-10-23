@@ -641,11 +641,66 @@ export function makeFoliageAtlas(): THREE.CanvasTexture {
   for (const [cx, cy, r] of [[5, 5, 3], [11, 6, 2.8], [8, 11, 3.2]] as [number, number, number][])
     for (let y = 0; y < 16; y++)
       for (let x = 0; x < 16; x++) if (Math.hypot(x - cx, y - cy) < r + (hash2(x, y, 26) - 0.5)) px(SPRITE.shrubTop, x, y, grey(0.76 + hash2(x, y, 27) * 0.2));
-  ctx.putImageData(img, 0, 0);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.magFilter = THREE.NearestFilter;
-  tex.minFilter = THREE.NearestFilter;
+  // painted, not pixelated (owner): every sketch pixel becomes a soft, slightly tall dab of paint
+  // on a canvas four times finer, so blades turn into tapering strokes and flower heads into
+  // round blots; the texture is filtered smoothly
+  const S = 4;
+  const big = document.createElement('canvas');
+  big.width = W * S;
+  big.height = TILE_PX * S;
+  const bg = big.getContext('2d')!;
+  for (let y = 0; y < TILE_PX; y++)
+    for (let x = 0; x < W; x++) {
+      const i = (y * W + x) * 4;
+      if (!img.data[i + 3]) continue;
+      // a sketch pixel with a filled pixel above or below is part of a stem or blade: a taller dab
+      const up = y > 0 && img.data[i - W * 4 + 3] > 0;
+      const dn = y < TILE_PX - 1 && img.data[i + W * 4 + 3] > 0;
+      const tall = up || dn;
+      const k = 0.94 + hash2(x, y, 91) * 0.12;
+      bg.fillStyle = `rgb(${Math.min(255, img.data[i] * k) | 0},${Math.min(255, img.data[i + 1] * k) | 0},${Math.min(255, img.data[i + 2] * k) | 0})`;
+      bg.beginPath();
+      // keep inside the sprite's own column (no bleeding into the next sprite)
+      const col0 = Math.floor(x / TILE_PX) * TILE_PX * S;
+      const cx = Math.max(col0 + 2, Math.min(col0 + TILE_PX * S - 2, x * S + S / 2));
+      bg.ellipse(cx, y * S + S / 2, tall ? S * 0.42 : S * 0.62, tall ? S * 0.78 : S * 0.62, 0, 0, Math.PI * 2);
+      bg.fill();
+    }
+  const tex = new THREE.CanvasTexture(big);
+  tex.magFilter = THREE.LinearFilter;
+  tex.minFilter = THREE.LinearFilter;
   tex.generateMipmaps = false;
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/**
+ * Painted ground colours per tile, read off the ground atlas (its top rows): the mean colour and
+ * how far its light and dark pixels spread from it (0..255, for the brush strokes), as RGBA bytes.
+ */
+export function paintColors(atlas: THREE.CanvasTexture, count: number): [number, number, number, number][] {
+  const cv = atlas.image as HTMLCanvasElement;
+  const g = cv.getContext('2d');
+  const out: [number, number, number, number][] = [];
+  if (!g) return out;
+  const d = g.getImageData(0, 0, cv.width, cv.height).data;
+  for (let ti = 0; ti < count; ti++) {
+    let r = 0, gg = 0, b = 0, c = 0, ls = 0, l2 = 0;
+    for (let row = 0; row < ATLAS_VARIANTS; row++)
+      for (let y = 0; y < TILE_PX; y++)
+        for (let x = 0; x < TILE_PX; x++) {
+          const i = ((row * TILE_PX + y) * cv.width + ti * TILE_PX + x) * 4;
+          r += d[i];
+          gg += d[i + 1];
+          b += d[i + 2];
+          const l = d[i] * 0.3 + d[i + 1] * 0.59 + d[i + 2] * 0.11;
+          ls += l;
+          l2 += l * l;
+          c++;
+        }
+    const m = ls / c;
+    const sd = Math.sqrt(Math.max(0, l2 / c - m * m));
+    out.push([r / c, gg / c, b / c, Math.min(255, (sd / Math.max(8, m)) * 255 * 1.4)].map(Math.round) as [number, number, number, number]);
+  }
+  return out;
 }

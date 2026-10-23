@@ -27,13 +27,13 @@ export interface PhaseLight {
 
 export const DAY_NIGHT = {
   light: {
-    // Minecraft Dungeons palette: peachy dawn, warm saturated day, magenta-orange dusk and a
-    // deep, rich blue night (not a grey, desaturated one)
-    dawn: { sun: 0.85, sunColor: 0xffc49a, ambient: 0.9, ambientColor: 0xc8c8f0, tint: 0.45, fog: 0.92, fogColor: 0xe8b4a8, fogTint: 0.3, warm: 0.06, sat: 1.04 },
-    day: { sun: 1, sunColor: 0xfff0d8, ambient: 1, ambientColor: 0xffffff, tint: 0, fog: 1, fogColor: 0xffffff, fogTint: 0, warm: 0.035, sat: 1.08 },
-    dusk: { sun: 0.72, sunColor: 0xff9050, ambient: 0.75, ambientColor: 0xb090d0, tint: 0.55, fog: 0.88, fogColor: 0x7a4a78, fogTint: 0.38, warm: 0.08, sat: 1.08 },
-    // moonlight: a cold blue key light, deep blue ambient and fog, colour kept rich
-    night: { sun: 0.58, sunColor: 0x5a7cff, ambient: 0.7, ambientColor: 0x3a58d8, tint: 0.9, fog: 0.74, fogColor: 0x0a1640, fogTint: 0.72, warm: -0.06, sat: 1.0 },
+    // painted, dusky palette (owner): a grey-rose dawn, a muted overcast day, a bruised violet
+    // dusk and a dark, cold, eerie night with thick blue-black fog
+    dawn: { sun: 0.7, sunColor: 0xd8b294, ambient: 0.78, ambientColor: 0x9aa0b8, tint: 0.45, fog: 0.86, fogColor: 0x8c8890, fogTint: 0.35, warm: 0.02, sat: 0.92 },
+    day: { sun: 0.86, sunColor: 0xeae2cc, ambient: 0.86, ambientColor: 0xb4c2c0, tint: 0.25, fog: 0.95, fogColor: 0x96a29c, fogTint: 0.3, warm: 0.0, sat: 0.94 },
+    dusk: { sun: 0.55, sunColor: 0xc07454, ambient: 0.6, ambientColor: 0x6a5a82, tint: 0.55, fog: 0.8, fogColor: 0x3a3448, fogTint: 0.45, warm: 0.03, sat: 0.88 },
+    // moonlight: a weak cold key light, very dark ambient and a near-black blue fog
+    night: { sun: 0.34, sunColor: 0x4a64a8, ambient: 0.44, ambientColor: 0x1e2a50, tint: 0.92, fog: 0.62, fogColor: 0x070b16, fogTint: 0.82, warm: -0.05, sat: 0.72 },
   } as Record<DayPeriod, PhaseLight>,
   /** Maps whose palette is already dark get a softer night (their own lighting carries the mood). */
   darkMapNightStrength: 0.55,
