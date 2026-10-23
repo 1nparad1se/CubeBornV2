@@ -81,6 +81,14 @@ body {
   inset: 0;
   touch-action: none;
 }
+.grade-tint {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  /* the cool veil of the colour grade (opacity set by the saturation setting) */
+  background: rgba(150, 172, 200, 0.075);
+  opacity: 0;
+}
 .game-canvas,
 .overlay-canvas {
   position: absolute;

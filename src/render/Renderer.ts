@@ -51,11 +51,11 @@ void main() {
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    uSat: { value: 1.06 },
-    uWarm: { value: 0.04 },
+    uSat: { value: 0.98 },
+    uWarm: { value: 0.0 },
     uRes: { value: new THREE.Vector2(1, 1) },
     uBlur: { value: 0 },
-    uHaze: { value: new THREE.Color(0x8fb39a) },
+    uHaze: { value: new THREE.Color(0x9cadb6) },
     uHazeK: { value: 0.1 },
     uShadow: { value: new THREE.Vector3(0.9, 1.0, 1.12) },
     uHigh: { value: new THREE.Vector3(1.06, 1.0, 0.92) },
@@ -228,6 +228,7 @@ export class Renderer {
   private w = 1;
   private h = 1;
   private composer: EffectComposer | null = null;
+  private tint: HTMLDivElement;
   private bloom: UnrealBloomPass | null = null;
   private grade: ShaderPass | null = null;
   private ao: AOPass | null = null;
@@ -249,6 +250,10 @@ export class Renderer {
     this.gl.shadowMap.type = THREE.PCFSoftShadowMap;
     this.gl.domElement.className = 'game-canvas';
     container.appendChild(this.gl.domElement);
+    // the colour grade's cool veil over the 3D view only (the interface stays above it)
+    this.tint = document.createElement('div');
+    this.tint.className = 'grade-tint';
+    container.appendChild(this.tint);
     this.overlay = new Overlay(container);
     this.rig = new CameraRig(1);
     this.hemi = new THREE.HemisphereLight(0xffffff, 0x404040, 0.6);
@@ -302,6 +307,12 @@ export class Renderer {
       tex.anisotropy = st.textures === 'high' ? Math.min(16, this.gl.capabilities.getMaxAnisotropy()) : st.textures === 'medium' ? 4 : 1;
       tex.needsUpdate = true;
     }
+    // colour grade (owner, update 8): softer, duller, slightly cool colours on every quality
+    // setting: less saturation and contrast, lifted blacks; 100 % gives the original colours
+    const sat = Math.max(0.4, Math.min(1.2, st.colorSaturation ?? 0.75));
+    const mute = Math.max(0, 1 - sat);
+    this.gl.domElement.style.filter = sat === 1 ? '' : `saturate(${sat.toFixed(3)}) contrast(${(1 - mute * 0.3).toFixed(3)}) brightness(${(1 + mute * 0.08).toFixed(3)})`;
+    this.tint.style.opacity = (mute / 0.25).toFixed(3);
     // post processing: filmic tone mapping (the CSS vignette is toggled by the app)
     this.gl.toneMapping = st.postProcessing ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
     this.gl.toneMappingExposure = st.postProcessing ? 1.2 : 1;

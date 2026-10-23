@@ -343,10 +343,18 @@ export function makeGroundAtlas(tileNames: string[], tiles: Record<string, numbe
   const ctx = canvas.getContext('2d')!;
   const img = ctx.createImageData(canvas.width, canvas.height);
   const col = new THREE.Color();
+  // the most saturated grounds (grass, moss, water) are toned down toward their own grey (update 8)
+  const muteOf = (name: string) => (/water|lava/.test(name) ? 0.2 : /grass|moss|clover|lush|mud_grass/.test(name) ? 0.22 : 0);
+  let mute = 0;
   const put = (ti: number, row: number, x: number, y: number, hex: number, m: number) => {
     col.setHex(hex);
     const i = ((row * TILE_PX + y) * canvas.width + ti * TILE_PX + x) * 4;
     const k = 1 + (m - 1) * 0.85;
+    mute = row < 5 ? muteOf(tileNames[ti] ?? '') : 0;
+    if (mute) {
+      const l = col.r * 0.2126 + col.g * 0.7152 + col.b * 0.0722;
+      col.setRGB(col.r + (l - col.r) * mute, col.g + (l - col.g) * mute, col.b + (l - col.b) * mute);
+    }
     img.data[i] = Math.min(255, col.r * 255 * k);
     img.data[i + 1] = Math.min(255, col.g * 255 * k);
     img.data[i + 2] = Math.min(255, col.b * 255 * k);

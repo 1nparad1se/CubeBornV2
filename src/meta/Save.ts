@@ -53,6 +53,12 @@ export interface Settings {
   fog: boolean;
   fogDensity: number;
   fogStart: number;
+  /**
+   * Colour saturation of the 3D view (0.4 .. 1.2; 1 = the original colours). Owner, update 8: the
+   * default 0.75 is the muted, slightly cool look (docs/references/style/muted-colors.png). An
+   * added key: older saves take the default (no format change).
+   */
+  colorSaturation: number;
   /** 0..1 */
   screenShake: number;
   // gameplay
@@ -116,6 +122,7 @@ export function defaultSettings(): Settings {
     fog: true,
     fogDensity: 0.5,
     fogStart: 0.5,
+    colorSaturation: 0.75,
     screenShake: 1,
     damageNumbers: true,
     showFps: false,
