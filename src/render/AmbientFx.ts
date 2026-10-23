@@ -12,10 +12,10 @@ type Motion = 'wander' | 'fall' | 'rise' | 'drift';
 
 interface LayerDef {
   count: number;
-  /** World-space size of a particle (a pixel square for leaves/snow, a soft dot for glows). */
+  /** World-space size of a particle (a soft fleck for leaves/snow, a soft dot for glows). */
   size: number;
   colors: [number, number];
-  /** Additive glowing dot (fireflies, embers) or a solid little square (leaves, snow, ash). */
+  /** Additive glowing dot (fireflies, embers) or a solid little fleck (leaves, snow, ash). */
   glow: boolean;
   /** HDR brightness of glowing layers (above 1 feeds the bloom pass). */
   bright?: number;
@@ -109,10 +109,12 @@ varying vec3 vCol;
 varying float vA;
 void main() {
   if (vA < 0.01) discard;
-  // a crisp pixel square with a darker lower-right edge, like a Minecraft particle
-  vec2 q = gl_PointCoord;
-  float shade = (q.x > 0.7 || q.y > 0.7) ? 0.72 : 1.0;
-  gl_FragColor = vec4(vCol * shade, vA);
+  // a soft painted fleck (the world is not cubic): a round dab, darker toward its lower side
+  vec2 q = gl_PointCoord - 0.5;
+  float r = length(q * vec2(1.0, 1.3));
+  if (r > 0.5) discard;
+  float shade = 0.78 + 0.22 * smoothstep(0.3, -0.3, q.y + q.x * 0.4);
+  gl_FragColor = vec4(vCol * shade, vA * smoothstep(0.5, 0.3, r));
   #include <tonemapping_fragment>
   #include <colorspace_fragment>
 }`;
