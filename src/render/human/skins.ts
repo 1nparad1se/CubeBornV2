@@ -31,7 +31,7 @@ function frontEdge(f: Face, x: number, w: number): boolean {
   return (f === 'left' && x === 0) || (f === 'right' && x === w - 1);
 }
 
-const head: Paint = (f, x, y, w) => {
+const head: Paint = (f, x, y) => {
   const s = shade(SKIN, x, y, f.length * 7);
   if (f === 'top') return shade(HAIR, x, y, 3);
   if (f === 'bottom') return SKIN_DARK;

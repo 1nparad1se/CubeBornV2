@@ -70,7 +70,7 @@ export const OBSTACLES: [number, number, number, number][] = [
  * the plain and light meadow to sunlit grass, so neighbouring cells always differ by one step
  * in tone; dry patches sit only on the sunny side and clover only on the moist side.
  */
-export function meadowTile(x: number, z: number): string {
+function meadowTile(x: number, z: number): string {
   const wet = fbm2(x / 15, z / 15, 301);
   const dry = fbm2(x / 9, z / 9, 302);
   const clover = fbm2(x / 5, z / 5, 303);
@@ -117,7 +117,7 @@ function landHeight(x: number, z: number, n: number): number {
  * ground — quarter blocks on gentle hills, half blocks on slopes, whole blocks on steep mountain
  * sides — with a little jitter so the terraces have ragged, natural edges.
  */
-export function reliefHeight(x: number, z: number, n: number): number {
+function reliefHeight(x: number, z: number, n: number): number {
   const h = landHeight(x + 0.5, z + 0.5, n);
   const gx = landHeight(x + 1.5, z + 0.5, n) - landHeight(x - 0.5, z + 0.5, n);
   const gz = landHeight(x + 0.5, z + 1.5, n) - landHeight(x + 0.5, z - 0.5, n);

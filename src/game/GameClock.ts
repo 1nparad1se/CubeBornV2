@@ -69,10 +69,6 @@ export class GameClock {
     return formatClock(this.minutes);
   }
 
-  get phase(): DayPeriod {
-    return phaseAt(this.minutes).p;
-  }
-
   toSave(): { minutes: number; days: number } {
     return { minutes: Math.round(this.minutes * 1000) / 1000, days: this.days };
   }

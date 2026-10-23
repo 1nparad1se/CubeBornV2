@@ -29,7 +29,7 @@ const FADE_RATE = 4;
  * model's own space, so the leaves of one cube already differ (light and dark leaves, a yellower
  * or bluer one here and there) and bark runs in grooves and plates, at no geometry cost.
  */
-export function treeMaterial(opts: THREE.MeshLambertMaterialParameters = {}): THREE.MeshLambertMaterial {
+function treeMaterial(opts: THREE.MeshLambertMaterialParameters = {}): THREE.MeshLambertMaterial {
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, ...opts });
   mat.onBeforeCompile = (sh) => {
     sh.vertexShader = sh.vertexShader
@@ -122,8 +122,6 @@ export class TreeRenderer {
   private lastX = 1e9;
   private lastZ = 1e9;
   private lastR = 0;
-  /** Trees drawn after the last refill (debug and tests). */
-  drawn = 0;
 
   constructor(private trees: TreeList, shadows: boolean) {
     this.ghostDepthMat.depthWrite = true;
@@ -186,7 +184,6 @@ export class TreeRenderer {
           want[lod][L.kind[i] * TREE_VARIANTS + L.variant[i]].push(i);
         }
       }
-    this.drawn = 0;
     this.slot.clear();
     this.nearList = want[0].flat();
     this.sets.forEach((set, lod) => this.fill(set, want[lod], lod === 0));
@@ -217,7 +214,6 @@ export class TreeRenderer {
       m.count = list.length;
       m.instanceMatrix.needsUpdate = true;
       if (m.instanceColor) m.instanceColor.needsUpdate = true;
-      if (set !== this.proxy) this.drawn += list.length;
     });
   }
 
@@ -319,11 +315,6 @@ export class TreeRenderer {
     this.group.add(depth, color);
     this.hide(i);
     return { tree: i, alpha: 1, target: GHOST_ALPHA, depth, color };
-  }
-
-  /** Trees fading or faded (tests). */
-  get ghostCount() {
-    return this.ghosts.length;
   }
 
   dispose() {

@@ -85,10 +85,10 @@ export interface WeaponModel {
 }
 
 /** Bow string anchors in the bow's local space (grip at the origin, forward +Z, up +Y). */
-export const BOW_TIP_TOP = new THREE.Vector3(0, 9 * BOW_PX, -4.6 * BOW_PX);
-export const BOW_TIP_BOTTOM = new THREE.Vector3(0, -8 * BOW_PX, -4.6 * BOW_PX);
+const BOW_TIP_TOP = new THREE.Vector3(0, 9 * BOW_PX, -4.6 * BOW_PX);
+const BOW_TIP_BOTTOM = new THREE.Vector3(0, -8 * BOW_PX, -4.6 * BOW_PX);
 /** Where the arrow shaft rests: on top of the grip (the bow is held level, its +X up). */
-export const BOW_ARROW_REST = new THREE.Vector3(0.9 * BOW_PX, 0.5 * BOW_PX, 0);
+const BOW_ARROW_REST = new THREE.Vector3(0.9 * BOW_PX, 0.5 * BOW_PX, 0);
 const ARROW_NOCK = 0.3; // distance from the arrow model's origin back to its nock
 let stringMat: THREE.MeshLambertMaterial | null = null;
 

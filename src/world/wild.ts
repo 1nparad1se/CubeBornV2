@@ -46,16 +46,15 @@ export const BIOME = {
   alpine: 8,
   volcanic: 9,
 } as const;
-export const BIOME_NAME = ['Океан', 'Побережье', 'Пустыня', 'Степь', 'Равнины', 'Лиственный лес', 'Хвойный лес', 'Снежная тайга', 'Высокогорье', 'Вулканическое нагорье'];
 
-export interface DummySpot {
+interface DummySpot {
   id: string;
   name: string;
   x: number;
   z: number;
 }
 
-export interface WildWorld {
+interface WildWorld {
   map: MapDef;
   terrain: Terrain;
   spawn: { x: number; z: number };
@@ -724,7 +723,7 @@ export function generateWild(n = WILD_SIZE): WildWorld {
   // swamps: on wet, warm-enough flat lowland the ground water stands in shallow pools
   makeSwamps(t, n, top, kind, sTemp, sRain, sMtn, g.swamp, g.mudGrass, g.peat, g.swampMud, stats);
   // the spawn is chosen now: the roads start from it
-  const spawn = findSpawn(t, n, m, BIO, TEMP, RAIN, rDist);
+  const spawn = findSpawn(t, n, m, BIO, TEMP, RAIN);
   // roads and paths between the places people would go, by the easiest ways over the land
   const roads = makeRoads(t, n, top, spawn, { BIO, H1, MTN, isSea, fill, m, C }, {
     packed: g.packed, pebbles: g.pebbles, gravel: g.gravel, cobble: g.cobble, sandPacked: g.sandPacked, snowPacked: g.snowPacked, snowDirty: g.snowDirty,
@@ -993,7 +992,7 @@ function blur(m: number, f: Float32Array, r: number): Float32Array {
  * Where the hero starts: mild open plains near a river and near the middle of the land, on level
  * ground (the dummies' clearing is flattened around it).
  */
-function findSpawn(t: Terrain, n: number, m: number, BIO: Uint8Array, TEMP: Float32Array, RAIN: Float32Array, rDist: Uint8Array): { x: number; z: number } {
+function findSpawn(t: Terrain, n: number, m: number, BIO: Uint8Array, TEMP: Float32Array, RAIN: Float32Array): { x: number; z: number } {
   let best = -1;
   let bestScore = -1e9;
   for (let cz = 20; cz < m - 20; cz += 2)

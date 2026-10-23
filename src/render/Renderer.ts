@@ -422,12 +422,6 @@ export class Renderer {
     this.menuTerrain = terrain;
   }
 
-  /** Cuts the camera to a point (open-world respawn / teleport) and builds the streamed world around it at once. */
-  snapTo(x: number, z: number) {
-    this.rig.snap(x, z, this.run ? this.run.terrain.groundY(x, z) : 0);
-    this.world?.cull(x, z, 70, 0);
-  }
-
   /** Starts drawing the world; returns the FxSink the game logic should use. */
   startRun(run: World, hooks: FxHooks): FxSink {
     this.menuMode = false;
@@ -454,11 +448,6 @@ export class Renderer {
   /** Marks a walk order on the ground. */
   markMove(x: number, z: number) {
     this.entities?.markMove(x, z);
-  }
-
-  /** The hero model being drawn (previews and tests). */
-  get heroModel(): HumanModel | null {
-    return this.entities?.hero ?? null;
   }
 
   private makeFx(hooks: FxHooks): FxSink {

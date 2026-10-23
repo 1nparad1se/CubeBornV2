@@ -46,11 +46,7 @@ function lerpLight(a: PhaseLight, b: PhaseLight, k: number, out: PhaseLight): Ph
  * reads it, so it never changes game speed and keeps the gameplay hooks (period events, `night`).
  */
 export class DayNight {
-  /** Completed nights (the first night is 1 while it lasts). */
-  nights = 0;
   period: DayPeriod = 'day';
-  /** Progress 0..1 through the current period. */
-  phaseK = 0;
   /** 0 full day .. 1 full night, eased through dawn and dusk. */
   night = 0;
   /** Blended lighting for the renderer. */
@@ -61,20 +57,6 @@ export class DayNight {
     readonly clock: GameClock,
   ) {
     this.compute();
-  }
-
-  /** The cycle always runs (kept for callers that still ask). */
-  get enabled(): boolean {
-    return true;
-  }
-
-  get isNight(): boolean {
-    return this.night >= 0.5;
-  }
-
-  /** Minutes since midnight. */
-  get minutes(): number {
-    return this.clock.minutes;
   }
 
   /**
@@ -93,7 +75,6 @@ export class DayNight {
   private compute() {
     const { p, k } = phaseAt(this.clock.minutes);
     this.period = p;
-    this.phaseK = k;
     const L = DAY_NIGHT.light;
     switch (p) {
       case 'day':
@@ -142,7 +123,6 @@ export class DayNight {
     run.events.emit('dayPeriod', p);
     if (p === 'dusk') run.events.emit('banner', 'dn_dusk');
     else if (p === 'night') {
-      this.nights++;
       run.events.emit('banner', 'dn_night');
       run.fx.sound('nightfall', 0.8);
     } else if (p === 'dawn') {

@@ -29,7 +29,6 @@ export class Input {
   lmb = false;
   rmb = false;
   lmbPressed = false;
-  rmbPressed = false;
   /** Mouse travel (px) while the right button is held, consumed by the client (camera orbit). */
   dragX = 0;
   dragY = 0;
@@ -105,7 +104,6 @@ export class Input {
         this.lmbPressed = true;
       } else if (b === 2) {
         this.rmb = true;
-        this.rmbPressed = true;
       }
       area.setPointerCapture?.(e.pointerId);
     });
@@ -148,7 +146,7 @@ export class Input {
     this.enabled = on;
     if (!on) {
       this.keys.clear();
-      this.lmb = this.rmb = this.lmbPressed = this.rmbPressed = false;
+      this.lmb = this.rmb = this.lmbPressed = false;
       this.dragX = this.dragY = 0;
     }
   }

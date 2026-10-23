@@ -1,8 +1,8 @@
 import * as THREE from 'three';
 
 /** Limits of the camera's downward tilt (degrees from the horizontal). */
-export const PITCH_MIN = 25;
-export const PITCH_MAX = 50;
+const PITCH_MIN = 25;
+const PITCH_MAX = 50;
 /** Closest the camera may be pulled in by terrain between it and the hero (world units). */
 const MIN_DIST = 2.2;
 
@@ -161,13 +161,6 @@ export class CameraRig {
       if (ground(x, z) + 1.0 > y0 + (h - 1.2) * k) return Math.max(MIN_DIST / dist, (i - 2) / steps);
     }
     return 1;
-  }
-
-  /** Turns a screen-space input direction (x right, z down) into a world direction. */
-  screenToWorld(ix: number, iz: number): [number, number] {
-    const c = Math.cos(this.yaw);
-    const s = Math.sin(this.yaw);
-    return [ix * c + iz * s, -ix * s + iz * c];
   }
 
   /** World point on the ground plane (height y) under a screen pixel. */

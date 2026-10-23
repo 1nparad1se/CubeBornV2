@@ -10,7 +10,7 @@ import { itemIcon } from './itemIcons';
 import { Minimap } from './Minimap';
 
 /** Cells of the skill bar (empty for now: active skills come later). */
-export const SKILL_SLOTS = 6;
+const SKILL_SLOTS = 6;
 
 interface HudOptions {
   fps: boolean;

@@ -37,17 +37,11 @@ export const BUSH = {
 } as const;
 export const BUSH_KINDS = 20;
 export const BUSH_VARIANTS = 2;
-export const BUSH_NAMES = [
-  'Лесной кустик', 'Клеверная подушка', 'Лесная черника', 'Молодой папоротник', 'Цветущий луговой кустик', 'Стелющийся плющ', 'Земляничный кустик', 'Моховая кочка',
-  'Пустынная полынь', 'Сухая колючка', 'Песчаный кустик', 'Карликовый суккулент', 'Пустынный цветок', 'Сухой перекати-куст',
-  'Снежный кустик', 'Карликовая хвоя', 'Морозный вереск', 'Зимняя брусника',
-  'Болотная кочка', 'Влажный стелющийся куст',
-];
 /** Instance sizes (scale of the model): very small 0.15 block, small 0.3, medium 0.5. */
 export const BUSH_SIZES = [0.3, 0.6, 1];
 
 /** Model voxel size (blocks). */
-export const BUSH_VOX = 1 / 24;
+const BUSH_VOX = 1 / 24;
 
 const GREEN = [0x4e8a2c, 0x5a9a34, 0x447a26, 0x66a63c];
 const DARK_GREEN = [0x2e5a24, 0x36682a, 0x284e20, 0x3e7230];

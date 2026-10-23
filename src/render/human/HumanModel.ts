@@ -152,10 +152,6 @@ export class HumanModel {
     if (this.shadows) this.root.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).castShadow = true) : null));
   }
 
-  get weaponType(): WeaponKind | null {
-    return this.weaponKind;
-  }
-
   /** Lays the weapon into the hand(s): grip at the hand, business end forward/up. */
   private mountWeapon() {
     const w = this.weapon;

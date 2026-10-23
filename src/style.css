@@ -1,17 +1,10 @@
 :root {
   --bg: #111316;
-  --panel: #1b1e23;
   --panel2: #2a2e35;
   --edge: #3a3f48;
-  --edge-hi: #5c636f;
   --text: #f1f2f4;
   --dim: #a9aeb7;
-  --accent: #f29b2c;
   --gold: #ffd23d;
-  --green: #5ad66a;
-  --green-dk: #2f8a3e;
-  --red: #ff4a5a;
-  --blue: #5ab4ff;
   /*
    * Typography (v2.2). Two families with full Cyrillic + Latin + digits + symbols:
    * Russo One for display text (titles, buttons, HUD headings) and Rubik for everything that
@@ -19,26 +12,11 @@
    */
   --font-display: 'Russo One', 'Rubik', system-ui, sans-serif;
   --font-ui: 'Rubik', system-ui, sans-serif;
-  --px: var(--font-display);
   --px-logo: 'Press Start 2P', monospace;
   --fmc: var(--font-display);
   --ui: var(--font-ui);
   /* type scale: one size per role, nothing below --fs-min */
-  --fs-title: 30px;
-  --fs-subtitle: 21px;
-  --fs-body: 16px;
-  --fs-secondary: 14px;
-  --fs-button: 16px;
-  --fs-stats: 15px;
-  --fs-warning: 18px;
-  --fs-small: 14px;
   --fs-min: 13px;
-  --lh-tight: 1.15;
-  --lh-body: 1.42;
-  --text-strong: #ffffff;
-  --text-warn: #ffb03a;
-  --text-danger: #ff6a6a;
-  --shadow-text: 0 2px 0 rgba(0, 0, 0, 0.85);
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   --sal: env(safe-area-inset-left, 0px);
@@ -222,22 +200,6 @@ img.icon {
   }
 }
 
-.screen-head {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 14px;
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-.screen-head h2 {
-  flex: 1;
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: clamp(16px, 3vw, 24px);
-  text-shadow: 0 3px 0 #000;
-}
 .count {
   font-family: var(--font-display);
   font-size: 15px;
@@ -295,10 +257,6 @@ img.icon {
   z-index: 5;
   pointer-events: none;
   font-family: var(--fmc);
-  --slate: #1d2126;
-  --slate2: #2a2f36;
-  --rim: #6b7078;
-  --rim-dk: #0a0b0d;
 }
 .hud .key {
   display: inline-flex;
@@ -455,23 +413,9 @@ h2.glow {
       0 0 18px rgba(255, 210, 61, 0.7);
   }
 }
-@keyframes pop {
-  from {
-    opacity: 0;
-    transform: translateY(14px) scale(0.96);
-  }
-}
 @keyframes pulse {
   to {
     transform: scale(1.15);
-  }
-}
-@keyframes shake {
-  25% {
-    transform: translateX(-2px) rotate(-2deg);
-  }
-  75% {
-    transform: translateX(2px) rotate(2deg);
   }
 }
 .pause .settings {
@@ -479,36 +423,6 @@ h2.glow {
   box-shadow: none;
   padding: 0;
   text-align: left;
-}
-
-.toasts {
-  position: absolute;
-  z-index: 40;
-  top: calc(80px + var(--sat));
-  left: 0;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  pointer-events: none;
-}
-.toast {
-  font-family: var(--font-display);
-  font-size: 14px;
-  color: var(--tc);
-  background: rgba(10, 8, 16, 0.85);
-  padding: 10px 14px;
-  border-radius: 4px;
-  box-shadow: 0 0 0 2px #08090b;
-  animation: pop 0.3s;
-  transition: opacity 0.4s;
-  text-align: center;
-  max-width: 90vw;
-  line-height: 1.5;
-}
-.toast.out {
-  opacity: 0;
 }
 
 .fatal {

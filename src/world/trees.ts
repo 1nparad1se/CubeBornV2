@@ -30,7 +30,7 @@ export const TREE_KINDS = 18;
 /** Shape variants per species (height, trunk and crown differ); instances add scale and turn. */
 export const TREE_VARIANTS = 4;
 
-export interface TreeSpec {
+interface TreeSpec {
   name: string;
   /** Total height (blocks) of variant 0 and the extra per variant step. */
   height: number;

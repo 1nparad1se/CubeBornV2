@@ -73,7 +73,6 @@ export class App implements MenuApi {
   private worldMap: WorldMap;
   private menus: Menus;
   private modals: RunModals;
-  private toasts: HTMLElement;
   /** The training ground being played (null in menus). */
   world: World | null = null;
   private runChar: string | null = null;
@@ -129,8 +128,6 @@ export class App implements MenuApi {
     this.menus = new Menus(root, this);
     this.menus.setVisible(false);
     this.modals = new RunModals(root, this);
-    this.toasts = h('div.toasts');
-    root.appendChild(this.toasts);
     this.applySettings();
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) {
@@ -427,13 +424,6 @@ export class App implements MenuApi {
     this.toMenu();
   }
 
-  toast(text: string, color = '#ffffff') {
-    const el = h('div.toast', { style: `--tc:${color}` }, text);
-    this.toasts.appendChild(el);
-    setTimeout(() => el.classList.add('out'), 2600);
-    setTimeout(() => el.remove(), 3100);
-  }
-
   // ------------------------------------------------------------------ loop
   private channel: MessageChannel | null = null;
   private schedule() {
@@ -484,7 +474,6 @@ export class App implements MenuApi {
       if (active) rig.orbit(-inp.dragX * 0.006, inp.dragY * 0.004);
       inp.dragX = inp.dragY = 0;
     }
-    inp.rmbPressed = false;
     this.hud.minimap.yaw = rig.yaw;
     this.worldMap.yaw = rig.yaw;
     if (!active) {

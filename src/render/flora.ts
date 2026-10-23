@@ -7,7 +7,7 @@ import { SPRITE } from './Textures';
  * Where the meadow's bushes grow. Decor only (the hero walks through them, pushing them aside),
  * but placed by one deterministic rule so the world and the maps (minimap, world map) agree.
  */
-export interface BushSpot {
+interface BushSpot {
   x: number;
   z: number;
   /** Foliage sprite (SPRITE.bush, berryBush or shrub). */

@@ -109,11 +109,6 @@ export class RpgPlayer {
     return this.jumpPhase === 'air';
   }
 
-  /** Height of the feet above the ground under them. */
-  get jumpY(): number {
-    return Math.max(0, this.y - this.ground);
-  }
-
   requestJump() {
     this.jumpBuf = JUMP.buffer;
   }

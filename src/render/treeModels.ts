@@ -132,7 +132,7 @@ interface Shape {
 
 // ---------- voxel grid ----------
 
-export const EMPTY = -1;
+const EMPTY = -1;
 export const WOOD = 1;
 export const LEAF = 2;
 export const FRUIT = 3;
@@ -566,7 +566,7 @@ function build(kind: number, variant: number): Shape {
         const pal = WILLOW.map((c) => tone(c, 0.92 + r() * 0.12));
         // a strand in two pieces with a slight bend
         const mid: Vec = [x + sw, top - 0.5 - len * 0.5, z - sw];
-        const ps = { t: 'seg' as const, w, leaf: true, color: (px: number, py: number, pz: number) => pick(pal, h3(Math.floor(px * 3), Math.floor(py * 2), s, seed)) };
+        const ps = { t: 'seg' as const, w, leaf: true, color: (px: number, py: number) => pick(pal, h3(Math.floor(px * 3), Math.floor(py * 2), s, seed)) };
         P.push({ ...ps, a: [x, top - 0.3, z], b: mid }, { ...ps, a: mid, b: [x + sw * 2, Math.max(0.6, top - 0.5 - len), z - sw] });
       }
       break;

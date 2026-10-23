@@ -11,20 +11,9 @@
   --font-hud: 'Russo One', 'Rubik', system-ui, sans-serif;
   /* teal-dark translucent panels */
   --mc-panel: rgba(13, 36, 42, 0.9);
-  --mc-panel2: rgba(22, 54, 61, 0.92);
-  --mc-panel-hi: rgba(36, 78, 86, 0.95);
-  --mc-cell: rgba(7, 20, 24, 0.82);
   --mc-line: rgba(176, 222, 226, 0.32);
-  --mc-line-hi: rgba(214, 240, 242, 0.7);
-  --mc-text: #eaf3f3;
-  --mc-dim: #9dbcc0;
-  --mc-gold: #ffd84a;
   --mc-key: #ece6d2;
   --mc-key-dk: #b4ab92;
-  --mc-xp: #9a6cff;
-  --mc-bevel-hi: #a7adb5;
-  --mc-bevel: #6d737b;
-  --mc-bevel-dk: #3c4047;
 }
 
 /* ------------------------------------------------------------------ shared bits */
@@ -53,31 +42,6 @@
 .banner-sub {
   font-family: var(--font-hud) !important;
   letter-spacing: 0.5px;
-}
-
-/* ------------------------------------------------------------------ toasts */
-.toast {
-  font: 400 15px var(--font-hud);
-  letter-spacing: 0.3px;
-  background: rgba(12, 32, 38, 0.92);
-  border: 1px solid var(--mc-line);
-  border-radius: 0;
-  box-shadow: 0 0 0 1px #050607;
-  padding: 8px 16px 8px 30px;
-  position: relative;
-  text-shadow: 1px 1px 0 #000;
-}
-.toast::before {
-  content: '';
-  position: absolute;
-  left: 11px;
-  top: 50%;
-  width: 8px;
-  height: 8px;
-  margin-top: -4px;
-  transform: rotate(45deg);
-  background: var(--tc, #fff);
-  box-shadow: 0 0 0 1px #000;
 }
 
 /* ==================================================================================================

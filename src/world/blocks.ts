@@ -10,7 +10,7 @@ import { hash2 } from '../core/Rng';
  */
 
 /** A pixel: [palette index, brightness multiplier]. */
-export type BlockPx = [number, number];
+type BlockPx = [number, number];
 export type BlockPattern = (seed: number) => (x: number, y: number) => BlockPx;
 
 export interface BlockLook {

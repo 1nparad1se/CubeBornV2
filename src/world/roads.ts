@@ -11,7 +11,7 @@ import { CELL, type Terrain } from '../game/Terrain';
  * and there an old overgrown cobble road. Narrow paths lead off the roads into the land around.
  */
 
-export interface RoadFields {
+interface RoadFields {
   BIO: Uint8Array;
   H1: Float32Array;
   MTN: Float32Array;
@@ -21,7 +21,7 @@ export interface RoadFields {
   C: number;
 }
 
-export interface RoadTiles {
+interface RoadTiles {
   packed: number;
   pebbles: number;
   gravel: number;
