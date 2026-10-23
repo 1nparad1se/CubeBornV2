@@ -74,8 +74,8 @@ export const WILD_MAP: MapDef = {
   size: WILD_SIZE,
   generator: 'wild',
   palette: {
-    sky: 0x7d8c8e, fog: 0x7a8682, fogNear: 34, fogFar: 84, ambient: 0xb8c6c8, ambientIntensity: 0.58,
-    sun: 0xe8dcc0, sunIntensity: 1.1, hemiGround: 0x34402a,
+    sky: 0x9fd2ec, fog: 0xa8d0c8, fogNear: 40, fogFar: 92, ambient: 0xd6ecff, ambientIntensity: 0.6,
+    sun: 0xfff1d6, sunIntensity: 1.2, hemiGround: 0x5a7a34,
     tiles: {
       grass: [0x6aa842, 0x70ad46, 0x64a23f],
       grass2: [0x78b44c, 0x7eb952],

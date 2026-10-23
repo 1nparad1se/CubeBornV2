@@ -346,7 +346,7 @@ export function settingsPanel(api: MenuApi, rerender: () => void, onBack: () => 
           slider(tr('Плотность тумана', 'Fog density'), () => st.fogDensity, (v) => (st.fogDensity = v), { hint: tr('Насколько быстро даль уходит в дымку.', 'How quickly the distance fades.') }),
           slider(tr('Начало тумана', 'Fog start'), () => st.fogStart, (v) => (st.fogStart = v), { hint: tr('С какого расстояния появляется дымка: меньше — ближе к герою.', 'How far away the haze begins: lower is closer.') }),
           group(tr('Цвет', 'Colour')),
-          slider(tr('Насыщенность цвета', 'Colour saturation'), () => st.colorSat, (v) => (st.colorSat = v), { max: 150, hint: tr('Сила красок мира: меньше — блёклее и мрачнее, больше — ярче.', 'How vivid the world is: lower is duller and gloomier.') }),
+          slider(tr('Насыщенность цвета', 'Colour saturation'), () => st.colorSat, (v) => (st.colorSat = v), { max: 150, hint: tr('Сила красок мира (100 % — как задумано); действует при включённой постобработке.', 'How vivid the world is (100 % as designed); needs post-processing.') }),
           seg(tr('Сглаживание', 'Anti-aliasing'), [
             { id: 'off', name: off() },
             { id: 'msaa', name: 'MSAA' },

@@ -50,8 +50,8 @@ export function treeMaterial(opts: THREE.MeshLambertMaterialParameters = {}): TH
     float d = vnoise(vObj.xy * 4.2 + vObj.z * 2.7) * 0.55 + vnoise(vObj.zy * 9.0 + vObj.x * 3.3 + 7.0) * 0.45;
     float db = floor(d * 4.0);
     d = (db + smoothstep(0.3, 0.7, d * 4.0 - db)) / 4.0;
-    t = 0.66 + d * 0.56;
-    t *= mix(0.6, 1.08, smoothstep(-0.5, 0.9, up));
+    t = 0.84 + d * 0.28;
+    t *= mix(0.82, 1.04, smoothstep(-0.5, 0.9, up));
     tint = mix(vec3(0.9, 1.0, 1.04), vec3(1.05, 1.02, 0.9), smoothstep(0.45, 0.8, vnoise(vObj.xz * 1.7 + vObj.y)));
   } else if (vSurf < ${(SURF.wood + 0.5).toFixed(1)}) {
     float g = vnoise(vec2((vObj.x + vObj.z) * 11.0, vObj.y * 1.4)) * 0.6 + vnoise(vec2((vObj.x - vObj.z) * 23.0, vObj.y * 3.0)) * 0.4;

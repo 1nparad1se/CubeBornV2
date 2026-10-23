@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import type { MapDef } from '../data/types';
 import { CELL, isWater, liquidLevel, type Terrain } from '../game/Terrain';
 import { hash2, noise2 } from '../core/Rng';
-import { paintColors, ATLAS_VARIANTS, BUSH_TOP, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_BUSH, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
+import { ATLAS_VARIANTS, BUSH_TOP, GROUND_ROWS, ROW_RIM, ROW_SOIL, ROW_STONE, SPRITE, SPRITE_BUSH, SPRITE_COLORED, SPRITE_COUNT, makeFoliageAtlas, makeGroundAtlas } from './Textures';
 import { bushSpots } from './flora';
 import { BUSH, BUSH_SIZES, bushGeometry } from './bushModels';
 import { GLSL_NOISE } from './glsl';
@@ -357,26 +357,6 @@ export class WorldRenderer {
     ao.needsUpdate = true;
 
     const atlas = makeGroundAtlas(t.tileNames, map.palette.tiles, map.palette.blocks ?? {});
-    // painted ground: each tile's mean colour and its light/dark spread, read off its pixel block
-    // once, then laid per cell into a smoothly filtered texture; the shader blends neighbouring
-    // grounds through it (domain-warped into ragged painted patches) and brushes strokes over it
-    const tilePaint = paintColors(atlas, t.tileNames.length);
-    const paintData = new Uint8Array(n * n * 4);
-    for (let i = 0; i < n * n; i++) {
-      let ti = t.tile[i];
-      if (wet(i)) {
-        const bed = bedTileName(t.tileNames[ti] ?? '', t.tileNames);
-        if (bed) ti = t.tileNames.indexOf(bed);
-      }
-      const c = tilePaint[ti] ?? [120, 120, 120, 40];
-      paintData[i * 4] = c[0];
-      paintData[i * 4 + 1] = c[1];
-      paintData[i * 4 + 2] = c[2];
-      paintData[i * 4 + 3] = c[3];
-    }
-    const paint = new THREE.DataTexture(paintData, n, n, THREE.RGBAFormat);
-    paint.magFilter = paint.minFilter = THREE.LinearFilter;
-    paint.needsUpdate = true;
     const tileCount = Math.max(1, t.tileNames.length);
     // per tile: animation kind, water kind, water depth (one texel each, any number of tiles);
     // second row: the ground tile under the water (beds)
@@ -418,7 +398,6 @@ export class WorldRenderer {
       sh.uniforms.uSmooth = { value: t.vert ? 1 : 0 };
       sh.uniforms.uAtlas = { value: atlas };
       sh.uniforms.uAO = { value: ao };
-      sh.uniforms.uPaint = { value: paint };
       sh.uniforms.uTime = u.uTime;
       sh.uniforms.uSurge = u.uSurge;
       sh.uniforms.uFocus = u.uFocus;
@@ -448,7 +427,6 @@ varying float vSide;
 uniform sampler2D uCells;
 uniform sampler2D uAtlas;
 uniform sampler2D uAO;
-uniform sampler2D uPaint;
 uniform float uTime;
 uniform float uSurge;
 uniform vec3 uFocus;
@@ -472,30 +450,7 @@ float animOf(float tile) { return infoOf(tile).r; }
 float bedOf(float tile) { return floor(texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.75)).r * 255.0 + 0.5); }
 bool grassOf(float tile) { return texture2D(uInfo, vec2((tile + 0.5) / uTiles, 0.25)).a > 0.5; }
 float tileOf(vec4 c) { return floor(c.r * 255.0 + 0.5); }
-bool isLand(vec2 c) { return cellAt(c).b < 0.05; }
-// soft painted ground: grounds blend through a smoothly filtered colour field whose lookup is
-// warped by noise (ragged painted patches, never cell squares), overlaid with brush strokes that
-// follow a slowly turning direction, softly banded like dabs of paint
-vec3 painted(vec2 xz, out float stroke) {
-  vec2 w = xz + (vec2(vnoise(xz * 0.31), vnoise(xz * 0.31 + 17.3)) - 0.5) * 1.6
-              + (vec2(vnoise(xz * 1.3 + 5.1), vnoise(xz * 1.3 + 41.7)) - 0.5) * 0.45;
-  vec4 p = texture2D(uPaint, w / uSize);
-  // two stroke directions, crossfaded in broad patches (no turning frame: no arcs)
-  vec2 qa = vec2(dot(xz, vec2(0.8, 0.6)), dot(xz, vec2(-0.6, 0.8)));
-  vec2 qb = vec2(dot(xz, vec2(0.28, -0.96)), dot(xz, vec2(0.96, 0.28)));
-  float ba = vnoise(qa * vec2(0.8, 3.4)) * 0.6 + vnoise(qa * vec2(2.2, 8.0) + 9.0) * 0.4;
-  float bq = vnoise(qb * vec2(0.8, 3.4) + 3.0) * 0.6 + vnoise(qb * vec2(2.2, 8.0) + 21.0) * 0.4;
-  float b = mix(ba, bq, smoothstep(0.35, 0.65, vnoise(xz * 0.06 + 11.0)));
-  float bb = floor(b * 4.0);
-  b = mix(b, (bb + smoothstep(0.3, 0.7, b * 4.0 - bb)) / 4.0, 0.75);
-  stroke = b;
-  vec3 c = p.rgb * (1.0 + (b - 0.5) * 2.2 * p.a);
-  // broad light and shade washes, a faint cool/warm drift across the land
-  float m = vnoise(xz * 0.035) * 0.6 + vnoise(xz * 0.11) * 0.4;
-  c *= 0.82 + m * 0.3;
-  c *= mix(vec3(0.97, 1.0, 1.04), vec3(1.04, 1.0, 0.95), vnoise(xz * 0.02 + 3.0));
-  return c;
-}`,
+bool isLand(vec2 c) { return cellAt(c).b < 0.05; }`,
         )
         .replace(
           '#include <map_fragment>',
@@ -520,7 +475,7 @@ vec3 painted(vec2 xz, out float stroke) {
   vec2 cell = floor(xz);
   vec4 cd = cellAt(cell);
   bool liquid = cd.b > 0.05;
-  vec2 pxc = xz;
+  vec2 pxc = (floor(xz * 32.0) + 0.5) / 32.0;
   float tile = tileOf(cd);
   float variant = floor(cd.g * 255.0 + 0.5);
   float anim = animOf(tile);
@@ -551,12 +506,17 @@ vec3 painted(vec2 xz, out float stroke) {
     if (anim == 4.0) col = mix(col, vec3(0.12, 0.06, 0.25), clamp(d / 4.0, 0.0, 1.0));
     if (bedCell) col *= 0.8;
   } else if (bedCell) {
-    float stroke;
-    col = painted(xz, stroke) * 0.78;
+    vec2 bp = xz * 2.0;
+    vec2 blk = floor(bp);
+    vec2 l = fract(bp);
+    if (h21(blk + 5.0) > 0.5) l.x = 1.0 - l.x;
+    col = atlasAt(tile, floor(h21(blk * 1.37 + tile) * ${ATLAS_VARIANTS.toFixed(1)}), l) * 0.8;
     float dep = waterDepth(pxc);
     col *= 1.0 - clamp(dep * 0.1, 0.0, 0.3);
     col *= 0.94 + vnoise(xz * 0.4) * 0.12;
-    gEmit = col * 0.06;
+    // sunlight dancing on a shallow bed
+    float ca = abs(vnoise(pxc * 2.3 + vec2(uTime * 0.35, -uTime * 0.25)) - vnoise(pxc * 2.1 - vec2(uTime * 0.3, uTime * 0.2)));
+    gEmit = vec3(0.55, 0.7, 0.75) * step(ca, 0.06) * 0.22 * (1.0 - smoothstep(0.3, 1.5, dep));
   } else if (liquid) {
     float shore = cd.b * 255.0 / 40.0;
     float ed = 1.0;
@@ -616,25 +576,57 @@ vec3 painted(vec2 xz, out float stroke) {
       gEmit = col * 0.1;
     }
   } else {
-    // ground top: soft painted ground (see painted), worn earth on tilted ground, grey-blue rock
-    // on steep ground, damp and dark beside the water
+    // ground top: one 16px texture per half-unit block, ragged pixel borders between tiles
+    vec2 bp = xz * 2.0;
+    vec2 blk = floor(bp);
+    vec2 l = fract(bp);
     float ut = tile;
+    vec2 clump = floor(xz * 16.0);
+    float W = 0.22;
+    float ex = min(local.x, 1.0 - local.x);
+    float ez = min(local.y, 1.0 - local.y);
+    vec4 nx = cellAt(cell + vec2(local.x < 0.5 ? -1.0 : 1.0, 0.0));
+    vec4 nz = cellAt(cell + vec2(0.0, local.y < 0.5 ? -1.0 : 1.0));
+    float tx = tileOf(nx);
+    float tz = tileOf(nz);
+    // smooth ground: neighbours always meet on one surface (no step between them)
+    if (uSmooth > 0.5) { nx.a = cd.a; nz.a = cd.a; }
+    // two meadow grounds meet in a wide colour blend (stepped per texture pixel, a little noisy)
+    // instead of a ragged seam; other neighbours keep the ragged pixel border
+    bool gMe = grassOf(tile);
+    vec2 lq = fract(pxc);
+    float qx = min(lq.x, 1.0 - lq.x);
+    float qz = min(lq.y, 1.0 - lq.y);
+    float jit = (h21(clump + 13.7) - 0.5) * 0.16;
+    float wx = (gMe && tx != tile && nx.b < 0.05 && abs(nx.a - cd.a) < 0.01 && grassOf(tx)) ? clamp(0.5 * (1.0 - qx / 0.5) + jit, 0.0, 0.5) : 0.0;
+    float wz = (gMe && tz != tile && nz.b < 0.05 && abs(nz.a - cd.a) < 0.01 && grassOf(tz)) ? clamp(0.5 * (1.0 - qz / 0.5) + jit, 0.0, 0.5) : 0.0;
+    if (wx == 0.0 && tx != tile && nx.b < 0.05 && abs(nx.a - cd.a) < 0.01 && ex < W && !(gMe && grassOf(tx)) && h21(clump + 3.1) < 0.55 * (1.0 - ex / W)) ut = tx;
+    else if (wz == 0.0 && tz != tile && nz.b < 0.05 && abs(nz.a - cd.a) < 0.01 && ez < W && !(gMe && grassOf(tz)) && h21(clump + 7.3) < 0.55 * (1.0 - ez / W)) ut = tz;
+    float bh = h21(blk * 1.37 + ut);
+    float v = floor(bh * ${ATLAS_VARIANTS.toFixed(1)});
+    if (h21(blk + 5.0) > 0.5) l.x = 1.0 - l.x;
     float ua = animOf(ut);
-    float stroke;
-    col = painted(xz, stroke);
-    float tilt = 1.0 - normalize(vN).y;
-    if (ua < 0.5) {
-      vec3 soil = vec3(0.24, 0.2, 0.16) * (0.85 + stroke * 0.35);
-      vec3 rock = vec3(0.34, 0.36, 0.39) * (0.78 + stroke * 0.5);
-      float tn = tilt + (vnoise(xz * 0.9) - 0.5) * 0.08;
-      col = mix(col, soil, smoothstep(0.12, 0.24, tn) * 0.6);
-      col = mix(col, rock, smoothstep(0.22, 0.34, tn));
+    if (ua > 0.5 && ua < 4.5) {
+      float sp = ua == 2.0 ? 2.0 : 3.0;
+      l = fract(l + vec2(floor(uTime * sp) / 16.0, floor(uTime * sp * 0.5) / 16.0));
     }
-    float wetK = smoothstep(0.0, 0.5, waterDepth(xz)) ;
-    col *= 1.0 - wetK * 0.35;
+    col = atlasAt(ut, v, l);
+    if (wx > 0.0) col = mix(col, atlasAt(tx, floor(h21(blk * 1.37 + tx) * ${ATLAS_VARIANTS.toFixed(1)}), l), wx);
+    if (wz > 0.0) col = mix(col, atlasAt(tz, floor(h21(blk * 1.37 + tz) * ${ATLAS_VARIANTS.toFixed(1)}), l), wz);
+    // slopes: worn earth where the ground tilts, bare stone where it is steep (pixel-dithered)
+    float tilt = 1.0 - normalize(vN).y;
+    float dith = h21(clump + 23.0);
+    if (!liquid && ua < 0.5) {
+      if (dith < smoothstep(0.1, 0.2, tilt) * 0.85) col = atlasAt(ut, ${ROW_SOIL.toFixed(1)} + step(0.5, bh), l);
+      if (dith < smoothstep(0.24, 0.36, tilt)) col = atlasAt(ut, ${ROW_STONE.toFixed(1)}, l);
+    }
+    col *= 0.97 + h21(blk + 11.0) * 0.05;
+    // broad painted patches of lighter and darker ground
+    float m = vnoise(xz * 0.07) * 0.6 + vnoise(xz * 0.23) * 0.4;
+    col *= 0.9 + m * 0.2;
     col *= texture2D(uAO, xz / uSize).r;
-    // slopes turned away from the sun keep a little of their colour in the shade
-    gEmit = col * 0.18 * smoothstep(0.06, 0.35, tilt);
+    // smooth slopes turned away from the sun stay readable (like the old terrace sides)
+    gEmit = col * 0.32 * smoothstep(0.06, 0.35, tilt);
     float spark = step(0.985, h21(floor(pxc * 16.0) + cell * 17.0 + floor(uTime * 2.0)));
     if (ua == 2.0) gEmit = col * (0.85 + 0.15 * sin(uTime * 2.0 + cell.x * 0.7)) + vec3(1.0, 0.8, 0.3) * spark * 0.6;
     if (ua == 3.0) {
@@ -671,7 +663,7 @@ vec3 painted(vec2 xz, out float stroke) {
     ghostColor.onBeforeCompile = compile(2);
     ghostColor.customProgramCacheKey = () => 'ground2';
     this.ghostMats = [ghostDepth, ghostColor];
-    this.disposables.push(mat, ghostDepth, ghostColor, cells, atlas, ao, paint);
+    this.disposables.push(mat, ghostDepth, ghostColor, cells, atlas, ao);
 
     // merged geometry per chunk: the sloped ground surface (two triangles per cell, flat runs
     // merged), flat water, and vertical rock faces where neighbouring surfaces do not meet (cliffs,

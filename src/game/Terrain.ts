@@ -255,7 +255,7 @@ export class Terrain {
       for (let vx = 0; vx < N; vx++) {
         const v = vz * N + vx;
         if (!wet[v]) continue;
-        if (dry[v]) V[v] = wl[v] - 0.03 - 0.25 * nz(vx, vz, 31);
+        if (dry[v]) V[v] = wl[v] - 0.12 - 0.2 * nz(vx, vz, 31);
         else V[v] = Math.min(V[v], wl[v] - 0.3);
         for (let dz = -1; dz <= 1; dz++)
           for (let dx = -1; dx <= 1; dx++) {
@@ -287,8 +287,18 @@ export class Terrain {
           }
           if (!c || s / 4 > w + 0.08) continue;
           const d = ((w + 0.1) * 4 - s) / c;
-          for (const v of vs) if (wet[v]) V[v] += d;
+          // never above the water: the water cells around must keep a visible surface
+          for (const v of vs) if (wet[v]) V[v] = Math.min(V[v] + d, wl[v] - 0.06);
         }
+    // every water cell keeps its bed under its own surface (where waters of two levels meet, the
+    // shared corners follow the lower one), so each shows water
+    for (let i = 0; i < n * n; i++) {
+      if (!isWater(this.cell[i]) || (this.hard && this.hard[i])) continue;
+      const x = i % n;
+      const z = (i / n) | 0;
+      const lim = this.waterLevel(i) - 0.12;
+      for (const v of [z * N + x, z * N + x + 1, (z + 1) * N + x, (z + 1) * N + x + 1]) V[v] = Math.min(V[v], lim);
+    }
   }
 
   /** Whether cells i and j (neighbours) meet with a step (a sheer face) rather than smooth ground. */

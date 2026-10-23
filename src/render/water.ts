@@ -148,7 +148,7 @@ float ripple(vec2 q) { return vnoise(q * 1.7) * 0.62 + vnoise(q * 3.9 + 11.0) * 
         `{
   vec3 col;
   float alpha;
-  vec3 foamC = vec3(0.62, 0.68, 0.68);
+  vec3 foamC = vec3(0.9, 0.96, 1.0);
   if (vFall > 1.5) {
     // spray at the foot of a fall: white puffs drifting up and thinning out
     float along = dot(vWPos.xz, vec2(-vWN.z, vWN.x));
@@ -192,13 +192,11 @@ float ripple(vec2 q) { return vnoise(q * 1.7) * 0.62 + vnoise(q * 3.9 + 11.0) * 
     vec2 fv = wl.ba * 2.0 - 1.0;
     // per body: colours by the shore and in the depths, opacity range, how fast light fades
     vec3 cS; vec3 cD; float aS; float aD; float absorb; float spd;
-    // dark, muted painted water (owner: less saturated, a little eerie): grey-green shallows
-    // sinking into near-black teal depths
-    if (body == 7.0) { cS = vec3(0.26, 0.36, 0.36); cD = vec3(0.03, 0.08, 0.12); aS = 0.34; aD = 0.94; absorb = 0.45; spd = 0.22; }
-    else if (body == 5.0) { cS = vec3(0.27, 0.36, 0.34); cD = vec3(0.03, 0.09, 0.11); aS = 0.3; aD = 0.92; absorb = 0.62; spd = 0.12; }
-    else if (body == 6.0) { cS = vec3(0.24, 0.26, 0.16); cD = vec3(0.1, 0.12, 0.07); aS = 0.62; aD = 0.92; absorb = 2.6; spd = 0.04; }
-    else if (body == 3.0) { cS = vec3(0.36, 0.45, 0.46); cD = vec3(0.1, 0.2, 0.24); aS = 0.4; aD = 0.82; absorb = 1.2; spd = 2.6; }
-    else { cS = vec3(0.28, 0.38, 0.38); cD = vec3(0.05, 0.13, 0.16); aS = 0.3; aD = 0.86; absorb = 1.0; spd = 0.9; }
+    if (body == 7.0) { cS = vec3(0.33, 0.66, 0.68); cD = vec3(0.06, 0.2, 0.42); aS = 0.3; aD = 0.93; absorb = 0.45; spd = 0.22; }
+    else if (body == 5.0) { cS = vec3(0.36, 0.62, 0.62); cD = vec3(0.07, 0.23, 0.38); aS = 0.24; aD = 0.9; absorb = 0.62; spd = 0.12; }
+    else if (body == 6.0) { cS = vec3(0.34, 0.36, 0.2); cD = vec3(0.2, 0.23, 0.12); aS = 0.6; aD = 0.9; absorb = 2.6; spd = 0.04; }
+    else if (body == 3.0) { cS = vec3(0.52, 0.74, 0.8); cD = vec3(0.22, 0.46, 0.62); aS = 0.36; aD = 0.78; absorb = 1.2; spd = 2.6; }
+    else { cS = vec3(0.38, 0.64, 0.68); cD = vec3(0.12, 0.34, 0.5); aS = 0.26; aD = 0.82; absorb = 1.0; spd = 0.9; }
     float dk = 1.0 - exp(-depth * absorb);
     col = mix(cS, cD, dk);
     alpha = mix(aS, aD, dk);
@@ -215,13 +213,13 @@ float ripple(vec2 q) { return vnoise(q * 1.7) * 0.62 + vnoise(q * 3.9 + 11.0) * 
     float w0 = 1.0 - abs(1.0 - 2.0 * p0);
     float rp = mix(ripple(pq * 1.4 - dir * p1 * 2.0 + 5.3), ripple(pq * 1.4 - dir * p0 * 2.0), w0);
     // a few flat brightness steps, no glossy highlights
-    // soft painted swells (broad light and dark dabs, no glints)
-    col *= 0.88 + smoothstep(0.25, 0.8, rp) * 0.2;
+    col *= 0.9 + floor(rp * 4.0) / 4.0 * 0.18;
+    if (rp > 0.74) col = mix(col, vec3(0.78, 0.9, 0.95), body == 6.0 ? 0.08 : 0.2);
     // shallow water: the light on the bed shows through in thin bright lines
     float shallow = 1.0 - smoothstep(0.25, 0.6, depth);
     if (body != 6.0) {
       float ca = abs(vnoise(pq * 2.3 + vec2(uTime * 0.35, -uTime * 0.25)) - vnoise(pq * 2.1 - vec2(uTime * 0.3, 0.2 * uTime)));
-      col = mix(col, vec3(0.5, 0.6, 0.58), shallow * (1.0 - smoothstep(0.0, 0.08, ca)) * 0.18);
+      col = mix(col, vec3(0.75, 0.9, 0.92), shallow * step(ca, 0.05) * 0.35);
     }
     if (body == 3.0) {
       // rapids: white streaks racing downstream, broken water on the stones
@@ -248,11 +246,11 @@ float ripple(vec2 q) { return vnoise(q * 1.7) * 0.62 + vnoise(q * 3.9 + 11.0) * 
       float fw = mix(0.05, 0.14, sea) * (0.75 + 0.25 * sin(uTime * mix(2.0, 0.9, sea) + (pq.x - pq.y) * 3.0));
       float fm = (1.0 - smoothstep(fw * 0.4, fw, depth)) * 0.45;
       fm *= smoothstep(0.3, 0.6, vnoise(pq * 2.2 + uTime * 0.2));
-      col = mix(col, foamC * 0.8, fm);
+      col = mix(col, foamC, fm);
       alpha = max(alpha, fm);
     }
     // the very edge melts into the bank instead of a hard line
-    alpha *= smoothstep(0.0, 0.06, depth);
+    alpha *= smoothstep(0.0, 0.03, depth);
     float ch = churn * smoothstep(0.25, 0.75, vnoise(pq * 3.0 + vec2(uTime * 2.3, -uTime * 1.7)) + churn * 0.3);
     col = mix(col, foamC, ch * 0.85);
     alpha = max(alpha, ch * 0.9);

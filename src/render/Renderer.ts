@@ -44,56 +44,28 @@ void main() {
 };
 
 /**
- * The painted, dusky finish (owner: muted colours, a little darker and eerie), applied in linear
- * light before tone mapping on every quality preset: tilt-shift blur toward the top and bottom
- * (higher presets), a soft painterly smoothing (high effects), a cool grey-green haze over the far
- * part of the view, a moody split tone (green-teal shadows, pale dull highlights), lowered
- * saturation (times the player's «Насыщенность цвета») and a heavier vignette.
+ * Minecraft Dungeons style finish, applied in linear HDR before tone mapping: tilt-shift blur
+ * toward the top and bottom of the screen, a soft haze over the far (top) part of the view,
+ * a split-tone grade (teal shadows, warm highlights, rich saturation) and a light vignette.
  */
 const GradeShader = {
   uniforms: {
     tDiffuse: { value: null as THREE.Texture | null },
-    uSat: { value: 0.7 },
-    uWarm: { value: 0.0 },
+    uSat: { value: 1.06 },
+    uWarm: { value: 0.04 },
     uRes: { value: new THREE.Vector2(1, 1) },
     uBlur: { value: 0 },
-    uSoft: { value: 0 },
-    uHaze: { value: new THREE.Color(0x6f7c78) },
-    uHazeK: { value: 0.16 },
-    uShadow: { value: new THREE.Vector3(0.86, 0.97, 0.98) },
-    uHigh: { value: new THREE.Vector3(1.0, 0.98, 0.92) },
-    uVig: { value: 0.42 },
-    uExp: { value: 0.9 },
+    uHaze: { value: new THREE.Color(0x8fb39a) },
+    uHazeK: { value: 0.1 },
+    uShadow: { value: new THREE.Vector3(0.9, 1.0, 1.12) },
+    uHigh: { value: new THREE.Vector3(1.06, 1.0, 0.92) },
+    uVig: { value: 0.22 },
   },
   vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uSat; uniform float uWarm; uniform vec2 uRes; uniform float uBlur; uniform float uSoft;
-uniform vec3 uHaze; uniform float uHazeK; uniform vec3 uShadow; uniform vec3 uHigh; uniform float uVig; uniform float uExp; varying vec2 vUv;
-vec3 lum3(vec3 c) { return vec3(dot(c, vec3(0.2126, 0.7152, 0.0722))); }
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uSat; uniform float uWarm; uniform vec2 uRes; uniform float uBlur;
+uniform vec3 uHaze; uniform float uHazeK; uniform vec3 uShadow; uniform vec3 uHigh; uniform float uVig; varying vec2 vUv;
 void main() {
   vec4 c = texture2D(tDiffuse, vUv);
-  // painterly smoothing: of four small quadrants around the pixel keep the calmest one's mean
-  // (a cheap Kuwahara filter: flat dabs of colour with crisp edges)
-  if (uSoft > 0.5) {
-    vec2 px = uSoft / uRes;
-    vec3 best = c.rgb;
-    float bv = 1e9;
-    for (int q = 0; q < 4; q++) {
-      vec2 sg = vec2(q == 1 || q == 3 ? 1.0 : -1.0, q >= 2 ? 1.0 : -1.0);
-      vec3 m = vec3(0.0);
-      vec3 m2 = vec3(0.0);
-      for (int j = 0; j < 2; j++)
-        for (int i = 0; i < 2; i++) {
-          vec3 s = texture2D(tDiffuse, vUv + sg * vec2(float(i), float(j)) * px).rgb;
-          m += s;
-          m2 += s * s;
-        }
-      m *= 0.25;
-      vec3 v = m2 * 0.25 - m * m;
-      float vv = v.r + v.g + v.b;
-      if (vv < bv) { bv = vv; best = m; }
-    }
-    c.rgb = best;
-  }
   // tilt-shift: sharp band around the hero, growing blur toward the top (far) and bottom edges
   float dy = vUv.y - 0.47;
   float b = uBlur * smoothstep(0.1, 0.5, abs(dy) * (dy > 0.0 ? 1.0 : 0.85));
@@ -110,17 +82,16 @@ void main() {
     }
     c.rgb = acc / wsum;
   }
-  c.rgb *= uExp;
   // distance haze toward the top of the screen
-  c.rgb = mix(c.rgb, uHaze, uHazeK * smoothstep(0.45, 1.0, vUv.y));
-  // split tone: green-teal shadows, dull pale highlights; a soft toe deepens the shadows
-  float l = lum3(c.rgb).r;
-  c.rgb *= mix(uShadow, uHigh, smoothstep(0.02, 0.6, l));
-  c.rgb *= mix(0.8, 1.0, smoothstep(0.0, 0.25, l));
-  c.rgb = max(vec3(0.0), mix(lum3(c.rgb), c.rgb, uSat));
+  c.rgb = mix(c.rgb, uHaze, uHazeK * smoothstep(0.55, 1.0, vUv.y));
+  // split tone + saturation + temperature
+  float l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  c.rgb *= mix(uShadow, uHigh, smoothstep(0.02, 0.7, l));
+  l = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+  c.rgb = max(vec3(0.0), mix(vec3(l), c.rgb, uSat));
   c.rgb *= vec3(1.0 + uWarm, 1.0, 1.0 - uWarm);
   vec2 q = (vUv - 0.5) * vec2(1.0, 0.8);
-  c.rgb *= 1.0 - uVig * smoothstep(0.05, 0.5, dot(q, q) * 1.6);
+  c.rgb *= 1.0 - uVig * smoothstep(0.08, 0.5, dot(q, q) * 1.6);
   gl_FragColor = c;
 }`,
 };
@@ -204,18 +175,18 @@ class AOPass extends Pass {
   }
 }
 
-/** Lighting bias applied on top of every map palette: cool grey sky, dark bounce, pale sun. */
+/** MCD-style lighting bias applied on top of every map palette. */
 const MCD = {
   /** Cool teal sky fill and deep teal bounce from the ground. */
-  sky: 0x8a9ea0,
-  skyMix: 0.4,
-  ground: 0x1c2624,
-  groundMix: 0.55,
-  /** Pale, slightly dulled sun (owner: darker, eerie). */
-  sun: 0xe6dcc4,
-  sunMix: 0.4,
-  sunMul: 0.95,
-  ambMul: 0.74,
+  sky: 0xa8d8e8,
+  skyMix: 0.3,
+  ground: 0x284c5a,
+  groundMix: 0.45,
+  /** Warm, slightly golden sun. */
+  sun: 0xffe0b0,
+  sunMix: 0.35,
+  sunMul: 1.12,
+  ambMul: 0.88,
 };
 
 /** Owns the WebGL context and draws either the in-run world or the menu diorama. */
@@ -257,7 +228,6 @@ export class Renderer {
   private w = 1;
   private h = 1;
   private composer: EffectComposer | null = null;
-  private composerFull = false;
   private bloom: UnrealBloomPass | null = null;
   private grade: ShaderPass | null = null;
   private ao: AOPass | null = null;
@@ -335,17 +305,14 @@ export class Renderer {
     // post processing: filmic tone mapping (the CSS vignette is toggled by the app)
     this.gl.toneMapping = st.postProcessing ? THREE.ACESFilmicToneMapping : THREE.NoToneMapping;
     this.gl.toneMappingExposure = st.postProcessing ? 1.2 : 1;
-    // the colour grade runs on every preset: without post-processing a light composer does only
-    // the grade (one full-screen pass), with it the whole chain
-    if (this.composer && this.composerFull !== st.postProcessing) {
+    if (st.postProcessing && !this.composer) this.makeComposer();
+    else if (!st.postProcessing && this.composer) {
       this.composer.dispose();
       this.composer = null;
       this.bloom = null;
       this.grade = null;
       this.ao = null;
     }
-    if (!this.composer) this.makeComposer(st.postProcessing);
-    if (this.grade) this.grade.uniforms.uSoft.value = st.postProcessing && st.effects === 'high' ? 1.5 : 0;
     if (this.bloom) this.bloom.strength = st.effects === 'low' ? 0.3 : 0.5;
     if (this.ao) this.ao.enabled = st.effects !== 'low';
     if (this.ao) this.ao.material.uniforms.uSteps.value = st.effects === 'high' ? 2 : 1;
@@ -364,18 +331,8 @@ export class Renderer {
   }
 
   /** Scene -> contact AO -> bloom -> tilt-shift, haze and colour grade -> tone mapping and sRGB output. */
-  private makeComposer(full: boolean) {
-    this.composerFull = full;
+  private makeComposer() {
     const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.HalfFloatType, samples: this.msaa ? 4 : 0 });
-    if (!full) {
-      const c = new EffectComposer(this.gl, rt);
-      c.addPass(new RenderPass(this.scene, this.rig.camera));
-      this.grade = new ShaderPass(GradeShader);
-      c.addPass(this.grade);
-      c.addPass(new OutputPass());
-      this.composer = c;
-      return;
-    }
     // the scene depth feeds the AO pass (each composer buffer gets its own copy)
     rt.depthTexture = new THREE.DepthTexture(1, 1, THREE.UnsignedIntType);
     const c = new EffectComposer(this.gl, rt);
@@ -659,13 +616,11 @@ export class Renderer {
     if (this.grade) {
       const g = this.grade.uniforms;
       g.uWarm.value = L.warm;
-      g.uSat.value = L.sat * 0.72 * (this.s.colorSat ?? 1);
+      g.uSat.value = L.sat * 0.82 * (this.s.colorSat ?? 1);
       g.uHaze.value.copy(fog.color);
-      g.uHazeK.value = 0.14 + nightK * 0.12;
-      g.uExp.value = this.composerFull ? 0.86 : 0.92;
-      // nights: cold, dark blue-green shadows and a heavier vignette
-      g.uShadow.value.set(0.86 - nightK * 0.22, 0.97 - nightK * 0.08, 0.98 + nightK * 0.22);
-      g.uVig.value = 0.42 + nightK * 0.15;
+      g.uHazeK.value = 0.08 + nightK * 0.08;
+      // MCD nights stay rich blue rather than grey: cooler shadows after dark
+      g.uShadow.value.set(0.9 - nightK * 0.18, 1.0 - nightK * 0.04, 1.12 + nightK * 0.28);
     }
     // fog is measured from the camera: start a little past the hero so the far (top) part of the
     // view hazes over like MCD, and push it back with the view-distance setting

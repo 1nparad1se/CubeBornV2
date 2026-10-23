@@ -159,6 +159,7 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
   let dry = 0;
   let hanging = 0;
   let banks = 0;
+  let noSurf = 0;
   let curved = 0;
   let wet = 0;
   const kinds = new Map<string, number>();
@@ -170,6 +171,7 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
       wet++;
       const surf = t.elev[k] - 0.62;
       if (top[k] > surf - 0.2) dry++;
+      if (t.centerY(k) > surf - 0.05) noSurf++;
       for (const o of [1, -1, n, -n]) if (t.cell[k + o] === CELL.floor && top[k + o] < surf) hanging++;
       // the smooth surface too: the shoreline curves through the bank cells (their shared corners
       // dip a little under the water), but every bank cell keeps its middle above the water and
@@ -179,13 +181,33 @@ ok(ms < 20000, `generated in ${(ms / 1000).toFixed(1)} s`);
         if (t.cell[j] !== CELL.floor) continue;
         banks++;
         const lo = Math.min(t.cornerH(j, ka), t.cornerH(j, kb));
-        if (t.centerY(j) <= surf || lo < surf - 0.35) hanging++;
+        // (a sliver of land squeezed between waters, three or four corners on the water, may be awash)
+        const jx = j % n, jz = (j / n) | 0;
+        let wetC = 0;
+        for (const [ax, az] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+          let touch = false;
+          for (let q = 0; q < 4; q++) {
+            const cx = jx + ax - 1 + (q & 1), cz = jz + az - 1 + (q >> 1);
+            const c2 = t.cell[cz * n + cx];
+            if (c2 === CELL.liquid || c2 === CELL.shallow) touch = true;
+          }
+          if (touch) wetC++;
+        }
+        // (measured against the lowest water touching the bank, where waters of two levels meet)
+        let ws = surf;
+        for (let dz = -1; dz <= 1; dz++)
+          for (let dx = -1; dx <= 1; dx++) {
+            const q = j + dz * n + dx;
+            if (t.cell[q] === CELL.liquid || t.cell[q] === CELL.shallow) ws = Math.min(ws, t.elev[q] - 0.62);
+          }
+        if ((t.centerY(j) <= ws && wetC < 3) || lo < ws - 0.4) hanging++;
         if (lo < surf) curved++;
       }
       const nm = t.tileNames[t.tile[k]];
       kinds.set(nm, (kinds.get(nm) ?? 0) + 1);
     }
   ok(dry === 0, `every water block has its bed at least 0.2 under the surface (${dry} of ${wet} too shallow)`);
+  ok(noSurf === 0, `every water cell shows a water surface above its smooth bed (${noSurf} of ${wet} without)`);
   ok(hanging === 0, `no bank lies below the water beside it (${hanging})`);
   ok(curved > banks * 0.5, `shorelines are smooth curves through the bank cells, not cell edges (${curved} of ${banks} bank edges)`);
   const want = ['water_sea_4', 'water_lake_3', 'water_river_2', 'water_fast_2', 'water_swamp_1'];
