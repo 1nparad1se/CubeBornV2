@@ -22,6 +22,12 @@ export class WorldMap {
   private px = 0;
   /** Camera yaw (the view's rotation around the vertical axis). */
   yaw = Math.PI / 4;
+  /** Zoom over the whole-map view (1 = the whole territory) and the world point at the centre. */
+  private zoom = 1;
+  private center: [number, number] | null = null;
+  /** The last drawn view: canvas side, scale and centre (for the wheel and dragging). */
+  private view = { S: 1, k: 1, cx: 0, cz: 0, n: 1, ox: 0, oz: 0 };
+  private drag: { x: number; y: number } | null = null;
   onClose: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
@@ -35,6 +41,7 @@ export class WorldMap {
         'div.inv-win.wm-win',
         h('div.inv-head', this.title, h('button.inv-x', { title: 'Закрыть (M / Esc)', onclick: () => this.onClose?.() }, '×')),
         this.canvas,
+        h('div.wm-hint', 'Колесо мыши — масштаб · перетаскивание — сдвиг'),
         h(
           'div.wm-legend',
           key('wk-hero', 'Вы'),
@@ -46,6 +53,68 @@ export class WorldMap {
       ),
     );
     parent.appendChild(this.root);
+    this.canvas.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
+    this.canvas.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      this.drag = { x: e.clientX, y: e.clientY };
+      this.canvas.setPointerCapture(e.pointerId);
+    });
+    this.canvas.addEventListener('pointermove', (e) => {
+      if (!this.drag) return;
+      const [ax, ay] = this.toCanvas(this.drag.x, this.drag.y);
+      const [bx, by] = this.toCanvas(e.clientX, e.clientY);
+      this.drag = { x: e.clientX, y: e.clientY };
+      // the map follows the pointer: the centre moves the opposite way in world units
+      const v = this.view;
+      const [dx, dz] = viewRot(-this.yaw)((bx - ax) / v.k, (by - ay) / v.k);
+      this.setCenter(v.cx - dx, v.cz - dz);
+    });
+    const end = () => (this.drag = null);
+    this.canvas.addEventListener('pointerup', end);
+    this.canvas.addEventListener('pointercancel', end);
+    this.canvas.addEventListener('dblclick', () => {
+      this.zoom = 1;
+      this.center = null;
+    });
+  }
+
+  /** Client coordinates to canvas pixels. */
+  private toCanvas(x: number, y: number): [number, number] {
+    const r = this.canvas.getBoundingClientRect();
+    return [((x - r.left) / Math.max(1, r.width)) * this.view.S, ((y - r.top) / Math.max(1, r.height)) * this.view.S];
+  }
+
+  /** The world point drawn at canvas pixel (sx, sy) in the last view. */
+  private worldAt(sx: number, sy: number): [number, number] {
+    const v = this.view;
+    const [dx, dz] = viewRot(-this.yaw)((sx - v.S / 2) / v.k, (sy - v.S / 2) / v.k);
+    return [v.cx + dx, v.cz + dz];
+  }
+
+  /** Keeps the view centre over the territory. */
+  private setCenter(x: number, z: number) {
+    const v = this.view;
+    this.center = [Math.max(v.ox, Math.min(v.ox + v.n, x)), Math.max(v.oz, Math.min(v.oz + v.n, z))];
+  }
+
+  /** The wheel zooms in and out around the point under the cursor (it stays under the cursor). */
+  private onWheel(e: WheelEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    const [sx, sy] = this.toCanvas(e.clientX, e.clientY);
+    const [wx, wz] = this.worldAt(sx, sy);
+    const max = Math.max(4, this.view.n / 60);
+    const z1 = Math.max(1, Math.min(max, this.zoom * Math.pow(1.0015, -e.deltaY)));
+    if (z1 === this.zoom) return;
+    const k1 = (this.view.k / this.zoom) * z1;
+    this.zoom = z1;
+    if (z1 <= 1.0001) {
+      this.center = null;
+      return;
+    }
+    // the new centre puts (wx, wz) back under the cursor
+    const [dx, dz] = viewRot(-this.yaw)((sx - this.view.S / 2) / k1, (sy - this.view.S / 2) / k1);
+    this.setCenter(wx - dx, wz - dz);
   }
 
   get isOpen(): boolean {
@@ -88,14 +157,17 @@ export class WorldMap {
     if (this.imgFor !== t) {
       this.img = buildMapImage(t, w.map, w.trees);
       this.imgFor = t;
+      this.zoom = 1;
+      this.center = null;
     }
     const g = this.g;
     const n = t.size;
     // the turned square fits the canvas with a small margin
     const span = n * (Math.abs(Math.cos(this.yaw)) + Math.abs(Math.sin(this.yaw)));
-    const k = (S * 0.94) / span;
-    const cx = t.ox + n / 2;
-    const cz = t.oz + n / 2;
+    const k = ((S * 0.94) / span) * this.zoom;
+    const cx = this.center ? this.center[0] : t.ox + n / 2;
+    const cz = this.center ? this.center[1] : t.oz + n / 2;
+    this.view = { S, k, cx, cz, n, ox: t.ox, oz: t.oz };
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.fillStyle = '#2a2630';
     g.fillRect(0, 0, S, S);
@@ -104,7 +176,8 @@ export class WorldMap {
     g.scale(k, k);
     g.translate(-cx, -cz);
     // a big world is drawn much smaller than its picture: smooth it down
-    g.imageSmoothingEnabled = n > 400;
+    // (zoomed in to several pixels per block: crisp pixels again)
+    g.imageSmoothingEnabled = n > 400 && k < 1.5;
     if (this.img) g.drawImage(this.img, t.ox, t.oz, n, n);
     // a faint grid every ten blocks
     g.strokeStyle = 'rgba(0,0,0,0.12)';

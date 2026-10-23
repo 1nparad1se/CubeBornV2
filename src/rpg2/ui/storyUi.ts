@@ -389,12 +389,20 @@ export class StoryScreens {
       this.mapPlacing = false;
       this.map();
     };
+    // the wheel zooms around the point under the cursor (that point stays where it is)
     wrap.onwheel = (e) => {
       e.preventDefault();
-      this.mapZoom = Math.max(1, Math.min(4, this.mapZoom * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+      const r = wrap.getBoundingClientRect();
+      const px = e.clientX - (r.left + r.width / 2);
+      const py = e.clientY - (r.top + r.height / 2);
+      const z0 = this.mapZoom;
+      const z1 = Math.max(1, Math.min(6, z0 * (e.deltaY < 0 ? 1.2 : 1 / 1.2)));
+      this.mapPan.x = px - ((px - this.mapPan.x) / z0) * z1;
+      this.mapPan.y = py - ((py - this.mapPan.y) / z0) * z1;
+      this.mapZoom = z1;
       apply();
     };
-    const zoom = (k: number) => { this.mapZoom = Math.max(1, Math.min(4, this.mapZoom * k)); apply(); };
+    const zoom = (k: number) => { this.mapZoom = Math.max(1, Math.min(6, this.mapZoom * k)); apply(); };
     const north = toScreen(size / 2, 0);
     const nAng = Math.atan2(north[0] - W / 2, -(north[1] - W / 2));
     const mapP = panel(null,
