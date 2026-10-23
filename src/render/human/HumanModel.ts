@@ -21,55 +21,13 @@ interface HumanPose {
   flip?: number;
 }
 
-/**
- * A two-hand hold: the right hand's spot on the handle (`g`, body pixels), the weapon's direction
- * as elevation `el` above the forward horizontal and yaw `yaw` toward the model's left (radians).
- */
-interface Hold {
-  g: THREE.Vector3;
-  el: number;
-  yaw: number;
-}
-
 const ease = (x: number) => {
   const c = Math.max(0, Math.min(1, x));
   return c * c * (3 - 2 * c);
 };
-const DEG = Math.PI / 180;
-const hold = (x: number, y: number, z: number, el: number, yaw: number): Hold => ({ g: new THREE.Vector3(x, y, z), el: el * DEG, yaw: yaw * DEG });
-/** a + (b - a) * k for holds (into `out`). */
-function mixHold(out: Hold, a: Hold, b: Hold, k: number): Hold {
-  out.g.lerpVectors(a.g, b.g, k);
-  out.el = a.el + (b.el - a.el) * k;
-  out.yaw = a.yaw + (b.yaw - a.yaw) * k;
-  return out;
-}
 
-/** Shoulder pivots (body pixels) and the reach from a shoulder to the middle of the fist. */
-const SHOULDER_R = new THREE.Vector3(-6, 22, 0);
-const SHOULDER_L = new THREE.Vector3(6, 22, 0);
-const ARM_REACH = 9;
 /** Height of the body's middle (blocks): the double-jump somersault turns around it. */
 const FLIP_CENTER = 17 * PX;
-
-/**
- * Two-hand holds per weapon (idle, run, and the attack's key poses). Pixels in the body frame:
- * +Z forward, +X the model's left, y up from the feet. The left hand finds its own spot on the
- * handle (WEAPON_TYPES leftHand range), so a hold only places the right hand and the direction.
- */
-const HOLDS: Partial<Record<WeaponKind, Record<'idle' | 'run' | 'a' | 'b', Hold>>> = {
-  // guard stance, blade up and forward; the attack raises it over the head (a) and chops (b)
-  sword2h: { idle: hold(0.5, 16.5, 5.5, 58, -12), run: hold(0.5, 16, 6, 36, -24), a: hold(0.5, 26.5, 2.5, 140, -4), b: hold(0.5, 14, 8, -28, 0) },
-  // shaft level at the hip, head forward; drawn back (a), then thrust (b)
-  spear: { idle: hold(-1.5, 15, 4.5, 8, 6), run: hold(-1.5, 15.5, 4.5, 18, 8), a: hold(-2.5, 16, 1.5, 4, 4), b: hold(-0.5, 16.5, 8.5, 2, 0) },
-  // staff upright in front; raised high (a), then swept forward to send the orb (b)
-  staff2h: { idle: hold(-2.5, 14.5, 4.5, 78, 10), run: hold(-2, 15, 5, 55, 15), a: hold(-1, 24, 4, 95, 4), b: hold(0, 19, 8.5, 15, 0) },
-};
-const _hold = { g: new THREE.Vector3(), el: 0, yaw: 0 };
-const _hold2 = { g: new THREE.Vector3(), el: 0, yaw: 0 };
-const _d = new THREE.Vector3();
-const _x = new THREE.Vector3();
-const _z = new THREE.Vector3();
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -206,16 +164,10 @@ export class HumanModel {
     const r = w.root;
     r.position.set(0, 0, 0);
     r.rotation.set(0, 0, 0);
-    if (k === 'bow' || this.wtype?.grip === 'two') {
-      // the bow (level across the front, limbs left and right) and two-hand weapons live in the
-      // body frame: the pose places them every frame and closes the hands on their grips
+    if (k === 'bow') {
+      // the bow (level across the front, limbs left and right) lives in the body frame: the
+      // pose places it every frame
       this.body.add(r);
-      return;
-    }
-    if (k === 'crossbow') {
-      r.rotation.set(Math.PI / 2, 0, 0);
-      r.position.set(0.5 * PX, 0, 0);
-      this.holderR.add(r);
       return;
     }
     // diagonal items: +Y of the item points forward out of the fist (arm hangs along -Y)
@@ -289,15 +241,9 @@ export class HumanModel {
     const br = Math.sin(p.time * 1.6) * 0.03;
     P.armR.rotation.z = -0.04 - br;
     P.armL.rotation.z = 0.04 + br;
-    // holding stance per weapon type (two-hand weapons are posed by holdTwoHanded below)
+    // holding stance per weapon type
     if (grip === 'one') armR = this.oneHandStance(k, sw, mv, br);
-    else if (k) armR = armR * 0.5 - 0.3;
     if (k === 'bow') armR = -sw * 0.4 * mv;
-    if (k === 'crossbow') {
-      armR = -1.1;
-      armL = -1.1;
-      P.armL.rotation.y = 0.5;
-    }
     if (this.shield) armL = armL * 0.5 - 0.2;
     // jump: legs tuck a little, free arms lift outward
     if (p.airborne) {
@@ -310,7 +256,6 @@ export class HumanModel {
     P.armR.rotation.x = armR;
     P.armL.rotation.x = armL;
     P.head.rotation.x = 0;
-    if (this.weapon && k === 'crossbow') this.weapon.setState('loaded');
     if (this.weapon && k === 'bow' && !p.attack) {
       // carried level in front of the belly, limbs left and right, gripped by the left hand
       const bob = Math.abs(Math.cos(p.walk)) * 0.5 * mv;
@@ -319,9 +264,8 @@ export class HumanModel {
       this.placeBow(g, 0);
       this.weapon.setDraw(null, false, 0);
     }
-    if (grip === 'two') this.twoHandPose(p, br);
-    else if (p.attack) this.attackPose(p.attack.t, p.attack.hitAt);
-    this.flipPose(p.flip ?? 0, grip === 'two');
+    if (p.attack) this.attackPose(p.attack.t, p.attack.hitAt);
+    this.flipPose(p.flip ?? 0);
   }
 
   /**
@@ -347,100 +291,10 @@ export class HumanModel {
   }
 
   /**
-   * Two-hand weapons (two-handed sword, spear, staff): idle, run and attack are holds (HOLDS)
-   * blended over time; holdTwoHanded then lays the weapon along the hold and closes both hands on
-   * the handle, so the left hand never floats free of it.
-   */
-  private twoHandPose(p: HumanPose, br: number) {
-    const k = this.weaponKind!;
-    const H = HOLDS[k];
-    if (!H) return;
-    const P = this.parts;
-    const mv = p.moving;
-    // stance: idle blended into the run, with a bob of the step and a breath at rest
-    const base = mixHold(_hold, H.idle, H.run, mv);
-    base.g.y += Math.abs(Math.cos(p.walk)) * 0.7 * mv + br * 8 * (1 - mv);
-    let h = base;
-    const a = p.attack;
-    if (a) {
-      const t = a.t;
-      const hitAt = a.hitAt;
-      const wu = Math.min(1, t / Math.max(0.01, hitAt));
-      const ft = t <= hitAt ? 0 : Math.min(1, (t - hitAt) / Math.max(0.01, 1 - hitAt));
-      // wind up into pose a, strike into pose b right at the hit moment, hold, then recover
-      const up = ease(wu / 0.7);
-      const strike = ease((wu - 0.7) / 0.3);
-      const rec = t <= hitAt ? 0 : ease((ft - 0.2) / 0.8);
-      if (t <= hitAt) h = mixHold(_hold2, mixHold(_hold2, base, H.a, up), H.b, strike);
-      else h = mixHold(_hold2, H.b, base, rec);
-      const into = t <= hitAt ? strike : 1 - rec;
-      const back = t <= hitAt ? up * (1 - strike) : 0;
-      if (k === 'sword2h') {
-        this.body.rotation.x = -back * 0.08 + into * 0.18;
-        P.legR.rotation.x += -into * 0.3;
-        P.legL.rotation.x += into * 0.3;
-      } else if (k === 'spear') {
-        // the whole body steps into the thrust
-        this.body.position.z = (into * 3 - back * 1.5) * PX;
-        this.body.rotation.y = back * 0.2;
-        P.legR.rotation.x += -into * 0.35;
-        P.legL.rotation.x += into * 0.25;
-      } else {
-        this.body.rotation.x = -back * 0.06 + into * 0.12;
-        P.head.rotation.x = -back * 0.15;
-      }
-    }
-    this.holdTwoHanded(h);
-  }
-
-  /**
-   * Lays a two-hand weapon along hold `h` and puts both hands on it: the right hand reaches as
-   * far as it can toward the hold point and grips there; the left hand slides along the handle
-   * (within the weapon type's range, as close to its preferred spot as the arm allows).
-   */
-  private holdTwoHanded(h: Hold) {
-    const P = this.parts;
-    const r = this.weapon?.root;
-    const lh = this.wtype?.leftHand;
-    if (!r || !lh) return;
-    const dir = _d.set(Math.cos(h.el) * Math.sin(h.yaw), Math.sin(h.el), Math.cos(h.el) * Math.cos(h.yaw));
-    const hr = _h.subVectors(h.g, SHOULDER_R).setLength(ARM_REACH).add(SHOULDER_R);
-    // points of the handle line an arm's length from the left shoulder: |hr + dir s - S| = reach
-    const rel = _v1.subVectors(hr, SHOULDER_L);
-    const b = dir.dot(rel);
-    const disc = b * b - (rel.lengthSq() - ARM_REACH * ARM_REACH);
-    let s = Math.max(lh.min, Math.min(lh.max, -b));
-    if (disc >= 0) {
-      const q = Math.sqrt(disc);
-      let best = Infinity;
-      for (const c of [-b - q, -b + q]) {
-        const cc = Math.max(lh.min, Math.min(lh.max, c));
-        // in range first, then nearest the preferred spot
-        const cost = Math.abs(cc - c) * 10 + Math.abs(cc - lh.pref);
-        if (cost < best) {
-          best = cost;
-          s = cc;
-        }
-      }
-    }
-    const hl = _n.copy(hr).addScaledVector(dir, s);
-    this.aimArm(P.armR, SHOULDER_R, hr, 1);
-    this.aimArm(P.armL, SHOULDER_L, hl, 1);
-    // the weapon: grip in the right hand, along `dir`, the flat of the blade to the sides
-    const x = _x.set(1, 0, 0).addScaledVector(dir, -dir.x);
-    if (x.lengthSq() < 1e-4) x.set(0, 0, 1).addScaledVector(dir, -dir.z);
-    x.normalize();
-    const z = _z.crossVectors(x, dir);
-    r.quaternion.setFromRotationMatrix(_m.makeBasis(x, dir, z));
-    r.position.copy(hr).multiplyScalar(PX);
-    r.scale.setScalar(1);
-  }
-
-  /**
    * Double jump: one smooth forward somersault around the middle of the body, knees tucked to
    * the chest (and free arms hugging them) at its height. `t` 0..1, 0 = none.
    */
-  private flipPose(t: number, twoHands: boolean) {
+  private flipPose(t: number) {
     const tb = this.tumble;
     if (t <= 0 || t >= 1) {
       tb.rotation.set(0, 0, 0);
@@ -455,7 +309,7 @@ export class HumanModel {
     P.legR.rotation.x = P.legR.rotation.x * (1 - tuck) - 1.25 * tuck;
     P.legL.rotation.x = P.legL.rotation.x * (1 - tuck) - 1.1 * tuck;
     P.head.rotation.x += 0.35 * tuck;
-    if (!twoHands && this.weaponKind !== 'bow') {
+    if (this.weaponKind !== 'bow') {
       P.armR.rotation.x = P.armR.rotation.x * (1 - tuck) - 0.9 * tuck;
       P.armL.rotation.x = P.armL.rotation.x * (1 - tuck) - 0.9 * tuck;
       P.armR.rotation.z *= 1 - tuck;
@@ -564,17 +418,6 @@ export class HumanModel {
       case 'bow':
         this.bowPose(t, hitAt);
         break;
-      case 'crossbow': {
-        // a quick aim and shot, then a long reload: the crossbow tips down and the string is spanned
-        const reload = t > hitAt ? ft : 0;
-        const tip = Math.sin(Math.min(1, reload) * Math.PI);
-        P.armR.rotation.x = -Math.PI / 2 + tip * 0.9 + (t <= hitAt ? 0 : 0);
-        P.armL.rotation.x = -Math.PI / 2 + tip * 1.2;
-        P.armL.rotation.y = 0.55 - tip * 0.2;
-        if (t > hitAt && ft < 0.08) this.body.rotation.x = -0.06;
-        if (this.weapon) this.weapon.setState(t <= hitAt || reload > 0.8 ? 'loaded' : 'empty');
-        break;
-      }
     }
   }
 

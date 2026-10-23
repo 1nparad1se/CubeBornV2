@@ -64,37 +64,6 @@ export const SPR_SWORD = outline(
   K,
 );
 
-/** Two-handed guard sword: long wide blade with a fuller, wide steel guard, long grip. */
-export const SPR_SWORD2H = outline(
-  make(24, (_x, _y, u, v) => {
-    const a = Math.abs(v);
-    if (u >= 22) return a <= 0 ? IRON.hi : '';
-    if (u >= 21 && a <= 1) return blade(v);
-    if (u >= 7.5 && a <= 2) return v === 0 ? IRON.dark : v < 0 ? IRON.hi : a === 2 ? IRON.lo : IRON.mid;
-    if (u >= 6 && u < 7.5 && a <= 4) return a === 4 ? IRON.dark : IRON.lo;
-    if (u >= 2 && u < 6 && a <= 1) return (Math.round(u * 2) % 2 === 0 ? WOOD.lo : '#3a2a20');
-    if (u >= 0.5 && u < 2 && a <= 2) return IRON.lo;
-    return '';
-  }),
-  K,
-);
-
-/** Militia spear: long ash shaft with an iron leaf head and a wrap below it. */
-export const SPR_SPEAR = outline(
-  make(30, (_x, _y, u, v) => {
-    const a = Math.abs(v);
-    if (u >= 28.5) return a === 0 ? IRON.hi : '';
-    if (u >= 25 && a <= 1) return blade(v);
-    if (u >= 23 && u < 25 && a <= 2) return blade(v);
-    if (u >= 22 && u < 23 && a <= 1) return IRON.dark;
-    if (u >= 20.5 && u < 22 && a <= 1) return '#d8d0b8';
-    if (u >= 0.5 && u < 20.5 && a <= 0) return Math.floor(u) % 5 === 0 ? WOOD.lo : WOOD.hi;
-    if (u >= 0.5 && u < 20.5 && a === 1 && v > 0) return WOOD.mid;
-    return '';
-  }),
-  K,
-);
-
 /** Small spark staff: short wand with an orange crystal in a brass claw. */
 export const SPR_STAFF1H = outline(
   make(16, (_x, _y, u, v) => {
@@ -103,19 +72,6 @@ export const SPR_STAFF1H = outline(
     if (u >= 11 && u < 12 && a <= 2) return a === 2 ? GOLD.lo : GOLD.mid;
     if (u >= 1 && u < 11 && a <= 0) return Math.floor(u) % 4 === 0 ? WOOD.lo : WOOD.hi;
     if (u >= 1 && u < 11 && a === 1 && v > 0) return WOOD.lo;
-    return '';
-  }),
-  K,
-);
-
-/** Apprentice staff: tall staff with a blue crystal held by a brass ring. */
-export const SPR_STAFF2H = outline(
-  make(26, (_x, _y, u, v) => {
-    const a = Math.abs(v);
-    if (u >= 21 && u <= 24.5 && a <= 2 && !(a === 2 && (u < 21.5 || u > 24))) return v < 0 ? '#c8ecff' : a === 2 ? '#2a64c0' : '#4aa0f0';
-    if (u >= 19.5 && u < 21 && a <= 3) return a >= 2 ? GOLD.lo : GOLD.mid;
-    if (u >= 0.5 && u < 19.5 && a <= 0) return Math.floor(u) % 6 === 0 ? GOLD.mid : WOOD.mid;
-    if (u >= 0.5 && u < 19.5 && a === 1 && v > 0) return WOOD.lo;
     return '';
   }),
   K,
@@ -143,39 +99,8 @@ function bowSprite(string: boolean): Sprite {
   return outline({ n, px }, K);
 }
 
-/** Light crossbow seen from the side: stock along x, prod across; `loaded` shows a bolt. */
-function crossbowSprite(loaded: boolean): Sprite {
-  const n = 20;
-  const px: string[] = new Array(n * n).fill('');
-  const set = (x: number, y: number, c: string) => {
-    if (x >= 0 && y >= 0 && x < n && y < n) px[y * n + x] = c;
-  };
-  // stock: horizontal from x 3 to 18 at rows 9-10, butt widening at the back (right)
-  for (let x = 3; x <= 18; x++) {
-    set(x, 9, WOOD.hi);
-    set(x, 10, WOOD.mid);
-  }
-  for (let x = 14; x <= 18; x++) set(x, 11, WOOD.lo);
-  set(17, 12, WOOD.lo);
-  set(18, 12, WOOD.lo);
-  // trigger
-  set(12, 11, IRON.dark);
-  set(12, 12, IRON.dark);
-  // prod (bow arms) near the front, vertical (it is seen edge-on from the side)
-  for (let y = 4; y <= 15; y++) set(4, y, y === 9 || y === 10 ? IRON.dark : IRON.lo);
-  for (let y = 5; y <= 14; y++) set(5, y, IRON.mid);
-  // string
-  if (loaded) {
-    for (let x = 5; x <= 10; x++) set(x, 8, '#e8e4d8');
-    for (let x = 1; x <= 10; x++) set(x, 7, x <= 2 ? IRON.hi : x >= 9 ? '#4070c0' : WOOD.lo);
-  } else for (let y = 5; y <= 14; y++) set(6, y, '#e8e4d8');
-  return outline({ n, px }, K);
-}
-
 export const SPR_BOW = bowSprite(true);
 export const SPR_BOW_LIMBS = bowSprite(false);
-export const SPR_XBOW = crossbowSprite(true);
-export const SPR_XBOW_EMPTY = crossbowSprite(false);
 
 /** Shield face (front texture, 10 × 12): oak planks with an iron rim and boss. */
 export function shieldFace(x: number, y: number, w: number, h: number): string {

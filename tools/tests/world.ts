@@ -1,6 +1,6 @@
 /**
  * Training ground simulation: jump arc and 1-block obstacles, dummies take damage and stay,
- * spear sweep hits both dummies of the pair, projectiles fly and hit. Run: npx tsx tools/tests/world.ts
+ * projectiles fly and hit. Run: npx tsx tools/tests/world.ts
  */
 import { World, trainingSite } from '../../src/rpg/World';
 import { GameClock } from '../../src/game/GameClock';
@@ -246,7 +246,7 @@ const place = (w: World, x: number, z: number) => {
 
 // ---------------------------------------------------------------- click targeting (left button)
 {
-  const w = make('sword_guard2h');
+  const w = make('sword_recruit');
   const c = w.dummies[2];
   place(w, c.x - 6, c.z + 4);
   w.clickTarget(c);
@@ -254,7 +254,7 @@ const place = (w: World, x: number, z: number) => {
   ok(w.target === c && !w.autoAttack && c.hits === 0 && Math.hypot(w.player.x - (c.x - 6), w.player.z - (c.z + 4)) < 0.01, 'first click: target selected, no attack, no walking');
   w.clickTarget(c);
   run(w, 6);
-  ok(w.autoAttack && c.hits >= 2 && Math.hypot(w.player.x - c.x, w.player.z - c.z) < 2.6 + c.radius, `second click on the target: walks into reach and keeps attacking (${c.hits} hits)`);
+  ok(w.autoAttack && c.hits >= 2 && Math.hypot(w.player.x - c.x, w.player.z - c.z) < 2.3 + c.radius, `second click on the target: walks into reach and keeps attacking (${c.hits} hits)`);
   // a click on the ground during the auto attack: stop attacking, walk there
   const hitsBefore = c.hits;
   w.ctl.clickMove = { x: c.x - 4, z: c.z + 5 };
@@ -283,26 +283,8 @@ const place = (w: World, x: number, z: number) => {
   }
 }
 
-// ---------------------------------------------------------------- spear sweep hits the pair
-{
-  const w = make('spear_militia');
-  const [a, b] = w.dummies;
-  place(w, (a.x + b.x) / 2, a.z + 3);
-  w.select(a, true);
-  run(w, 1.2);
-  ok(a.hits === 1 && b.hits === 1, `one spear thrust hits both dummies of the pair (A ${a.hits}, B ${b.hits})`);
-  ok(w.dummies[2].hits === 0, 'the lone dummy is out of the sweep');
-  // two-handed sword at the same spot: single target only
-  const s = make('sword_guard2h');
-  const [a2, b2] = s.dummies;
-  place(s, (a2.x + b2.x) / 2, a2.z + 2);
-  s.select(a2, true);
-  run(s, 3.5);
-  ok(a2.hits >= 2 && b2.hits === 0, `2H sword hits only the selected dummy (A ${a2.hits}, B ${b2.hits})`);
-}
-
 // ---------------------------------------------------------------- ranged weapons
-for (const id of ['staff_spark', 'staff_apprentice', 'bow_hunter', 'crossbow_light']) {
+for (const id of ['staff_spark', 'bow_hunter']) {
   const w = make(id);
   const c = w.dummies[2];
   place(w, c.x, c.z + 9);

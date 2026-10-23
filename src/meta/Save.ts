@@ -1,5 +1,5 @@
 import type { Lang } from '../i18n';
-import { fixChar, type CharSave } from './Characters';
+import { dropRemovedWeapons, fixChar, type CharSave } from './Characters';
 
 export type Quality = 'low' | 'medium' | 'high' | 'ultra' | 'custom';
 export type Level3 = 'low' | 'medium' | 'high';
@@ -97,7 +97,9 @@ const KEY = 'cubeborn.save.v1';
  * The older pre-v7 backup key stays untouched.
  */
 export const BACKUP_KEY = 'cubeborn.save.backup.v7';
-export const VERSION = 8;
+/** The save as it was before v9 (the spear, two-handed sword, two-handed staff and crossbow left the game). */
+export const BACKUP_KEY_V8 = 'cubeborn.save.backup.v8';
+export const VERSION = 9;
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -149,7 +151,7 @@ export function migrate(raw: any): SaveData {
     Object.assign(rs, { quality: q }, QUALITY_PRESETS[q as 'low' | 'medium' | 'high']);
     if (typeof rs.screenShake === 'boolean') rs.screenShake = rs.screenShake ? 1 : 0;
   }
-  if (oldVersion < VERSION) delete rs.keybinds;
+  if (oldVersion < 8) delete rs.keybinds;
   const binds: Record<string, unknown> = { ...(rs.keybinds || {}) };
   const kb = defaultKeybinds();
   for (const k of Object.keys(kb) as BindAction[]) if (Array.isArray(binds[k])) kb[k] = (binds[k] as unknown[]).filter((c): c is string => typeof c === 'string');
@@ -157,7 +159,8 @@ export function migrate(raw: any): SaveData {
   if (kb.inventory.length === 2 && kb.inventory[0] === 'KeyI' && kb.inventory[1] === 'KeyB' && !Object.values(kb).some((l) => l.includes('Tab'))) kb.inventory = ['KeyI', 'Tab'];
   const settings: Settings = { ...d.settings, ...rs, keybinds: kb };
   for (const k of Object.keys(settings) as (keyof Settings)[]) if (!(k in d.settings)) delete settings[k];
-  const chars = oldVersion < VERSION || !Array.isArray(raw.chars) ? [] : (raw.chars.map(fixChar).filter(Boolean) as CharSave[]);
+  // v8 heroes are kept (their removed weapons are swapped out); older ones are dropped
+  const chars = oldVersion < 8 || !Array.isArray(raw.chars) ? [] : (raw.chars.map((c: unknown) => fixChar(oldVersion === 8 ? dropRemovedWeapons(c) : c)).filter(Boolean) as CharSave[]);
   return {
     version: VERSION,
     settings,
@@ -188,7 +191,8 @@ export function loadSave(st: SaveStorage = store()): SaveData {
     s = st.getItem(KEY);
     if (!s) return defaultSave();
     const raw = JSON.parse(s);
-    if (needsBackup(raw) && st.getItem(BACKUP_KEY) === null) st.setItem(BACKUP_KEY, s);
+    const bk = raw && raw.version === 8 ? BACKUP_KEY_V8 : BACKUP_KEY;
+    if (needsBackup(raw) && st.getItem(bk) === null) st.setItem(bk, s);
     const data = migrate(raw);
     // the migrated save replaces the old one at once, so nothing old can come back on a later load
     if (needsBackup(raw)) st.setItem(KEY, JSON.stringify(data));

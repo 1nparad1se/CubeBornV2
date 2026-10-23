@@ -16,32 +16,28 @@ const must = (r: ReturnType<typeof equipFromBag>): Gear => {
 
 let g = newGear(STARTER_ITEMS);
 const all = sorted(g);
-ok(STARTER_ITEMS.length === 20 && ITEMS.length === 20, 'starter bag holds 20 items (7 weapons, shield, 12 armor pieces)');
-ok(g.bag.length === BAG_SIZE && allItems(g).length === 20, 'all starter items are in the bag, nothing equipped');
+ok(STARTER_ITEMS.length === 16 && ITEMS.length === 16, 'starter bag holds 16 items (3 weapons, shield, 12 armor pieces)');
+ok(g.bag.length === BAG_SIZE && allItems(g).length === 16, 'all starter items are in the bag, nothing equipped');
 
 // one-handed sword + shield
 g = must(equipFromBag(g, at(g, 'sword_recruit')));
 g = must(equipFromBag(g, at(g, 'shield_wood')));
 ok(g.equip.main === 'sword_recruit' && g.equip.off === 'shield_wood', '1H sword and shield together');
 ok(sorted(g) === all && !gearProblem(g), 'no loss / duplication');
-// two-handed sword returns the shield to the bag
-g = must(equipFromBag(g, at(g, 'sword_guard2h')));
-ok(g.equip.main === 'sword_guard2h' && g.equip.off === null, '2H sword takes both hands, shield removed');
-ok(g.bag.includes('shield_wood') && g.bag.includes('sword_recruit'), 'shield and the old sword went back to the bag');
-ok(sorted(g) === all && !gearProblem(g), 'no loss / duplication after 2H');
-// shield while holding a 2H weapon: the 2H weapon goes back to the bag
+// the bow takes both hands: the shield goes back to the bag
+g = must(equipFromBag(g, at(g, 'bow_hunter')));
+ok(g.equip.main === 'bow_hunter' && g.equip.off === null && g.bag.includes('shield_wood') && g.bag.includes('sword_recruit'), 'bow takes both hands, shield and the old sword went back to the bag');
+ok(sorted(g) === all && !gearProblem(g), 'no loss / duplication after the bow');
+// shield while holding the bow: the bow goes back to the bag
 g = must(equipFromBag(g, at(g, 'shield_wood')));
-ok(g.equip.off === 'shield_wood' && g.equip.main === null && g.bag.includes('sword_guard2h'), 'shield replaces the 2H weapon (never both)');
-ok(sorted(g) === all && !gearProblem(g), 'no loss / duplication after shield over 2H');
+ok(g.equip.off === 'shield_wood' && g.equip.main === null && g.bag.includes('bow_hunter'), 'shield replaces the bow (never both)');
+ok(sorted(g) === all && !gearProblem(g), 'no loss / duplication after shield over the bow');
 // 1H staff with the shield
 g = must(equipFromBag(g, at(g, 'staff_spark')));
 ok(g.equip.main === 'staff_spark' && g.equip.off === 'shield_wood', '1H staff is shield compatible');
-// every 2H weapon removes the shield
-for (const id of ['spear_militia', 'staff_apprentice', 'bow_hunter', 'crossbow_light']) {
-  g = must(equipFromBag(g, at(g, 'shield_wood') >= 0 ? at(g, 'shield_wood') : at(g, id)));
-  if (g.equip.off === 'shield_wood') g = must(equipFromBag(g, at(g, id)));
-  ok(g.equip.main === id && g.equip.off === null && sorted(g) === all, `${id}: two-handed, no shield, nothing lost`);
-}
+// the bow removes the shield again
+g = must(equipFromBag(g, at(g, 'bow_hunter')));
+ok(g.equip.main === 'bow_hunter' && g.equip.off === null && sorted(g) === all, 'bow: two-handed, no shield, nothing lost');
 // armor: each piece in its own slot, swapping returns the old piece to the source cell
 for (const id of ['app_hood', 'app_gloves', 'app_boots', 'app_robe']) g = must(equipFromBag(g, at(g, id)));
 ok(g.equip.head === 'app_hood' && g.equip.hands === 'app_gloves' && g.equip.feet === 'app_boots' && g.equip.body === 'app_robe', 'apprentice set equipped piece by piece');
@@ -64,15 +60,15 @@ ok(m.bag[23] === g.bag[0] && m.bag[0] === g.bag[23] && sorted(m) === all, 'movin
 const full: Gear = { equip: { main: 'sword_recruit', off: 'shield_wood', head: null, hands: null, feet: null, body: null }, bag: new Array(BAG_SIZE).fill('app_hood') };
 const u = unequip(full, 'main');
 ok(!u.ok, 'unequip with a full bag is refused');
-// edge: 2H from a full bag while sword+shield are worn: two items come off, only one cell frees → refused
-full.bag[5] = 'sword_guard2h';
+// edge: the bow from a full bag while sword+shield are worn: two items come off, only one cell frees → refused
+full.bag[5] = 'bow_hunter';
 const fullBefore = sorted(full);
 const r2 = equipFromBag(full, 5);
-ok(!r2.ok && sorted(full) === fullBefore && full.equip.off === 'shield_wood', '2H with no room for the shield is refused, gear untouched');
+ok(!r2.ok && sorted(full) === fullBefore && full.equip.off === 'shield_wood', 'the bow with no room for the shield is refused, gear untouched');
 // edge: same but with one free cell → works, both items land in the bag
 full.bag[6] = null;
 const r3 = equipFromBag(full, 5);
-ok(r3.ok && r3.gear.equip.main === 'sword_guard2h' && !r3.gear.equip.off && r3.gear.bag.includes('shield_wood') && r3.gear.bag.includes('sword_recruit'), '2H with one free cell: sword and shield both returned');
+ok(r3.ok && r3.gear.equip.main === 'bow_hunter' && !r3.gear.equip.off && r3.gear.bag.includes('shield_wood') && r3.gear.bag.includes('sword_recruit'), 'the bow with one free cell: sword and shield both returned');
 // edge: empty cell, unknown items, broken saves
 ok(!equipFromBag(newGear([]), 0).ok, 'equipping an empty cell is refused');
 const fixed = fixGear({ equip: { main: 'bow_hunter', off: 'shield_wood', head: 'guard_boots', hands: 'nope' }, bag: ['x', 'sword_recruit'] }, newGear([]));

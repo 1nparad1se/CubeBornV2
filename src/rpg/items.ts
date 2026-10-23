@@ -1,5 +1,5 @@
 /**
- * Starter items: seven weapons, a shield and three armor sets (12 pieces). Pure data — the
+ * Starter items: three weapons, a shield and three armor sets (12 pieces). Pure data — the
  * numbers here are the whole balance (see docs/rpg/README.md for the tables).
  */
 
@@ -14,10 +14,10 @@ export const SLOT_NAME: Record<Slot, string> = {
   body: 'Доспех',
 };
 
-export type WeaponKind = 'sword1h' | 'sword2h' | 'spear' | 'staff1h' | 'staff2h' | 'bow' | 'crossbow';
+export type WeaponKind = 'sword1h' | 'staff1h' | 'bow';
 export type DamageType = 'phys' | 'magic';
-/** melee: one target in reach; sweep: every target in a rectangle in front; projectile: flies to the target. */
-export type AttackShape = 'melee' | 'sweep' | 'projectile';
+/** melee: one target in reach; projectile: flies to the target. */
+export type AttackShape = 'melee' | 'projectile';
 
 export interface WeaponStats {
   kind: WeaponKind;
@@ -31,12 +31,10 @@ export interface WeaponStats {
   hitAt: number;
   /** Reach (melee, blocks from the body) or flight distance (projectiles). */
   range: number;
-  /** Sweep: half-width of the hit rectangle. */
-  halfWidth?: number;
   /** Projectile speed, blocks per second. */
   projSpeed?: number;
   /** Projectile look. */
-  proj?: 'arrow' | 'bolt' | 'spark' | 'orb';
+  proj?: 'arrow' | 'spark';
 }
 
 /** Bonus stats; percentages are fractions (0.05 = +5 %). */
@@ -77,26 +75,6 @@ export const ITEMS: ItemDef[] = [
     stats: {},
   },
   {
-    id: 'sword_guard2h',
-    name: 'Двуручный меч стражника',
-    type: 'Двуручный меч',
-    desc: 'Медленный тяжёлый удар по одной цели. Занимает обе руки.',
-    slot: 'main',
-    twoHanded: true,
-    weapon: { kind: 'sword2h', dmgType: 'phys', shape: 'melee', damage: 40, interval: 1.55, hitAt: 0.55, range: 2.6 },
-    stats: {},
-  },
-  {
-    id: 'spear_militia',
-    name: 'Железная пика ополченца',
-    type: 'Пика',
-    desc: 'Длинный выпад: задевает все цели в полосе перед собой. Занимает обе руки.',
-    slot: 'main',
-    twoHanded: true,
-    weapon: { kind: 'spear', dmgType: 'phys', shape: 'sweep', damage: 24, interval: 1.15, hitAt: 0.5, range: 3.6, halfWidth: 1.0 },
-    stats: {},
-  },
-  {
     id: 'staff_spark',
     name: 'Малый посох искры',
     type: 'Одноручный магический посох',
@@ -106,33 +84,13 @@ export const ITEMS: ItemDef[] = [
     stats: {},
   },
   {
-    id: 'staff_apprentice',
-    name: 'Посох ученика',
-    type: 'Двуручный магический посох',
-    desc: 'Долгое заклинание: тяжёлая магическая сфера. Занимает обе руки.',
-    slot: 'main',
-    twoHanded: true,
-    weapon: { kind: 'staff2h', dmgType: 'magic', shape: 'projectile', damage: 36, interval: 1.8, hitAt: 0.62, range: 14, projSpeed: 12, proj: 'orb' },
-    stats: {},
-  },
-  {
     id: 'bow_hunter',
     name: 'Охотничий лук',
     type: 'Лук',
-    desc: 'Натянуть и выстрелить: стреляет чаще арбалета, но слабее. Занимает обе руки.',
+    desc: 'Натянуть и выстрелить: Занимает обе руки.',
     slot: 'main',
     twoHanded: true,
     weapon: { kind: 'bow', dmgType: 'phys', shape: 'projectile', damage: 15, interval: 0.8, hitAt: 0.6, range: 16, projSpeed: 24, proj: 'arrow' },
-    stats: {},
-  },
-  {
-    id: 'crossbow_light',
-    name: 'Лёгкий арбалет',
-    type: 'Арбалет',
-    desc: 'Мощный выстрел и долгая перезарядка после него. Занимает обе руки.',
-    slot: 'main',
-    twoHanded: true,
-    weapon: { kind: 'crossbow', dmgType: 'phys', shape: 'projectile', damage: 38, interval: 1.95, hitAt: 0.14, range: 18, projSpeed: 30, proj: 'bolt' },
     stats: {},
   },
   {

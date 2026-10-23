@@ -45,7 +45,7 @@ interface DummySpot {
 }
 
 /**
- * Exactly three dummies: a close pair (1.4 blocks apart, for the spear sweep hitting two at once)
+ * Exactly three dummies: a close pair (1.4 blocks apart)
  * and a lone one seven blocks to the east (single-target tests).
  */
 export const DUMMIES: DummySpot[] = [

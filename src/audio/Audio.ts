@@ -316,7 +316,6 @@ const MIN_GAP: Record<string, number> = {
 
 const RECIPES: Record<string, Recipe> = {
   slash: (a, t, v) => a.noise(t, 0.12, 0.25 * v, 'bandpass', 3200, 900, 1.4),
-  thrust: (a, t, v) => a.noise(t, 0.16, 0.25 * v, 'bandpass', 1400, 4000, 2),
   magic: (a, t, v) => {
     a.tone(t, 'triangle', 660, 1320, 0.15, 0.12 * v);
     a.tone(t + 0.03, 'sine', 990, 1980, 0.12, 0.08 * v);

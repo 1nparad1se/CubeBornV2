@@ -9,31 +9,17 @@ const ok = (c: boolean, msg: string) => {
   if (!c) fails++;
 };
 const w = (id: string) => ITEM_BY_ID[id].weapon!;
-const pairs: [string, string, string][] = [
-  ['sword_recruit', 'sword_guard2h', '1H vs 2H sword'],
-  ['staff_spark', 'staff_apprentice', '1H vs 2H staff'],
-  ['bow_hunter', 'crossbow_light', 'bow vs crossbow'],
-];
-for (const [fast, slow, label] of pairs) {
-  const a = w(fast);
-  const b = w(slow);
-  ok(a.interval < b.interval, `${label}: fast one attacks more often (${a.interval} < ${b.interval} s)`);
-  ok(a.damage < b.damage, `${label}: slow one hits harder (${a.damage} < ${b.damage})`);
-  const r = baseDps(b) / baseDps(a);
-  ok(r > 0.85 && r < 1.2, `${label}: DPS comparable (${baseDps(a).toFixed(1)} vs ${baseDps(b).toFixed(1)}, ratio ${r.toFixed(2)})`);
-}
 ok(!ITEM_BY_ID.sword_recruit.twoHanded && !ITEM_BY_ID.staff_spark.twoHanded, '1H sword and 1H staff are one-handed (shield compatible)');
-ok(['sword_guard2h', 'spear_militia', 'staff_apprentice', 'bow_hunter', 'crossbow_light'].every((id) => ITEM_BY_ID[id].twoHanded), 'the rest are two-handed');
-ok(w('spear_militia').range > w('sword_guard2h').range && w('spear_militia').range > w('sword_recruit').range, 'spear reaches further than the swords');
-ok(w('spear_militia').shape === 'sweep' && baseDps(w('spear_militia')) < baseDps(w('sword_recruit')), 'spear hits an area but has the lowest single-target melee DPS');
-const ranged = ['staff_spark', 'staff_apprentice', 'bow_hunter', 'crossbow_light'];
-const melee = ['sword_recruit', 'sword_guard2h'];
+ok(ITEM_BY_ID.bow_hunter.twoHanded === true, 'the bow is two-handed');
+ok(['sword_guard2h', 'spear_militia', 'staff_apprentice', 'crossbow_light'].every((id) => !ITEM_BY_ID[id]), 'the removed weapons are gone from the item list');
+const ranged = ['staff_spark', 'bow_hunter'];
+const melee = ['sword_recruit'];
 ok(ranged.every((r) => melee.every((m) => w(r).range > 3 * w(m).range && baseDps(w(r)) < baseDps(w(m)))), 'ranged weapons trade single-target DPS for range');
-ok(w('staff_spark').dmgType === 'magic' && w('staff_apprentice').dmgType === 'magic', 'staffs deal magic damage');
+ok(w('staff_spark').dmgType === 'magic', 'the staff deals magic damage');
 ok(ITEMS.filter((i) => i.weapon).every((i) => i.weapon!.hitAt > 0 && i.weapon!.hitAt < 1), 'every weapon hits inside its attack cycle');
-// no weapon dominates every metric (damage, speed, DPS, range, area)
+// no weapon dominates every metric (damage, speed, DPS, range)
 const ws = ITEMS.filter((i) => i.weapon).map((i) => i.weapon!);
-const dominates = (a: typeof ws[0], b: typeof ws[0]) => a.damage >= b.damage && a.interval <= b.interval && a.range >= b.range && (a.shape === 'sweep' || b.shape !== 'sweep') && (a !== b);
+const dominates = (a: typeof ws[0], b: typeof ws[0]) => a.damage >= b.damage && a.interval <= b.interval && a.range >= b.range && (a !== b);
 ok(!ws.some((a) => ws.some((b) => a !== b && dominates(a, b))), 'no weapon is better than another on every metric');
 // armor classes
 const def = (set: string) => ARMOR_SETS.find((s) => s.id === set)!.items.reduce((s, id) => s + (ITEM_BY_ID[id].stats.physDef ?? 0), 0);
@@ -58,7 +44,7 @@ for (const it of ITEMS.filter((i) => i.weapon)) {
   ok(!!t && t.shape === it.weapon!.shape && (t.hands === 2) === !!it.twoHanded, `${it.id}: matches its weapon type (${t?.family}, ${t?.style}, ${t?.hands} hand(s))`);
 }
 ok(WEAPON_TYPES.staff1h.style === 'magic' && WEAPON_TYPES.sword1h.style === 'melee' && WEAPON_TYPES.bow.style === 'ranged', 'staff casts magic, sword fights in melee, bow shoots from range');
-ok(WEAPON_TYPES.sword1h.hands === 1 && WEAPON_TYPES.sword2h.grip === 'two' && WEAPON_TYPES.bow.grip === 'bow', 'one-hand sword leaves a hand free, two-handed sword is held with both hands');
-ok(Object.values(WEAPON_TYPES).every((t) => t.grip !== 'two' || (t.leftHand && t.leftHand.min <= t.leftHand.pref && t.leftHand.pref <= t.leftHand.max)), 'two-hand grips say where the left hand goes');
+ok(WEAPON_TYPES.sword1h.hands === 1 && WEAPON_TYPES.bow.grip === 'bow' && WEAPON_TYPES.bow.hands === 2, 'one-hand sword leaves a hand free, the bow takes both hands');
+ok(Object.keys(WEAPON_TYPES).sort().join() === 'bow,staff1h,sword1h', 'three weapon types remain');
 console.log(fails ? `${fails} weapon check(s) FAILED` : 'all weapon checks passed');
 process.exit(fails ? 1 : 0);

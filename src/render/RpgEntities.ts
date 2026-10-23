@@ -34,12 +34,9 @@ export class RpgEntities {
   private dummies: DummyModel[] = [];
   private yaw = 0;
   private proj = new Map<Projectile, THREE.Object3D>();
-  private arrowGeo = arrowModel(false);
-  private boltGeo = arrowModel(true);
+  private arrowGeo = arrowModel();
   private sparkGeo = new THREE.BoxGeometry(0.14, 0.14, 0.14);
-  private orbGeo = new THREE.BoxGeometry(0.24, 0.24, 0.24);
   private sparkMat = new THREE.MeshBasicMaterial({ color: 0xffb040 });
-  private orbMat = new THREE.MeshBasicMaterial({ color: 0x6ab8ff });
   private ring: THREE.Mesh;
   private ringMat = new THREE.MeshBasicMaterial({ color: 0xff5040, transparent: true, opacity: 0.9, depthWrite: false });
   private equipKey = '';
@@ -138,12 +135,12 @@ export class RpgEntities {
       let obj = this.proj.get(pr);
       if (!obj) {
         obj =
-          pr.kind === 'arrow' ? new THREE.Mesh(this.arrowGeo, itemMaterial()) : pr.kind === 'bolt' ? new THREE.Mesh(this.boltGeo, itemMaterial()) : new THREE.Mesh(pr.kind === 'orb' ? this.orbGeo : this.sparkGeo, pr.kind === 'orb' ? this.orbMat : this.sparkMat);
+          pr.kind === 'arrow' ? new THREE.Mesh(this.arrowGeo, itemMaterial()) : new THREE.Mesh(this.sparkGeo, this.sparkMat);
         this.group.add(obj);
         this.proj.set(pr, obj);
       }
       obj.position.set(pr.x, pr.y, pr.z);
-      if (pr.kind === 'arrow' || pr.kind === 'bolt') obj.lookAt(pr.x + pr.dx, pr.y + pr.dy, pr.z + pr.dz);
+      if (pr.kind === 'arrow') obj.lookAt(pr.x + pr.dx, pr.y + pr.dy, pr.z + pr.dz);
       else obj.rotation.set(pr.age * 7, pr.age * 9, 0);
     }
   }
@@ -151,9 +148,8 @@ export class RpgEntities {
   dispose() {
     this.hero.dispose();
     this.dummies.forEach((d) => d.dispose());
-    for (const g of [this.arrowGeo, this.boltGeo, this.sparkGeo, this.orbGeo]) g.dispose();
+    for (const g of [this.arrowGeo, this.sparkGeo]) g.dispose();
     this.sparkMat.dispose();
-    this.orbMat.dispose();
     this.ring.geometry.dispose();
     this.ringMat.dispose();
     this.mark.geometry.dispose();

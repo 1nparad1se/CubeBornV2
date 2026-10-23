@@ -284,7 +284,7 @@ export class RpgPlayer {
     this.fz = dz;
     // fists swing like a sword; shots and spells sound when they leave
     const snd = wpn ? weaponType(wpn.kind)?.swingSound : 'slash';
-    if (snd) w.fx.sound(snd, snd === 'thrust' ? 0.5 : 0.45);
+    if (snd) w.fx.sound(snd, 0.45);
   }
 
   private setPath(tx: number, tz: number) {

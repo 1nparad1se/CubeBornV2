@@ -1,5 +1,5 @@
 import { item } from '../rpg/items';
-import { SPR_BOW, SPR_SPEAR, SPR_STAFF1H, SPR_STAFF2H, SPR_SWORD, SPR_SWORD2H, SPR_XBOW, armorIcon, shieldFace, spriteCanvas, type Sprite } from '../render/human/sprites';
+import { SPR_BOW, SPR_STAFF1H, SPR_SWORD, armorIcon, shieldFace, spriteCanvas, type Sprite } from '../render/human/sprites';
 
 /** Pixel sprite shown for an item in the inventory (the same pixel art as its 3D model). */
 function itemSprite(id: string): Sprite | null {
@@ -7,12 +7,8 @@ function itemSprite(id: string): Sprite | null {
   if (!def) return null;
   const w = def.weapon?.kind;
   if (w === 'sword1h') return SPR_SWORD;
-  if (w === 'sword2h') return SPR_SWORD2H;
-  if (w === 'spear') return SPR_SPEAR;
   if (w === 'staff1h') return SPR_STAFF1H;
-  if (w === 'staff2h') return SPR_STAFF2H;
   if (w === 'bow') return SPR_BOW;
-  if (w === 'crossbow') return SPR_XBOW;
   if (def.slot === 'off') {
     const px: string[] = [];
     for (let y = 0; y < 16; y++)

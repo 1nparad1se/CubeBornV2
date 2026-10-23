@@ -8,7 +8,7 @@ Read this before changing the game. It holds the decisions the owner has already
   - the open world «Дикие земли», 2000×2000 blocks (`src/world/wild.ts`): an irregular continent with low rounded mountain ranges (about 50 blocks), gentle hills, rivers, lakes, waterfalls, swamps, climate zones, roads and paths, 18 tree species and 20 bush species; the three training dummies stand on a clearing at the spawn;
   - the 100×100 training meadow stays for the tests and the menu backdrop;
   - only the Human race;
-  - 7 weapons plus a shield, and 3 armor sets (magic, light, heavy) of 4 pieces each;
+  - 3 weapons (one-handed sword, one-handed staff, bow) plus a shield, and 3 armor sets (magic, light, heavy) of 4 pieces each;
   - an inventory on Tab or I, a world map on M, a round compass minimap, an empty 6-slot skill bar;
   - a jump instead of a roll, with one double jump in the air;
   - mouse-only control: left click walks / selects / attacks, the right button held orbits and tilts the camera.
@@ -26,7 +26,7 @@ Read this before changing the game. It holds the decisions the owner has already
 - Controls: no walking keys (no WASD). Left click on the ground walks there (pathfinding over the relief); left click on a dummy selects it, a second left click on it starts the auto attack; a ground click stops the attack.
 - Camera: the right button held and dragged orbits the hero (full circle) and tilts it between 25° and 50°; it never passes into the terrain.
 - Relief: every cell is a flat-topped block at a multiple of 1/4 block; quarter and half steps are walked, a whole block needs a jump.
-- Two-handed weapons are held with both hands on the handle (idle, run and attack).
+- The bow is the only two-handed weapon and takes the shield's place; the spear, two-handed sword, two-handed staff and crossbow were removed on purpose (save v9 migrates them out). Do not bring them back unless the owner asks.
 - Maps and the minimap are turned like the camera: up on the screen is up on the map.
 - Grass and bushes are decor: no wind (they stand still), they only bend away from the hero, they never block movement.
 - See-through only where it helps: a tree that really stands between the camera and the hero fades to half see-through and back (smoothly); ground that hides the hero (a cliff, a hill) opens a see-through window around the hero only. Nothing else turns see-through. The camera itself never sits inside the ground or a tree crown.

@@ -37,6 +37,26 @@ export function newChar(name: string, race: string): CharSave {
   };
 }
 
+/** Weapons taken out of the game in save v9 (spear, two-handed sword, two-handed staff, crossbow). */
+const REMOVED_ITEMS = ['sword_guard2h', 'spear_militia', 'staff_apprentice', 'crossbow_light'];
+
+/**
+ * Save v8 → v9: the removed weapons leave the bag; an equipped one is replaced by the starter
+ * sword (taken out of the bag when it is there, so nothing is duplicated).
+ */
+export function dropRemovedWeapons(rawChar: any): any {
+  const g = rawChar?.gear;
+  if (!g || typeof g !== 'object') return rawChar;
+  const equip = { ...(g.equip && typeof g.equip === 'object' ? g.equip : {}) };
+  let bag: unknown[] = Array.isArray(g.bag) ? g.bag.map((id: unknown) => (REMOVED_ITEMS.includes(id as string) ? null : id)) : [];
+  if (REMOVED_ITEMS.includes(equip.main)) {
+    const i = bag.indexOf('sword_recruit');
+    if (i >= 0) bag[i] = null;
+    equip.main = 'sword_recruit';
+  }
+  return { ...rawChar, gear: { ...g, equip, bag } };
+}
+
 /** Repairs a stored character of the current format; anything else (old class heroes) is dropped. */
 export function fixChar(raw: any): CharSave | null {
   if (!raw || typeof raw !== 'object' || typeof raw.race !== 'string' || !RACE_BY_ID[raw.race]?.available) return null;

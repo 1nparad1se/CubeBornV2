@@ -210,24 +210,6 @@ export class World {
       this.spawnProjectile(w, dmg, fx, fz);
       return;
     }
-    if (shape === 'sweep' && w) {
-      // every dummy inside the rectangle in front: length = reach, half-width = halfWidth
-      const hw = w.halfWidth ?? 0.9;
-      let n = 0;
-      for (const d of this.dummies) {
-        const rx = d.x - p.x;
-        const rz = d.z - p.z;
-        const along = rx * fx + rz * fz;
-        const side = Math.abs(rx * fz - rz * fx);
-        if (along > -d.radius && along <= range + d.radius && side <= hw + d.radius) {
-          this.damage(d, dmg, false, p.x, p.z);
-          n++;
-        }
-      }
-      this.fx.burst(p.x + fx * range * 0.8, 1.1, p.z + fz * range * 0.8, 0xe8e8f0, 6, 3, 0.08, 0.25, 'glow');
-      if (!n) this.fx.sound('thrust', 0.5);
-      return;
-    }
     // melee: the selected target when in reach, else the nearest dummy in a cone in front
     const inReach = (d: Dummy) => Math.hypot(d.x - p.x, d.z - p.z) - d.radius <= range + 0.15;
     let hit: Dummy | null = this.target && inReach(this.target) ? this.target : null;
@@ -270,7 +252,7 @@ export class World {
     }
     const n = Math.hypot(dx, dy, dz) || 1;
     this.projectiles.push({ kind, x: sx, y, z: sz, dx: dx / n, dy: dy / n, dz: dz / n, speed: w.projSpeed ?? 20, left: w.range * 1.15, damage: dmg, magic: w.dmgType === 'magic', target: tgt, dead: false, age: 0 });
-    this.fx.sound(kind === 'arrow' || kind === 'bolt' ? 'bow' : 'magic', 0.6);
+    this.fx.sound(kind === 'arrow' ? 'bow' : 'magic', 0.6);
   }
 
   private updateProjectiles(dt: number) {
@@ -279,7 +261,7 @@ export class World {
       if (pr.dead) continue;
       pr.age += dt;
       const step = pr.speed * dt;
-      // a few sub-steps so fast bolts cannot pass through a dummy
+      // a few sub-steps so fast arrows cannot pass through a dummy
       const subs = Math.max(1, Math.ceil(step / 0.3));
       for (let s = 0; s < subs && !pr.dead; s++) {
         const k = step / subs;
@@ -300,10 +282,10 @@ export class World {
         const cz = Math.floor(pr.z);
         if (pr.left <= 0 || pr.y < this.terrain.groundY(pr.x, pr.z) || this.terrain.blocksShot(cx, cz, pr.y)) {
           pr.dead = true;
-          if (pr.magic) this.fx.burst(pr.x, pr.y - this.terrain.groundY(pr.x, pr.z), pr.z, pr.kind === 'orb' ? 0x6ab8ff : 0xffb040, 6, 2, 0.1, 0.3, 'glow');
+          if (pr.magic) this.fx.burst(pr.x, pr.y - this.terrain.groundY(pr.x, pr.z), pr.z, 0xffb040, 6, 2, 0.1, 0.3, 'glow');
         }
       }
-      if (pr.magic && !pr.dead) this.fx.burst(pr.x, pr.y - this.terrain.groundY(pr.x, pr.z), pr.z, pr.kind === 'orb' ? 0x6ab8ff : 0xffb040, 1, 0.3, 0.07, 0.25, 'glow');
+      if (pr.magic && !pr.dead) this.fx.burst(pr.x, pr.y - this.terrain.groundY(pr.x, pr.z), pr.z, 0xffb040, 1, 0.3, 0.07, 0.25, 'glow');
     }
     // keep the dead a moment so the renderer can drop them, then compact
     for (let i = list.length - 1; i >= 0; i--) if (list[i].dead) list.splice(i, 1);

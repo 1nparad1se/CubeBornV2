@@ -18,7 +18,6 @@ function itemLines(def: ItemDef): string[] {
     out.push(`Скорость: удар раз в ${w.interval.toFixed(2)} с (${(1 / w.interval).toFixed(2)}/с)`);
     out.push(`Урон в секунду: ${(w.damage / w.interval).toFixed(1)}`);
     out.push(w.shape === 'projectile' ? `Дальность выстрела: ${w.range}` : `Досягаемость: ${w.range}`);
-    if (w.shape === 'sweep') out.push(`Бьёт все цели в полосе шириной ${(w.halfWidth ?? 0.9) * 2}`);
     out.push(def.twoHanded ? 'Двуручное — занимает обе руки' : 'Одноручное — можно взять щит');
   }
   const s = def.stats;
