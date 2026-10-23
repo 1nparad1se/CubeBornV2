@@ -9,7 +9,7 @@ import { newGear, equipFromBag, type Gear } from '../../src/rpg/equipment';
 import { STARTER_ITEMS } from '../../src/rpg/items';
 import { JUMP } from '../../src/rpg/Player';
 import { DUMMIES, OBSTACLES, SPAWN, TEST_MAP, buildTestMap } from '../../src/rpg/testMap';
-import { CELL } from '../../src/game/Terrain';
+import { Terrain, CELL } from '../../src/game/Terrain';
 
 let fails = 0;
 const ok = (c: boolean, msg: string) => {
@@ -80,6 +80,7 @@ const place = (w: World, x: number, z: number) => {
   const gx = (goal % 100) + 0.5;
   const gz = ((goal / 100) | 0) + 0.5;
   w.ctl.clickMove = { x: gx, z: gz };
+  const jumps0 = w.jumps;
   let off = 0;
   let climbed = 0;
   run(w, 40, () => {
@@ -89,11 +90,33 @@ const place = (w: World, x: number, z: number) => {
     climbed = Math.max(climbed, p.y - base);
   });
   ok(Math.hypot(w.player.x - gx, w.player.z - gz) < 0.6, `walks by click over the hills to (${gx}, ${gz}), ${H(goal % 100, (goal / 100) | 0)} blocks high (at ${w.player.x.toFixed(1)}, ${w.player.z.toFixed(1)})`);
-  ok(off < 1e-6 && climbed >= 2, `on the way the feet stay on the block tops (off by ${off.toFixed(4)}), climbing ${climbed} blocks`);
+  ok(off < 1e-6 && climbed >= 2, `on the way the feet stay on the ground (off by ${off.toFixed(4)}), climbing ${climbed.toFixed(2)} blocks`);
+  ok(w.jumps === jumps0, `up the smooth slopes without a single jump (${w.jumps - jumps0})`);
   // a second click changes the destination at once
   w.ctl.clickMove = { x: SPAWN.x, z: SPAWN.z };
   run(w, 40);
   ok(Math.hypot(w.player.x - SPAWN.x, w.player.z - SPAWN.z) < 0.6, 'a new click: turns and walks back to the spawn');
+  ok(w.jumps === jumps0, 'and back down the slopes without a jump');
+}
+
+// ---------------------------------------------------------------- slopes on the smooth ground
+{
+  // two ramps on one smooth surface: 30° (walked) and 60° (blocked), rising along +x
+  const ramp = (deg: number) => {
+    const t = new Terrain(12);
+    t.top = new Float32Array(144);
+    const k = Math.tan((deg * Math.PI) / 180);
+    for (let z = 0; z < 12; z++) for (let x = 0; x < 12; x++) t.top[z * 12 + x] = Math.max(0, x - 3) * k;
+    t.buildSmooth(0);
+    return t;
+  };
+  const a = ramp(30);
+  const b = ramp(60);
+  const up = (t: Terrain) => t.canWalk(6.5, 6.5, 6.6, 6.5, t.groundY(6.5, 6.5));
+  const across = (t: Terrain) => t.canWalk(6.5, 6.5, 6.5, 6.6, t.groundY(6.5, 6.6));
+  ok(up(a) && a.passable(6 * 12 + 6, 6 * 12 + 7), 'a 30° smooth slope is walked up');
+  ok(!up(b) && !b.passable(6 * 12 + 6, 6 * 12 + 7), 'a 60° smooth slope is blocked (steeper than 45°)');
+  ok(across(b), 'walking across a steep slope (no rise) stays allowed');
 }
 
 // ---------------------------------------------------------------- jump
