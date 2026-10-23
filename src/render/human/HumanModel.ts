@@ -1,8 +1,9 @@
 import * as THREE from 'three';
 import { item, type Slot, type WeaponKind } from '../../rpg/items';
 import { weaponType, type WeaponType } from '../../rpg/weapons';
-import { PX, SkinAtlas, type Paint } from './skinAtlas';
-import { SKINS, armorPaints, type BodySkin } from './skins';
+import { PX } from './skinAtlas';
+import { HUMAN_LOOK, armorParts, figurePart } from './figure';
+import { treeMaterial } from '../TreeRenderer';
 import { shieldModel, weaponModel, type WeaponModel } from './itemMeshes';
 
 /** What the model shows this frame (filled from the simulation or by a preview). */
@@ -87,10 +88,10 @@ const BOW_LEVEL_SCALE = 1.35;
 type Part = 'head' | 'torso' | 'armR' | 'armL' | 'legR' | 'legL';
 
 /**
- * The cubic (Minecraft-style) human: head 8×8×8, torso 8×12×4, arms and legs 4×12×4 pixels,
- * one pixel = PX blocks. Built from textured boxes only (no rounding, no voxel detail). Armor
- * pieces are slightly inflated boxes on the matching parts, the weapon sits in the right hand,
- * a shield on the left forearm. Faces +Z; feet at y = 0.
+ * The stylised human (owner: no longer Minecraft-like; see figure.ts): smooth low-poly parts on
+ * the same joints as before (hips, neck, shoulders), one pixel = PX blocks, 32 px tall. Armour
+ * pieces are shaped shells on the matching parts, the weapon sits in the right hand, a shield on
+ * the left forearm. Faces +Z; feet at y = 0.
  */
 export class HumanModel {
   readonly root = new THREE.Group();
@@ -99,11 +100,10 @@ export class HumanModel {
   /** Between root and body: turns the whole figure for the double-jump somersault. */
   private tumble = new THREE.Group();
   private parts = {} as Record<Part, THREE.Group>;
-  private atlas: SkinAtlas;
   private mat: THREE.MeshLambertMaterial;
   private geos: THREE.BufferGeometry[] = [];
   /** Armor meshes per slot (each piece has its own atlas). */
-  private armor: Partial<Record<Slot, { meshes: THREE.Mesh[]; atlas: SkinAtlas; mat: THREE.Material; geos: THREE.BufferGeometry[] }>> = {};
+  private armor: Partial<Record<Slot, { meshes: THREE.Mesh[]; geos: THREE.BufferGeometry[] }>> = {};
   private equipIds: Partial<Record<Slot, string | null>> = {};
   private weapon: WeaponModel | null = null;
   private weaponKind: WeaponKind | null = null;
@@ -112,11 +112,12 @@ export class HumanModel {
   private holderR = new THREE.Group();
   private holderL = new THREE.Group();
   private shieldMount = new THREE.Group();
+  private hair: THREE.Mesh;
 
   constructor(skinId = 'human', private shadows = true) {
-    const skin: BodySkin = SKINS[skinId] ?? SKINS.human;
-    this.atlas = new SkinAtlas(128);
-    this.mat = this.atlas.material();
+    void skinId;
+    const look = HUMAN_LOOK;
+    this.mat = treeMaterial();
     this.root.add(this.tumble);
     this.tumble.add(this.body);
     const mk = (name: Part, pivot: [number, number, number]) => {
@@ -124,24 +125,26 @@ export class HumanModel {
       g.position.set(pivot[0] * PX, pivot[1] * PX, pivot[2] * PX);
       this.body.add(g);
       this.parts[name] = g;
-      return g;
-    };
-    const box = (parent: THREE.Group, w: number, h: number, d: number, paint: Paint, at: [number, number, number]) => {
-      const geo = this.atlas.box(w, h, d, paint);
+      const geo = figurePart(name, look, PX);
       this.geos.push(geo);
       const m = new THREE.Mesh(geo, this.mat);
-      m.position.set(at[0] * PX, at[1] * PX, at[2] * PX);
       m.castShadow = shadows;
-      parent.add(m);
-      return m;
+      g.add(m);
+      return g;
     };
     // pivots: legs at the hips, torso at the hips, head at the neck, arms at the shoulders
-    box(mk('legR', [-2, 12, 0]), 4, 12, 4, skin.legR, [0, -6, 0]);
-    box(mk('legL', [2, 12, 0]), 4, 12, 4, skin.legL, [0, -6, 0]);
-    box(mk('torso', [0, 12, 0]), 8, 12, 4, skin.torso, [0, 6, 0]);
-    box(mk('head', [0, 24, 0]), 8, 8, 8, skin.head, [0, 4, 0]);
-    box(mk('armR', [-6, 22, 0]), 4, 12, 4, skin.armR, [0, -4, 0]);
-    box(mk('armL', [6, 22, 0]), 4, 12, 4, skin.armL, [0, -4, 0]);
+    mk('legR', [-2, 12, 0]);
+    mk('legL', [2, 12, 0]);
+    mk('torso', [0, 12, 0]);
+    mk('head', [0, 24, 0]);
+    mk('armR', [-6, 22, 0]);
+    mk('armL', [6, 22, 0]);
+    // hair rides on the head; a close helm or hood hides it (no strands through the metal)
+    const hairGeo = figurePart('hair', look, PX);
+    this.geos.push(hairGeo);
+    this.hair = new THREE.Mesh(hairGeo, this.mat);
+    this.hair.castShadow = shadows;
+    this.parts.head.add(this.hair);
     // hands: the item holders sit at the bottom of the arms
     this.holderR.position.set(0, -9 * PX, 0);
     this.parts.armR.add(this.holderR);
@@ -162,6 +165,8 @@ export class HumanModel {
       const def = item(equip[s]);
       if (def?.armorSet) this.buildArmor(s, def.armorSet);
     }
+    const helm = item(equip.head)?.armorSet;
+    this.hair.visible = !helm || helm === 'apprentice';
     if (this.equipIds.main !== equip.main) {
       this.equipIds.main = equip.main;
       this.weapon?.dispose();
@@ -224,37 +229,16 @@ export class HumanModel {
   }
 
   private buildArmor(slot: Slot, set: string) {
-    const P = armorPaints(set);
-    const atlas = new SkinAtlas(64);
-    const mat = atlas.material();
     const geos: THREE.BufferGeometry[] = [];
     const meshes: THREE.Mesh[] = [];
-    const add = (part: Part, w: number, h: number, d: number, paint: Paint, inflate: number, at: [number, number, number]) => {
-      const geo = atlas.box(w, h, d, paint, inflate);
+    for (const { part, geo } of armorParts(slot, set, PX)) {
       geos.push(geo);
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(at[0] * PX, at[1] * PX, at[2] * PX);
+      const m = new THREE.Mesh(geo, this.mat);
       m.castShadow = this.shadows;
-      this.parts[part].add(m);
+      this.parts[part === 'hair' ? 'head' : part].add(m);
       meshes.push(m);
-    };
-    const heavy = set === 'guard';
-    if (slot === 'head') add('head', 8, 8, 8, P.helmet, heavy ? 0.85 : 0.65, [0, 4, 0]);
-    if (slot === 'body') {
-      add('torso', 8, 10, 4, P.torso, heavy ? 0.7 : 0.55, [0, 7, 0]);
-      // shoulders: the upper part of each arm (above the gloves)
-      add('armR', 4, 6, 4, P.shoulder, heavy ? 0.75 : 0.6, [0, -1, 0]);
-      add('armL', 4, 6, 4, P.shoulder, heavy ? 0.75 : 0.6, [0, -1, 0]);
     }
-    if (slot === 'hands') {
-      add('armR', 4, 5, 4, P.glove, 0.4, [0, -7.5, 0]);
-      add('armL', 4, 5, 4, P.glove, 0.4, [0, -7.5, 0]);
-    }
-    if (slot === 'feet') {
-      add('legR', 4, 5, 4, P.boot, 0.4, [0, -9.5, 0]);
-      add('legL', 4, 5, 4, P.boot, 0.4, [0, -9.5, 0]);
-    }
-    this.armor[slot] = { meshes, atlas, mat, geos };
+    this.armor[slot] = { meshes, geos };
   }
 
   private clearArmor(slot: Slot) {
@@ -262,8 +246,6 @@ export class HumanModel {
     if (!a) return;
     for (const m of a.meshes) m.removeFromParent();
     a.geos.forEach((g) => g.dispose());
-    a.mat.dispose();
-    a.atlas.dispose();
     delete this.armor[slot];
   }
 
@@ -279,7 +261,7 @@ export class HumanModel {
     const grip = this.wtype?.grip ?? null;
     const sw = Math.sin(p.walk);
     const mv = p.moving;
-    // walk: legs and arms swing in opposition (Minecraft gait)
+    // walk: legs and arms swing in opposition
     const legSwing = sw * 0.75 * mv;
     P.legR.rotation.x = legSwing;
     P.legL.rotation.x = -legSwing;
@@ -584,6 +566,5 @@ export class HumanModel {
     this.shield?.dispose();
     this.geos.forEach((g) => g.dispose());
     this.mat.dispose();
-    this.atlas.dispose();
   }
 }

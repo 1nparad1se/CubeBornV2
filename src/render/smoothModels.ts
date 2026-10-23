@@ -22,7 +22,7 @@ export function smoothOut(): SmoothOut {
 
 const _c = new THREE.Color();
 
-function pushV(o: SmoothOut, x: number, y: number, z: number, nx: number, ny: number, nz: number, hex: number, k: number, surf: number) {
+export function pushV(o: SmoothOut, x: number, y: number, z: number, nx: number, ny: number, nz: number, hex: number, k: number, surf: number) {
   _c.setHex(hex).convertSRGBToLinear();
   o.pos.push(x, y, z);
   const l = Math.hypot(nx, ny, nz) || 1;
