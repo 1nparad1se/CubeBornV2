@@ -32,7 +32,7 @@ export function bushSpots(t: Terrain): BushSpot[] {
         const cz = Math.floor(z) + dz;
         if (cx < 0 || cz < 0 || cx >= n || cz >= n) return false;
         const i = cz * n + cx;
-        if (t.cell[i] !== CELL.floor || t.centerY(i) !== t.centerY(Math.floor(z) * n + Math.floor(x))) return false;
+        if (t.cell[i] !== CELL.floor || Math.abs(t.centerY(i) - t.centerY(Math.floor(z) * n + Math.floor(x))) > (t.vert ? 0.3 : 0)) return false;
       }
     return true;
   };

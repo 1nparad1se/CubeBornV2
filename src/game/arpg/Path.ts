@@ -81,6 +81,9 @@ function enter(t: Terrain, from: number, cx: number, cz: number): boolean {
   const fz = (from / t.size) | 0;
   if (Math.abs(fx - cx) > 1 || Math.abs(fz - cz) > 1) return false;
   if (t.passable(from, j)) return true;
+  // smooth ground too steep to walk (over 45°) is blocked both ways; only a real step (a sheer
+  // face) can be dropped off or jumped onto
+  if (!t.stepBetween(from, j)) return false;
   // a drop off a ledge, or a rise the hero can jump onto (a double jump for the higher ones)
   const rise = t.centerY(j) - t.centerY(from);
   return rise < -SLOPE.lip || (rise > 0 && rise <= SLOPE.doubleJump);
@@ -88,6 +91,7 @@ function enter(t: Terrain, from: number, cx: number, cz: number): boolean {
 
 /** Extra cost of a step that needs a jump (paths prefer to walk round when it is not far). */
 function jumpCost(t: Terrain, from: number, to: number): number {
+  if (t.passable(from, to)) return 0;
   const rise = t.centerY(to) - t.centerY(from);
   return rise <= SLOPE.lip ? 0 : rise <= SLOPE.jump ? 2 : 5;
 }

@@ -84,7 +84,8 @@ export class ClickWalk {
     let jump = false;
     // owner (update 7): steps up to SUPPORT.step (0.5 m) are walked, never hopped; only a whole-block
     // rise that the path planned as a climb takes a jump (otherwise the hero would stand stuck)
-    if (m.mode === 'ground') jump = ahead - m.y > SUPPORT.step + 0.05;
+    // (update 8: smooth slopes never take a jump, only a sheer step ahead does)
+    if (m.mode === 'ground') jump = ahead - m.y > SUPPORT.step + 0.05 && this.terrain.ledgeAhead(m.x, m.z, dx, dz, 0.6, m.y) > 0;
     else if (m.mode === 'air') jump = m.airJumpReady && m.vy < 0.8 && ahead > m.y + 0.05;
     return { dx, dz, jump };
   }

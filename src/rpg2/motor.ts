@@ -9,7 +9,12 @@ export interface MotorGround {
   wall(x: number, z: number): boolean;
   /** Water surface height over (x, z), or null on dry land. */
   water(x: number, z: number): number | null;
+  /** Steepness of the smooth ground at (x, z) (rise per unit run), when the ground is sloped. */
+  slope?(x: number, z: number): number;
 }
+
+/** Steepest smooth slope walked up (D212: 45°). */
+const MAX_TAN = Math.tan((SUPPORT.maxSlopeDeg * Math.PI) / 180) + 0.02;
 
 /** One tick of player intentions (filled from keyboard and mouse by the scene). */
 export interface MotorIntent {
@@ -320,7 +325,12 @@ export class HeroMotor {
   }
 
   private free(x: number, z: number, limit: number): boolean {
-    return !this.g.wall(x, z) && this.g.top(x, z) <= limit;
+    if (this.g.wall(x, z)) return false;
+    const t = this.g.top(x, z);
+    if (t > limit) return false;
+    // smooth ground: climbing a slope steeper than 45° is blocked (going down or across is free)
+    if (this.mode === 'ground' && this.g.slope && t > this.y + 0.02 && this.g.slope(x, z) > MAX_TAN) return false;
+    return true;
   }
 
   private moveAxis(mx: number, mz: number) {

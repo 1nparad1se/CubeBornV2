@@ -58,8 +58,13 @@ const POND_DEEP = { x0: 66, z0: 56, x1: 73, z1: 61 };
 /** A 21 m pillar on the east bank of the deep water. */
 const BANK_PILLAR: [number, number, number] = [74, 57, 21];
 
-function rect(t: Terrain, h: Float32Array, x0: number, z0: number, x1: number, z1: number, v: number) {
-  for (let z = z0; z <= z1; z++) for (let x = x0; x <= x1; x++) h[z * t.size + x] = v;
+function rect(t: Terrain, h: Float32Array, x0: number, z0: number, x1: number, z1: number, v: number, hard = false) {
+  for (let z = z0; z <= z1; z++)
+    for (let x = x0; x <= x1; x++) {
+      h[z * t.size + x] = v;
+      // test fixtures (pillars, steps) stay sheer-sided blocks on the smooth ground
+      if (hard) t.hard![z * t.size + x] = 1;
+    }
 }
 
 /** Enemy arena (stage 2): a level clearing west of the spawn, blended into the meadow. */
@@ -79,7 +84,7 @@ function flattenArena(t: Terrain, top: Float32Array) {
       const d = Math.hypot(dx, dz);
       const w = d <= 0 ? 1 : Math.max(0, 1 - d / a.blend);
       if (w <= 0) continue;
-      top[i] = Math.round((top[i] + (PAD - top[i]) * w) * 4) / 4;
+      top[i] = top[i] + (PAD - top[i]) * w;
     }
 }
 
@@ -101,16 +106,16 @@ export function buildTestSite(): TestSite {
   markers.push({ id: 'greyfang', label: 'Территория Серого Клыка', x: 35, z: 47, y: PAD, tp: true });
   // fall pillars
   for (const [x, z, hgt] of PILLARS) {
-    rect(t, top, x, z, x + 1, z + 1, PAD + hgt);
+    rect(t, top, x, z, x + 1, z + 1, PAD + hgt, true);
     markers.push({ id: `pillar_${hgt}`, label: `Столб ${hgt} м`, x: x + 1, z: z + 1, y: PAD + hgt, tp: true });
   }
   // staircase of 1 m steps (jump each) up to 6 m, north-west of the pillars
-  for (let i = 0; i < 6; i++) rect(t, top, 57 + i * 2, 43, 58 + i * 2, 44, PAD + 1 + i);
+  for (let i = 0; i < 6; i++) rect(t, top, 57 + i * 2, 43, 58 + i * 2, 44, PAD + 1 + i, true);
   markers.push({ id: 'stairs', label: 'Ступени по 1 м', x: 57, z: 45.2, y: PAD });
   // step strip: 0.25, 0.5, 0.75 m rises (update 7: up to 0.5 m is walked, higher needs a jump)
-  rect(t, top, 58, 50, 59, 52, PAD + 0.25);
-  rect(t, top, 58, 53, 59, 55, PAD + 0.5);
-  rect(t, top, 58, 56, 59, 58, PAD + 0.75);
+  rect(t, top, 58, 50, 59, 52, PAD + 0.25, true);
+  rect(t, top, 58, 53, 59, 55, PAD + 0.5, true);
+  rect(t, top, 58, 56, 59, 58, PAD + 0.75, true);
   markers.push({ id: 'steps', label: 'Ступени 0,25 / 0,5 / 0,75 м', x: 57.3, z: 54, y: PAD });
   // pond
   const lake = t.tileId('water_lake_3');
@@ -127,7 +132,7 @@ export function buildTestSite(): TestSite {
   markers.push({ id: 'pond', label: 'Пруд: мелко 0,1–0,4 м / глубоко 2,6 м', x: 63.2, z: 58.5, y: PAD, tp: true });
   {
     const [x, z, hgt] = BANK_PILLAR;
-    rect(t, top, x, z, x + 1, z + 1, PAD + hgt);
+    rect(t, top, x, z, x + 1, z + 1, PAD + hgt, true);
     markers.push({ id: 'bank_pillar', label: `Столб у пруда ${hgt} м`, x: x + 1, z: z + 1, y: PAD + hgt, tp: true });
   }
   markers.push({ id: 'spawn', label: 'Точка появления', x: SPAWN.x + 2.2, z: SPAWN.z + 0.5, y: PAD, tp: true });
@@ -137,8 +142,10 @@ export function buildTestSite(): TestSite {
     t.elev[i] = water ? POND_ELEV : Math.floor(top[i]);
     t.shadeElev![i] = Math.round(top[i] * 4) & 255;
   }
+  t.buildSmooth(2);
   const ground: MotorGround = {
     top: (x, z) => t.groundY(x, z),
+    slope: (x, z) => Math.hypot(...t.slopeAt(x, z)),
     wall: (x, z) => {
       const cx = Math.floor(x - t.ox);
       const cz = Math.floor(z - t.oz);
