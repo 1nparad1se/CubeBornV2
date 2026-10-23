@@ -3,10 +3,11 @@ import { item, type Slot, type WeaponKind } from '../../rpg/items';
 import { BONES, BONE_INDEX, PARTS, PART_INDEX, boneHead, boneTail, characterGeometry, characterTexture } from './charAsset';
 import { ARMOR, armorMeshes, type ArmorSetId, type ArmorSlot } from './armorModels';
 import {
+  BOW_ANCHOR,
+  BOW_STANCE_DRAW,
   CombatState,
   ComboCounter,
-  GRAB_AT,
-  backFrame,
+  STAFF_FREE,
   basisQuat,
   blockPose,
   bowAimPose,
@@ -14,9 +15,10 @@ import {
   frame,
   legs,
   mixFrame,
+  peaceFrame,
   staffChargePose,
-  staffPeaceFrame,
   staffPose,
+  stanceBody,
   stanceFrame,
   stride,
   swingPose,
@@ -50,6 +52,8 @@ export interface HumanPose {
   move?: { x: number; z: number };
   /** The fight wants the weapon ready (drawn); without it the weapon is put away after a while. */
   combat?: boolean;
+  /** Seconds since the character was last hit (a flinch plays for 0.4 s). */
+  hurt?: number;
 }
 
 /** Variant of the base character (NPCs): colours of its parts, a body build, extra pieces. */
@@ -81,7 +85,7 @@ function familyOf(id: string | null): { family: Family | null; kind: WeaponKind 
   if (mapped) {
     const vox = voxWeapon(mapped.id, mapped.great);
     if (vox) {
-      const family: Family = vox.kind === 'sword' ? (mapped.great ? 'great' : 'sword') : vox.kind;
+      const family: Family = vox.kind === 'sword' ? (mapped.great || vox.great ? 'great' : 'sword') : vox.kind;
       return { family, kind, vox };
     }
   }
@@ -103,11 +107,19 @@ const ease = (x: number) => {
   const c = Math.max(0, Math.min(1, x));
   return c * c * (3 - 2 * c);
 };
+/** Slow in, fast through the middle, slow out (the salto's turn). */
+const smoother = (x: number) => {
+  const c = Math.max(0, Math.min(1, x));
+  return c * c * c * (c * (c * 6 - 15) + 10);
+};
+const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
+/** Points of a sole in the foot bone's frame (heel and toe, at the ground at rest). */
+const SOLE = [new THREE.Vector3(0, -0.14, -0.05), new THREE.Vector3(0, -0.14, 0.17)];
 
 /** Point in the hand's own frame where the handle passes through the closed fist. */
 const GRIP_IN_HAND = (side: 1 | -1) => new THREE.Vector3(side * 0.012, -0.062, 0);
-/** Height of the body's middle: the double-jump somersault turns around it. */
-const FLIP_CENTER = 0.95;
+/** Height of the tucked body's middle: the double-jump salto turns around it. */
+const FLIP_CENTER = 0.85;
 
 /**
  * The character (owner's model, Character.blend): a skinned mesh on a 27-bone skeleton. Every
@@ -158,6 +170,18 @@ export class HumanModel {
   private wf: Frame = frame(new THREE.Vector3(-0.3, 0.8, 0.1), new THREE.Vector3(0, 1, 0));
   private wfInit = false;
   private bodyM = { yaw: 0, lean: 0, step: 0 };
+  /** Smoothed velocity in the body frame (blends idle, walk, run and sprint). */
+  private vel = new THREE.Vector2();
+  /** Jump state: time in the air, height of the take-off, time since landing and how hard. */
+  private wasAir = false;
+  private airT = 0;
+  private takeoffY = 0;
+  private landT = 9;
+  private landHard = 0.5;
+  private lastVy = 0;
+  /** Glowing part of a weapon (the staff's crystal) and the floating pixels around it. */
+  private glowMat: THREE.MeshBasicMaterial | null = null;
+  private sparks = new THREE.Group();
   private restU: Record<'L' | 'R', THREE.Vector3>;
   private restF: Record<'L' | 'R', THREE.Vector3>;
   private len: Record<'U' | 'F', number>;
@@ -216,6 +240,11 @@ export class HumanModel {
     this.orb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), this.orbMat);
     this.orb.visible = false;
     this.body.add(this.orb);
+    const sparkMat = new THREE.MeshBasicMaterial({ color: 0x7af0ff, transparent: true, opacity: 0.9, depthWrite: false });
+    const sparkGeo = new THREE.BoxGeometry(0.035, 0.035, 0.035);
+    for (let i = 0; i < 10; i++) this.sparks.add(new THREE.Mesh(sparkGeo, sparkMat));
+    this.sparks.visible = false;
+    this.body.add(this.sparks);
     for (const w of look.wear ?? []) for (const slot of w.slots) this.wear(w.set, slot);
   }
 
@@ -330,8 +359,12 @@ export class HumanModel {
     this.combat.t = 0;
     this.wfInit = false;
     if (!f.family) return;
+    this.glowMat?.dispose();
+    this.glowMat = null;
     if (f.vox) {
-      const m = new THREE.Mesh(f.vox.geometry, this.weaponMat);
+      // a glowing part (the staff's crystal) is drawn unlit with its own material
+      if (f.vox.glow) this.glowMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+      const m = new THREE.Mesh(f.vox.geometry, this.glowMat ? [this.weaponMat, this.glowMat] : this.weaponMat);
       m.castShadow = this.shadows;
       this.weaponObj = m;
     } else if (f.kind) {
@@ -342,39 +375,13 @@ export class HumanModel {
     this.buildBackGear();
   }
 
-  /** The scabbard of a sword and the quiver of the bow, on the back. */
+  /** The quiver of the bow on the back, its arrows over the right shoulder (weapons stay in the hand). */
   private buildBackGear() {
-    const f = this.family;
     const leather = new THREE.MeshLambertMaterial({ color: 0x5a3820 });
-    const brass = new THREE.MeshLambertMaterial({ color: 0xb08a40 });
-    const spine = boneHead('spine');
-    if ((f === 'sword' || f === 'great') && this.vox) {
-      const bf = backFrame(f);
-      // the scabbard runs down from just under the guard along the blade
-      const guard = 0.12;
-      const len = this.vox.length - 0.2 - guard;
-      const w = f === 'great' ? 0.13 : 0.1;
-      const g = new THREE.BoxGeometry(w, len, 0.06);
-      g.translate(0, guard + len / 2, 0);
-      const sc = new THREE.Mesh(g, leather);
-      const q = basisQuat(bf);
-      sc.quaternion.copy(q);
-      sc.position.copy(bf.g);
-      const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.05, 0.075), brass);
-      cap.position.set(0, guard + 0.02, 0);
-      sc.add(cap);
-      // a strap across the chest holds it
-      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.52, 0.32), leather);
-      strap.position.set(0.0, 0.18, -0.02);
-      strap.rotation.z = -0.75;
-      strap.scale.set(1, 1, 1.02);
-      this.backGear.add(sc);
-      void spine;
-    }
-    if (f === 'bow') {
+    if (this.family === 'bow') {
       const qv = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.46, 0.1), leather);
-      qv.position.set(0.12, 0.2, -0.2);
-      qv.rotation.z = -0.35;
+      qv.position.set(-0.08, 0.2, -0.2);
+      qv.rotation.z = 0.4;
       for (let i = 0; i < 4; i++) {
         const fl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.03), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xe8e2d4 : 0xc84a3a }));
         fl.position.set(-0.03 + i * 0.02, 0.27, 0);
@@ -394,12 +401,28 @@ export class HumanModel {
     const busy = !!p.attack || !!p.hold;
     this.combat.update(dt, !!p.combat, busy);
     const variant = this.combo.update(dt, p.attack ? p.attack.seq ?? 0 : null);
-    // ------------------------------------------------ locomotion phase from the distance walked
+    // ------------------------------------------------ jump state (take-off, flight, landing)
+    const rootY = this.root.position.y;
+    if (p.airborne && !this.wasAir) {
+      this.airT = 0;
+      this.takeoffY = rootY;
+    } else if (!p.airborne && this.wasAir) {
+      this.landT = 0;
+      this.landHard = Math.max(0.45, Math.min(1, -this.lastVy / 7));
+    }
+    if (p.airborne) this.airT += dt;
+    else this.landT += dt;
+    this.wasAir = p.airborne;
+    this.lastVy = p.vy;
+    // ------------------------------------------------ locomotion: smoothed velocity and the step phase
     const mv = p.move ?? { x: 0, z: p.moving * 3.5 };
-    const local = new THREE.Vector2(mv.x, mv.z);
-    const speed = p.airborne ? 0 : local.length();
+    const kv = 1 - Math.exp(-(p.airborne ? 4 : 10) * dt);
+    this.vel.x += ((p.airborne ? 0 : mv.x) - this.vel.x) * kv;
+    this.vel.y += ((p.airborne ? 0 : mv.z) - this.vel.y) * kv;
+    const speed = this.vel.length();
     this.phase += (dt * speed * Math.PI) / stride(speed);
-    const L = legs(local, this.phase);
+    const L = legs(this.vel, this.phase);
+    const moveK = Math.min(1, speed / 1.2);
     // ------------------------------------------------ reset the skeleton
     for (const b of this.bones) b.quaternion.identity();
     this.b.root.position.set(...BONES[0].head);
@@ -418,35 +441,99 @@ export class HumanModel {
     this.bodyM.yaw += (bm.yaw - this.bodyM.yaw) * k;
     this.bodyM.lean += (bm.lean - this.bodyM.lean) * k;
     this.bodyM.step += (bm.step - this.bodyM.step) * k;
+    // ------------------------------------------------ one-off moves: landing, hit, salto, take-off
+    const land = !p.airborne && this.landT < 0.3 ? this.landHard * Math.sin(Math.min(1, this.landT / 0.05) * Math.PI * 0.5) * (1 - ease((this.landT - 0.05) / 0.25)) : 0;
+    const hurt = p.hurt !== undefined && p.hurt < 0.4 ? Math.sin(Math.min(1, p.hurt / 0.06) * Math.PI * 0.5) * (1 - ease((p.hurt - 0.06) / 0.34)) : 0;
+    const flip = p.flip && p.flip > 0 && p.airborne ? Math.min(1, p.flip) : 0;
+    // the salto: push-off, tuck while turning a full circle forward around the middle, open up
+    const tuck = flip ? ease((flip - 0.06) / 0.2) * (1 - ease((flip - 0.64) / 0.22)) : 0;
     // ------------------------------------------------ body (FK)
-    const runLean = Math.min(1, speed / 6) * 0.12;
-    this.b.pelvis.position.y += L.bob;
-    this.rot(this.b.pelvis, _y, this.bodyM.yaw * 0.35);
-    this.rot(this.b.spine, _y, this.bodyM.yaw * 0.65);
-    this.rot(this.b.spine, _x, this.bodyM.lean + runLean * Math.sign(local.y || 1) + L.lean.y * 0.5);
-    this.rot(this.b.spine, _z, -L.lean.x * 0.5);
-    // the head keeps looking ahead (at the target) while the torso turns
-    this.rot(this.b.neck, _y, -this.bodyM.yaw * 0.8);
-    this.rot(this.b.neck, _x, -this.bodyM.lean * 0.6);
+    const idle = (1 - moveK) * (p.airborne ? 0 : 1);
+    const breathe = Math.sin(p.time * 1.9) * 0.012 * idle;
+    const runLean = (0.05 + L.run * 0.16) * moveK * Math.sign(this.vel.y || 1);
+    this.b.pelvis.position.x += L.sway;
+    this.rot(this.b.pelvis, _y, L.hipYaw + this.bodyM.yaw * 0.35);
+    this.rot(this.b.pelvis, _z, L.hipRoll);
+    this.rot(this.b.spine, _y, -L.hipYaw * 1.6 + this.bodyM.yaw * 0.65);
+    const spinePitch = this.bodyM.lean + runLean + L.lean.y * 0.4 + breathe + land * 0.42 - hurt * 0.32 + tuck * 0.5 + (p.airborne && !flip ? 0.08 : 0);
+    this.rot(this.b.spine, _x, spinePitch);
+    this.rot(this.b.spine, _z, -L.lean.x * 0.5 - L.hipRoll * 0.7);
+    // the head keeps looking ahead (at the target) while the torso turns and leans
+    const look = idle * (1 - (fam ? this.combat.ready : 0)) * (Math.sin(p.time * 0.37) * 0.14 + Math.sin(p.time * 0.91) * 0.05);
+    this.rot(this.b.neck, _y, -(this.bodyM.yaw - L.hipYaw * 0.6) * 0.9 + look);
+    this.rot(this.b.neck, _x, -(spinePitch - tuck * 0.5) * 0.65 + tuck * 0.35 - hurt * 0.2);
     // ------------------------------------------------ legs
-    const step = this.bodyM.step * (speed < 0.5 ? 1 : 0.3);
-    this.legFK('R', L.swingR + step * 0.28, L.axis, L.kneeR + step * 0.15);
-    this.legFK('L', L.swingL - step * 0.45, L.axis, L.kneeL + step * 0.35);
-    if (p.airborne) {
-      const up = Math.max(-1, Math.min(1, p.vy / 5));
-      this.legFK('R', -0.35 + up * 0.2, _x, 0.7 - up * 0.2);
-      this.legFK('L', 0.15 - up * 0.1, _x, 0.35);
+    const S = this.bodyM.step * (1 - moveK) * (p.airborne ? 0 : 1);
+    let lr = { swing: L.swingR + S * 0.2, knee: L.kneeR + S * 0.22, foot: L.footR, splay: -0.1 * S };
+    let ll = { swing: L.swingL - S * 0.32, knee: L.kneeL + S * 0.28, foot: L.footL, splay: 0.1 * S };
+    let axis = L.axis;
+    if (land > 0) {
+      lr = { swing: lr.swing - 0.72 * land, knee: lr.knee + 1.45 * land, foot: lr.foot, splay: lr.splay - 0.08 * land };
+      ll = { swing: ll.swing - 0.85 * land, knee: ll.knee + 1.55 * land, foot: ll.foot, splay: ll.splay + 0.08 * land };
     }
-    if (p.flip && p.flip > 0) {
-      const a = -ease(p.flip) * Math.PI * 2;
-      this.tumble.position.set(0, FLIP_CENTER - Math.cos(a) * FLIP_CENTER, Math.sin(a) * FLIP_CENTER);
+    if (p.airborne) {
+      axis = _x;
+      if (flip) {
+        // push-off (legs long, toes down) → tucked knees to the chest → open, legs reaching down
+        const open = flip < 0.3 ? { s: 0.2, k: 0.15, f: 0.5 } : { s: -0.45, k: 0.45, f: 0.1 };
+        lr = { swing: lerp(open.s, -2.05, tuck), knee: lerp(open.k, 2.35, tuck), foot: open.f * (1 - tuck), splay: -0.06 };
+        ll = { swing: lerp(open.s + 0.15, -1.95, tuck), knee: lerp(open.k, 2.3, tuck), foot: open.f * (1 - tuck), splay: 0.06 };
+      } else {
+        // first jump: the push (legs straight, toes pointed) → rise (front knee up) → apex (both
+        // tucked) → descent (legs reaching for the ground)
+        const u = Math.max(-1, Math.min(1, p.vy / 6));
+        const push = 1 - ease(this.airT / 0.16);
+        const rise = { R: [-1.15, 1.55], L: [0.35, 1.05] };
+        const apex = { R: [-0.95, 1.45], L: [-0.55, 1.35] };
+        const fall = { R: [-0.4, 0.55], L: [-0.1, 0.4] };
+        const pick = (side: 'R' | 'L', i: number) => (u > 0.3 ? lerp(apex[side][i], rise[side][i], (u - 0.3) / 0.7) : u > -0.3 ? apex[side][i] : lerp(apex[side][i], fall[side][i], (-u - 0.3) / 0.7));
+        lr = { swing: lerp(pick('R', 0), 0.12, push), knee: lerp(pick('R', 1), 0.08, push), foot: lerp(0.1, 0.55, push), splay: -0.05 };
+        ll = { swing: lerp(pick('L', 0), 0.3, push), knee: lerp(pick('L', 1), 0.15, push), foot: lerp(0.1, 0.6, push), splay: 0.05 };
+        // the crouch before the push: the first instants of the flight show the knees still bent
+        const crouch = 1 - ease(this.airT / 0.07);
+        if (crouch > 0) {
+          lr = { swing: lerp(lr.swing, -0.75, crouch), knee: lerp(lr.knee, 1.35, crouch), foot: lerp(lr.foot, 0, crouch), splay: -0.08 };
+          ll = { swing: lerp(ll.swing, -0.8, crouch), knee: lerp(ll.knee, 1.4, crouch), foot: lerp(ll.foot, 0, crouch), splay: 0.08 };
+        }
+      }
+    }
+    this.legFK('R', lr.swing, axis, lr.knee, lr.foot, lr.splay);
+    this.legFK('L', ll.swing, axis, ll.knee, ll.foot, ll.splay);
+    // ------------------------------------------------ feet on the ground (no sinking, no floating)
+    this.body.updateMatrixWorld(true);
+    if (!p.airborne) {
+      const shift = -this.soleMin() + L.lift + Math.sin(p.time * 3.2) * 0.006 * (fam ? this.combat.ready : 0) * idle;
+      this.b.pelvis.position.y += shift;
+    } else if (!flip && this.airT < 0.12) {
+      // take-off: the feet stay on the ground while the legs extend (the push), then leave it
+      const ground = this.takeoffY - rootY;
+      const need = ground - this.soleMin();
+      if (need < 0) this.b.pelvis.position.y += Math.max(-0.3, need) * (1 - this.airT / 0.12);
+    }
+    if (flip) {
+      const a = Math.PI * 2 * smoother((flip - 0.1) / 0.72);
+      const c = FLIP_CENTER;
       this.tumble.rotation.x = a;
-      this.legFK('R', -1.0, _x, 1.6);
-      this.legFK('L', -1.0, _x, 1.6);
+      this.tumble.position.set(0, c - c * Math.cos(a), -c * Math.sin(a));
     }
     this.body.updateMatrixWorld(true);
     // ------------------------------------------------ arms and the weapon
-    this.armsAndWeapon(p, want, L, speed);
+    this.armsAndWeapon(p, want, L, { land, hurt, tuck, flip });
+    this.updateSparks(p, fam);
+  }
+
+  /** Lowest point of the soles (body frame y). */
+  private soleMin(): number {
+    let m = Infinity;
+    for (const side of ['L', 'R']) {
+      const f = this.b['foot.' + side];
+      for (const pt of SOLE) {
+        _m1.copy(this.body.matrixWorld).invert().multiply(f.matrixWorld);
+        const y = _v1.copy(pt).applyMatrix4(_m1).y;
+        if (y < m) m = y;
+      }
+    }
+    return m;
   }
 
   /** Rotates a bone about an axis given in the body frame (composed onto its local rotation). */
@@ -455,21 +542,22 @@ export class HumanModel {
     b.quaternion.multiply(_q1.setFromAxisAngle(axis, ang));
   }
 
-  private legFK(side: 'L' | 'R', swing: number, axis: THREE.Vector3, knee: number) {
+  /** Thigh swing (about `axis`) with a sideways splay, knee bend, foot pitch relative to level. */
+  private legFK(side: 'L' | 'R', swing: number, axis: THREE.Vector3, knee: number, foot = 0, splay = 0) {
     const th = this.b['thigh.' + side];
     const sh = this.b['shin.' + side];
     const ft = this.b['foot.' + side];
-    th.quaternion.setFromAxisAngle(axis, swing);
+    th.quaternion.setFromAxisAngle(_z, splay).multiply(_q1.setFromAxisAngle(axis, swing));
     sh.quaternion.setFromAxisAngle(_x, knee);
-    // the foot stays roughly level with the ground
-    ft.quaternion.setFromAxisAngle(_x, -knee * 0.55 - (axis.x * swing) * 0.4);
+    // the foot stays level with the ground (cancelling thigh and knee), plus its own pitch
+    ft.quaternion.setFromAxisAngle(_x, -knee - axis.x * swing + foot);
   }
 
   /** The weapon pose wanted this frame (null without a weapon). */
   private weaponPose(p: HumanPose, fam: Family | null, variant: number): WeaponPose | null {
     if (!fam) return null;
     const walk = this.phase;
-    const mov = Math.min(1, (p.move ? Math.hypot(p.move.x, p.move.z) : p.moving * 3.5) / 3.5);
+    const mov = Math.min(1, this.vel.length() / 3.5);
     const a = p.attack;
     const hitAt = a?.hitAt ?? 0.5;
     // held actions first (they last as long as the key)
@@ -487,22 +575,22 @@ export class HumanModel {
       const k = Math.sin(Math.min(1, a.t / Math.max(0.05, hitAt)) * Math.PI * 0.5) * (a.t < hitAt ? 1 : 1 - (a.t - hitAt) / (1 - hitAt));
       return { frame: frame(st.g.clone().add(new THREE.Vector3(0.05, 0.15, 0.3).multiplyScalar(k)), st.a, st.e), body: { yaw: 0.2 * k, lean: 0.15 * k, step: k } };
     }
-    const st = stanceFrame(fam, walk, mov);
-    if (fam === 'staff') {
-      // the staff stays in the hand: lowered as a walking stick in peace, raised in the fight
-      const peace = staffPeaceFrame(walk, mov);
-      return { frame: mixFrame(peace, st, ease(this.combat.ready)), body: { yaw: 0, lean: 0, step: 0 }, twoHands: this.combat.ready > 0.5 };
+    // no action: the relaxed hold («Вне боя») blends into the fighting stance («В бою»)
+    const r = ease(this.combat.ready);
+    const f = mixFrame(peaceFrame(fam, walk, mov), stanceFrame(fam, walk, mov), r);
+    const sb = stanceBody(fam);
+    const out: WeaponPose = { frame: f, body: { yaw: sb.yaw * r, lean: sb.lean * r, step: sb.step * r }, twoHands: (fam === 'sword' || fam === 'great') && r > 0.55 };
+    if (fam === 'bow') {
+      const n = ease((r - 0.55) / 0.45);
+      out.draw = BOW_STANCE_DRAW * n;
+      out.arrow = r > 0.55;
+      out.onString = r > 0.55;
     }
-    return { frame: st, body: { yaw: 0, lean: 0, step: 0 }, twoHands: fam === 'great' };
-  }
-
-  /** Back frame of the family, in the body frame (follows the chest). */
-  private backInBody(fam: Family): Frame {
-    const bf = backFrame(fam);
-    const spine = this.b.spine;
-    _m1.copy(this.body.matrixWorld).invert().multiply(spine.matrixWorld);
-    const q = _q2.setFromRotationMatrix(_m1);
-    return { g: bf.g.clone().applyMatrix4(_m1), a: bf.a.clone().applyQuaternion(q), e: bf.e.clone().applyQuaternion(q) };
+    if (fam === 'staff' && r > 0.05) {
+      out.free = new THREE.Vector3(0.34, 0.74, 0.08).lerp(STAFF_FREE, r);
+      out.freeCurl = lerp(0.6, 0.1, r);
+    }
+    return out;
   }
 
   /** A bone's position in the body frame. */
@@ -516,16 +604,51 @@ export class HumanModel {
     return out.setFromRotationMatrix(_m1);
   }
 
-  private armsAndWeapon(p: HumanPose, want: WeaponPose | null, L: ReturnType<typeof legs>, speed: number) {
+  private armsAndWeapon(p: HumanPose, want: WeaponPose | null, L: ReturnType<typeof legs>, fx: { land: number; hurt: number; tuck: number; flip: number }) {
     const fam = this.family;
-    const swingK = Math.min(1, speed / 1.2) * 0.45;
+    const air = p.airborne && !fx.flip;
+    const u = Math.max(-1, Math.min(1, p.vy / 6));
     const armSwing = (side: 'L' | 'R') => {
-      const s = (side === 'R' ? 1 : -1) * Math.sin(this.phase) * swingK;
-      const u = this.b['upper_arm.' + side];
-      // free arms swing against the legs, a little out from the body
-      u.quaternion.setFromAxisAngle(L.axis, s).multiply(_q1.setFromAxisAngle(_z, (side === 'R' ? -1 : 1) * 0.06));
-      this.b['forearm.' + side].quaternion.setFromAxisAngle(_x, -0.22 - Math.abs(s) * 0.3);
-      if (p.airborne) u.quaternion.multiply(_q1.setFromAxisAngle(_z, (side === 'R' ? -1 : 1) * 0.5));
+      const sg = side === 'R' ? 1 : -1;
+      const s = sg * Math.sin(this.phase) * L.armAmp;
+      const up = this.b['upper_arm.' + side];
+      // free arms swing against the legs, a little out from the body; the elbow bends more forward
+      let swing = s;
+      let out = 0.07 + L.run * 0.06;
+      let elbow = L.elbow + Math.max(0, -s) * 0.45;
+      if (air) {
+        // rising: arms swung up and forward; apex: forward and out; falling: out for balance
+        const push = 1 - ease(this.airT / 0.16);
+        // like a running jump: the arm opposite the lifted (right) knee swings forward-up
+        const riseA = side === 'R' ? 0.45 : -1.55;
+        const a = u > 0 ? lerp(-0.85, riseA, u) : lerp(-0.85, -0.3, -u);
+        swing = lerp(a, -2.4, push * 0.6);
+        out = u > 0 ? 0.25 : lerp(0.25, 0.95, -u);
+        elbow = u > 0 ? 0.9 : 0.45;
+        const crouch = 1 - ease(this.airT / 0.07);
+        if (crouch > 0) {
+          swing = lerp(swing, 0.7, crouch);
+          elbow = lerp(elbow, 0.3, crouch);
+        }
+      }
+      if (fx.flip) {
+        // salto: arms up at the push, then hugging the shins, then out for the landing
+        const openA = fx.flip < 0.3 ? -2.5 : -0.5;
+        swing = lerp(openA, -1.35, fx.tuck);
+        out = lerp(fx.flip < 0.3 ? 0.2 : 0.8, 0.25, fx.tuck);
+        elbow = lerp(0.3, 1.5, fx.tuck);
+      }
+      if (fx.land > 0) {
+        swing = lerp(swing, -0.75, fx.land);
+        out = lerp(out, 0.3, fx.land);
+        elbow = lerp(elbow, 0.7, fx.land);
+      }
+      if (fx.hurt > 0) {
+        swing = lerp(swing, -0.35, fx.hurt);
+        out = lerp(out, 0.5, fx.hurt);
+      }
+      up.quaternion.setFromAxisAngle(_z, -sg * out).multiply(_q1.setFromAxisAngle(air || fx.flip ? _x : L.axis, swing));
+      this.b['forearm.' + side].quaternion.setFromAxisAngle(_x, -elbow);
     };
     this.arrow.visible = false;
     this.orb.visible = false;
@@ -539,93 +662,81 @@ export class HumanModel {
       return;
     }
     this.weaponObj.visible = true;
-    const cs = this.combat;
     const mainSide: 'L' | 'R' = fam === 'bow' ? 'L' : 'R';
     const offSide: 'L' | 'R' = mainSide === 'L' ? 'R' : 'L';
-    const hasBack = fam === 'sword' || fam === 'great' || fam === 'bow';
-    // where the weapon is: on the back (peace), carried (drawing / sheathing), in the hands
-    let wf: Frame = this.wf;
-    let handOn = true;
-    let reach = 0;
-    if (hasBack && cs.phase !== 'combat') {
-      const back = this.backInBody(fam);
-      if (cs.phase === 'peace') {
-        wf = back;
-        handOn = false;
-      } else {
-        // the draw: the hand reaches the grip on the back (weapon still mounted), takes it, and
-        // brings the weapon over the shoulder into the stance; the sheathe is the same backwards
-        const t = cs.phase === 'drawing' ? cs.t : 1 - cs.t;
-        if (t < GRAB_AT) {
-          wf = back;
-          handOn = false;
-          reach = ease(t / GRAB_AT);
-        } else {
-          const k = ease((t - GRAB_AT) / (1 - GRAB_AT));
-          const m = mixFrame(back, this.wf, k);
-          // the arc lifts the weapon up and out, clear of the head and the shoulder
-          const lift = Math.sin(k * Math.PI);
-          m.g.add(_v1.set(mainSide === 'R' ? -0.18 : 0.18, 0.22, 0.12).multiplyScalar(lift));
-          wf = m;
-        }
-      }
-    }
-    // the weapon's grip frame
+    // the weapon stays in the hand (update 7): its grip frame follows the smoothed pose
+    const wf: Frame = this.wf;
     const q = basisQuat(wf);
     this.weaponRoot.position.copy(wf.g);
     this.weaponRoot.quaternion.copy(q);
     // ------------------------------------------------ the main hand
-    if (handOn || reach > 0) {
-      const target = this.handFrameOnGrip(mainSide, wf, fam === 'bow');
-      if (!handOn) {
-        // reaching for the weapon on the back: from the swing pose toward the grip
-        armSwing(mainSide);
-        this.body.updateMatrixWorld(true);
-        const hand = this.b['hand.' + mainSide];
-        const from = this.posOf(hand, _v2.set(0, 0, 0)).clone();
-        const fromQ = this.quatOf(hand, _q2).clone();
-        target.pos.lerpVectors(from, target.pos, reach);
-        target.rot.copy(fromQ.slerp(target.rot, reach));
-      }
-      const got = this.ik(mainSide, target.pos, target.rot);
-      this.curl(mainSide, 1.1);
-      if (handOn && got > 0.002) {
-        // out of reach: the weapon follows the hand (never floats away from it)
-        const hand = this.b['hand.' + mainSide];
-        const wpos = this.posOf(hand, _v2);
-        const hq = this.quatOf(hand, _q2);
-        const grip = GRIP_IN_HAND(mainSide === 'L' ? 1 : -1).applyQuaternion(hq).add(wpos);
-        this.weaponRoot.position.copy(grip);
-      }
-    } else armSwing(mainSide);
+    const target = this.handFrameOnGrip(mainSide, wf, fam === 'bow');
+    const got = this.ik(mainSide, target.pos, target.rot);
+    this.curl(mainSide, 1.1);
+    if (got > 0.002) {
+      // out of reach: the weapon follows the hand (never floats away from it)
+      const hand = this.b['hand.' + mainSide];
+      const wpos = this.posOf(hand, _v2);
+      const hq = this.quatOf(hand, _q2);
+      const grip = GRIP_IN_HAND(mainSide === 'L' ? 1 : -1).applyQuaternion(hq).add(wpos);
+      this.weaponRoot.position.copy(grip);
+    }
     // ------------------------------------------------ the other hand
     const gp = this.weaponRoot.position;
     const ga = _v3.set(0, 1, 0).applyQuaternion(this.weaponRoot.quaternion);
     const ge = new THREE.Vector3(0, 0, 1).applyQuaternion(this.weaponRoot.quaternion);
-    if (fam === 'bow' && handOn) {
+    if (fam === 'bow') {
       this.bowString(want, gp, ga, ge, offSide);
-    } else if (handOn && want.twoHands) {
-      // second hand on the handle, below the first (greatsword) or above it (staff)
-      const off = fam === 'staff' ? 0.26 : -0.13;
+    } else if (want.twoHands && (fam === 'sword' || fam === 'great')) {
+      // second hand on the handle, under the first
+      const off = -(this.vox?.gripLen ?? 0.2) * 0.48;
       const f2 = { g: gp.clone().addScaledVector(ga, off), a: ga.clone(), e: ge.clone() };
       const t2 = this.handFrameOnGrip(offSide, f2, false);
       this.ik(offSide, t2.pos, t2.rot);
       this.curl(offSide, 1.1);
+    } else if (fam === 'staff' && want.free) {
+      // the free hand reaches forward, palm out, fingers up (casting)
+      const pr = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(_v1.set(0, 0.6, -0.8), _v2.set(0, -0.8, -0.6), new THREE.Vector3(-1, 0, 0)));
+      this.ik(offSide, want.free, pr, new THREE.Vector3(0.7, -0.6, -0.3));
+      this.curl(offSide, want.freeCurl ?? 0.1);
     } else armSwing(offSide);
     // ------------------------------------------------ magic
     if (fam === 'staff' && this.vox) {
       const orb = want.orb ?? 0;
       const flash = want.flash ?? 0;
-      const tip = gp.clone().addScaledVector(ga, this.vox.tip.y - 0.06);
+      const tip = gp.clone().addScaledVector(ga, this.vox.tip.y - 0.02);
       if (orb > 0.02 || flash > 0.02) {
         this.orb.visible = true;
         this.orb.position.copy(tip);
         const s = 0.25 + orb * 0.9 + flash * 1.6;
         this.orb.scale.setScalar(s);
         this.orb.rotation.set(p.time * 3, p.time * 4, 0);
-        this.orbMat.opacity = 0.55 + orb * 0.35 + flash * 0.3;
+        this.orbMat.opacity = 0.45 + orb * 0.3 + flash * 0.3;
       }
     }
+    if (this.glowMat) {
+      const r = this.combat.ready;
+      const pulse = 0.85 + 0.15 * Math.sin(p.time * 4) * r + (want.flash ?? 0) * 0.5;
+      this.glowMat.color.setScalar(Math.min(1.4, pulse + r * 0.15));
+    }
+  }
+
+  /** Floating cyan pixels around the staff's crystal while in combat (reference «В бою»). */
+  private updateSparks(p: HumanPose, fam: Family | null) {
+    const on = fam === 'staff' && !!this.vox?.glow && !!this.weaponObj?.visible;
+    const r = on ? this.combat.ready : 0;
+    this.sparks.visible = r > 0.05;
+    if (!this.sparks.visible || !this.vox) return;
+    const tip = _v1.set(0, this.vox.tip.y, 0).applyQuaternion(this.weaponRoot.quaternion).add(this.weaponRoot.position);
+    this.sparks.children.forEach((c, i) => {
+      const m = c as THREE.Mesh;
+      const ph = (p.time * 0.45 + i / this.sparks.children.length) % 1;
+      const ang = i * 2.399 + p.time * 0.9;
+      const rad = 0.1 + 0.07 * Math.sin(i * 1.7 + p.time * 1.3);
+      m.position.set(tip.x + Math.cos(ang) * rad, tip.y - 0.12 + ph * 0.42, tip.z + Math.sin(ang) * rad);
+      const s = (0.6 + (i % 3) * 0.25) * Math.sin(ph * Math.PI) * r;
+      m.scale.setScalar(Math.max(0.001, s));
+    });
   }
 
   /**
@@ -644,7 +755,11 @@ export class HumanModel {
     return { pos, rot };
   }
 
-  /** Bow: the string from the limb tips to the nock (drawn by the right hand), the arrow on it. */
+  /**
+   * Bow: the string from the limb tips to the nock, drawn by the right hand straight back toward
+   * the chin; after the release the hand goes over the right shoulder to the quiver for the next
+   * arrow; the arrow lies on the string while it is nocked.
+   */
   private bowString(want: WeaponPose, gp: THREE.Vector3, ga: THREE.Vector3, ge: THREE.Vector3, side: 'L' | 'R') {
     const v = this.vox!;
     const q = this.weaponRoot.quaternion;
@@ -652,28 +767,35 @@ export class HumanModel {
     const bot = v.tipLow!.clone().applyQuaternion(q).add(gp);
     const rest = top.clone().add(bot).multiplyScalar(0.5);
     const draw = want.draw ?? 0;
-    // full draw brings the nock straight back to the chest, under the chin
-    const anchor = new THREE.Vector3(-0.03, 1.3, 0.1);
-    const full = Math.max(rest.clone().sub(gp).dot(ge) * -1 + 0.05, gp.clone().sub(anchor).dot(ge));
-    const depth0 = -rest.clone().sub(gp).dot(ge);
-    const nock = gp.clone().addScaledVector(ge, -(depth0 + (full - depth0) * draw));
-    nock.y += (rest.y - nock.y) * (1 - draw);
+    // full draw: the nock at the anchor under the chin, on the arrow's line behind the bow hand
+    const anchor = gp.clone().addScaledVector(ge, BOW_ANCHOR.z - gp.z);
+    anchor.y = BOW_ANCHOR.y + (gp.y - 1.3);
+    const nock = rest.clone().lerp(anchor, draw);
     if (want.onString) {
-      // the right hand holds the string at the nock, fingers on it, the forearm in line with the arrow
+      // the right hand holds the string at the nock, the forearm in line with the arrow
       const f = { g: nock.clone().addScaledVector(ge, -0.02), a: ga.clone().negate(), e: ge.clone() };
       const t = this.handFrameOnGrip(side, f, false);
-      this.ik(side, t.pos, t.rot, new THREE.Vector3(side === 'R' ? -1 : 1, 0.15, -0.5));
+      this.ik(side, t.pos, t.rot, new THREE.Vector3(side === 'R' ? -1 : 1, 0.1, -0.6));
       this.curl(side, 0.7);
-    } else if (want.arrow) {
-      // taking an arrow from the quiver over the shoulder
-      const f = { g: new THREE.Vector3(-0.12, 1.45, -0.1), a: new THREE.Vector3(0, 1, 0), e: new THREE.Vector3(0, 0, 1) };
+    } else if ((want.reload ?? 0) > 0) {
+      // over the right shoulder to the quiver
+      const from = anchor.clone().add(_v1.set(-0.06, 0.02, -0.08));
+      const quiver = new THREE.Vector3(-0.2, 1.5, -0.12);
+      const f = { g: from.lerp(quiver, want.reload!), a: new THREE.Vector3(0, 1, 0), e: new THREE.Vector3(0, 0, 1) };
       const t = this.handFrameOnGrip(side, f, false);
       this.ik(side, t.pos, t.rot);
       this.curl(side, 0.9);
+    } else if (this.combat.ready > 0.3 || want.draw !== undefined) {
+      // just released: the hand flies open back past the chin
+      const f = { g: anchor.clone().add(_v1.set(-0.08, 0.03, -0.1)), a: ga.clone().negate(), e: ge.clone() };
+      const t = this.handFrameOnGrip(side, f, false);
+      this.ik(side, t.pos, t.rot, new THREE.Vector3(-1, 0.1, -0.6));
+      this.curl(side, 0.2);
     } else {
-      const u = this.b['upper_arm.' + side];
-      u.quaternion.setFromAxisAngle(_x, -0.25);
-      this.b['forearm.' + side].quaternion.setFromAxisAngle(_x, -0.5);
+      const sg = side === 'R' ? 1 : -1;
+      const s = sg * Math.sin(this.phase) * 0.3 * Math.min(1, this.vel.length() / 1.2);
+      this.b['upper_arm.' + side].quaternion.setFromAxisAngle(_z, -sg * 0.07).multiply(_q1.setFromAxisAngle(_x, s));
+      this.b['forearm.' + side].quaternion.setFromAxisAngle(_x, -0.3);
     }
     for (const [i, a] of [top, bot].entries()) {
       const s = this.string[i];
@@ -766,6 +888,7 @@ export class HumanModel {
     this.matHide.dispose();
     this.orbMat.dispose();
     this.weaponMat.dispose();
+    this.glowMat?.dispose();
     this.oldWeapon?.dispose();
     this.arrow.geometry.dispose();
     for (const s of this.string) (s.material as THREE.Material).dispose();

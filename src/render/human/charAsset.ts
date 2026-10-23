@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import data from '../../assets/character.json';
 import texUrl from '../../assets/character.png';
+import { separateCoplanar } from './coplanar';
 
 /**
  * The owner's character (Character.blend, converted by tools/assets/convert_character.py):
@@ -22,7 +23,26 @@ interface PartDef {
 }
 
 export const BONES = (data as unknown as { bones: BoneDef[] }).bones;
-export const PARTS = (data as unknown as { parts: PartDef[] }).parts;
+const RAW_PARTS = (data as unknown as { parts: PartDef[] }).parts;
+
+/**
+ * The hair shell lies in places a fraction of a millimetre over the head and the ears, facing the
+ * same way: the depth test flipped between them pixel by pixel (the shimmer of the hair). Its faces
+ * there are lifted to a clear gap, and overlapping coplanar hair faces get distinct layers.
+ */
+function fixHair(parts: PartDef[]): PartDef[] {
+  const fixedNames = ['Head', 'Ear_L', 'Ear_R'];
+  const pos: number[] = [];
+  const idx: number[] = [];
+  for (const p of parts)
+    if (fixedNames.includes(p.name)) {
+      const o = pos.length / 3;
+      pos.push(...p.pos);
+      for (const i of p.idx) idx.push(i + o);
+    }
+  return parts.map((p) => (p.name === 'Hair_VoxelShell' ? { ...p, ...separateCoplanar(p, { pos, idx }) } : p));
+}
+export const PARTS = fixHair(RAW_PARTS);
 export const BONE_INDEX: Record<string, number> = Object.fromEntries(BONES.map((b, i) => [b.name, i]));
 export const PART_INDEX: Record<string, number> = Object.fromEntries(PARTS.map((p, i) => [p.name, i]));
 
@@ -82,13 +102,18 @@ export function characterGeometry(): THREE.BufferGeometry {
 
 let tex: THREE.Texture | null = null;
 
-/** The character's pixel atlas (nearest filtering: every texel stays a crisp square). */
+/**
+ * The character's pixel atlas: nearest filtering close up (every texel a crisp square); far away,
+ * where a texel is smaller than a screen pixel, mipmaps average the texels (without them the fine
+ * hair and cloth pixels sparkle as the figure moves).
+ */
 export function characterTexture(): THREE.Texture {
   if (tex) return tex;
   const t = new THREE.TextureLoader().load(texUrl);
   t.magFilter = THREE.NearestFilter;
-  t.minFilter = THREE.NearestFilter;
-  t.generateMipmaps = false;
+  t.minFilter = THREE.NearestMipmapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = 4;
   t.colorSpace = THREE.SRGBColorSpace;
   t.flipY = true;
   tex = t;

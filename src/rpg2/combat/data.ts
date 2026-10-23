@@ -28,7 +28,9 @@ const W = (id: string, name: string, kind: WeaponKind2, damage: number, aps: num
   // the owner's voxel weapons (src/assets/weapons), a finer one per tier
   const tier = Number(id.slice(-1)) - 1;
   const n = (k: number) => String(k).padStart(2, '0');
-  const mesh = kind === 'sword' ? `vox:sword_${n(1 + tier * 2)}` : kind === 'greatsword' ? `vox2h:sword_${n(6 + tier * 2)}` : kind === 'bow' ? `vox:bow_${n(1 + tier * 3)}` : `vox:staff_${n(1 + tier * 3)}`;
+  // tier 1 uses the reference weapons of the owner's sheets (src/render/human/refWeapons.ts)
+  const ref = tier === 0 ? { sword: 'vox:ref_sword', greatsword: 'vox2h:ref_greatsword', bow: 'vox:ref_bow', staff: 'vox:ref_staff' }[kind] : null;
+  const mesh = ref ? ref : kind === 'sword' ? `vox:sword_${n(1 + tier * 2)}` : kind === 'greatsword' ? `vox2h:sword_${n(6 + tier * 2)}` : kind === 'bow' ? `vox:bow_${n(1 + tier * 3)}` : `vox:staff_${n(1 + tier * 3)}`;
   return { id, name, kind, family, damage, aps, attr, req, mesh };
 };
 

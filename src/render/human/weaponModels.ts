@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { refWeapon } from './refWeapons';
 
 /**
  * The owner's voxel weapons (weapons.zip, converted by tools/assets/convert_weapons.py): ten
@@ -48,6 +49,11 @@ export interface VoxWeapon {
   /** Grip frame points (metres): the tip of the blade / head of the staff; bow: limb tips (string ends). */
   tip: THREE.Vector3;
   tipLow?: THREE.Vector3;
+  /** Reference weapons: a two-hander, a glowing part (draw group 1), the grip length, the butt (staff). */
+  great?: boolean;
+  glow?: boolean;
+  gripLen?: number;
+  butt?: number;
 }
 
 const cache = new Map<string, VoxWeapon>();
@@ -73,6 +79,8 @@ function decode(s: string): Uint8Array {
  * Bows are turned so that the arrow leaves along +z (the string behind, at -z).
  */
 export function voxWeapon(id: string, great = false): VoxWeapon | null {
+  const ref = refWeapon(id);
+  if (ref) return ref;
   const key = id + (great ? ':2h' : '');
   const hit = cache.get(key);
   if (hit) return hit;
@@ -142,11 +150,12 @@ export function voxWeapon(id: string, great = false): VoxWeapon | null {
 
 /** Which asset a game weapon is drawn with (main game items and RPG catalog meshes). */
 export const ITEM_VOX: Record<string, { id: string; great?: boolean }> = {
-  sword_recruit: { id: 'sword_01' },
-  sword_guard2h: { id: 'sword_06', great: true },
+  // the reference weapons (src/render/human/refWeapons.ts) for the basic ones
+  sword_recruit: { id: 'ref_sword' },
+  sword_guard2h: { id: 'ref_greatsword', great: true },
   staff_spark: { id: 'staff_02' },
-  staff_apprentice: { id: 'staff_01' },
-  bow_hunter: { id: 'bow_01' },
+  staff_apprentice: { id: 'ref_staff' },
+  bow_hunter: { id: 'ref_bow' },
 };
 
 /** A simple arrow along +z (nock at the origin), shaft, fletching and head. */

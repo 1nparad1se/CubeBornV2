@@ -160,6 +160,11 @@ export interface WeaponPose {
   flash?: number;
   /** Second hand on the handle (two-handed grips). */
   twoHands?: boolean;
+  /** Staff: the free hand's target (body frame) and how open it is (0 open .. 1 fist). */
+  free?: THREE.Vector3;
+  freeCurl?: number;
+  /** Bow: the drawing hand reaches over the shoulder for a new arrow (0..1). */
+  reload?: number;
 }
 
 // The right hand's side is -x. Shoulders at y 1.235, x ±0.25; the hands reach about 0.53 m.
@@ -171,28 +176,28 @@ const SWORD_SWINGS: Key[][] = [
     { t: 0, g: [-0.42, 1.12, 0.02], a: [-0.75, 0.25, -0.6], e: [0, 0, 1], yaw: -0.65, lean: 0.05 },
     { t: 0.55, g: [-0.12, 1.08, 0.44], a: [0.05, 0.08, 1], e: [1, 0, 0], yaw: 0.05, lean: 0.12, step: 0.8, hit: true },
     { t: 0.8, g: [0.2, 1.04, 0.32], a: [0.9, 0.02, 0.35], e: [0.3, 0, -1], yaw: 0.45, lean: 0.1, step: 0.6 },
-    { t: 1, g: [-0.2, 0.98, 0.3], a: [0.2, 0.75, 0.6], yaw: 0, step: 0 },
+    { t: 1, g: [-0.16, 1.02, 0.3], a: [-0.55, 0.8, 0.22], e: [0.7, 0.2, 0.7], yaw: 0.25, lean: 0.06, step: 0.9 },
   ],
   // 1: horizontal, left to right (backhand)
   [
     { t: 0, g: [0.12, 1.15, 0.22], a: [0.85, 0.2, -0.3], e: [0, 0, -1], yaw: 0.55, lean: 0.05 },
     { t: 0.55, g: [-0.1, 1.08, 0.46], a: [-0.05, 0.08, 1], e: [-1, 0, 0], yaw: -0.05, lean: 0.12, step: 0.8, hit: true },
     { t: 0.8, g: [-0.38, 1.05, 0.22], a: [-0.9, 0.05, 0.25], e: [-0.2, 0, -1], yaw: -0.5, lean: 0.08, step: 0.5 },
-    { t: 1, g: [-0.2, 0.98, 0.3], a: [0.2, 0.75, 0.6], yaw: 0, step: 0 },
+    { t: 1, g: [-0.16, 1.02, 0.3], a: [-0.55, 0.8, 0.22], e: [0.7, 0.2, 0.7], yaw: 0.25, lean: 0.06, step: 0.9 },
   ],
   // 2: vertical, top to bottom
   [
     { t: 0, g: [-0.14, 1.52, 0.02], a: [0.05, 0.55, -0.85], e: [0, 1, 0], yaw: -0.15, lean: -0.15 },
     { t: 0.55, g: [-0.1, 1.08, 0.48], a: [0.02, 0.1, 1], e: [0, -1, 0], yaw: 0, lean: 0.25, step: 1, hit: true },
     { t: 0.8, g: [-0.12, 0.86, 0.42], a: [0.05, -0.7, 0.7], e: [0, -1, -0.5], yaw: 0, lean: 0.3, step: 0.9 },
-    { t: 1, g: [-0.2, 0.98, 0.3], a: [0.2, 0.75, 0.6], yaw: 0, step: 0 },
+    { t: 1, g: [-0.16, 1.02, 0.3], a: [-0.55, 0.8, 0.22], e: [0.7, 0.2, 0.7], yaw: 0.25, lean: 0.06, step: 0.9 },
   ],
   // 3: diagonal, from over the right shoulder down to the left hip
   [
     { t: 0, g: [-0.36, 1.45, 0.02], a: [-0.45, 0.65, -0.6], e: [-0.3, 0.3, 1], yaw: -0.5, lean: -0.05 },
     { t: 0.55, g: [-0.08, 1.12, 0.46], a: [0.35, 0.05, 0.95], e: [0.7, -0.7, 0], yaw: 0.1, lean: 0.18, step: 0.9, hit: true },
     { t: 0.8, g: [0.16, 0.86, 0.32], a: [0.6, -0.65, 0.45], e: [0.5, -0.6, -0.6], yaw: 0.4, lean: 0.22, step: 0.7 },
-    { t: 1, g: [-0.2, 0.98, 0.3], a: [0.2, 0.75, 0.6], yaw: 0, step: 0 },
+    { t: 1, g: [-0.16, 1.02, 0.3], a: [-0.55, 0.8, 0.22], e: [0.7, 0.2, 0.7], yaw: 0.25, lean: 0.06, step: 0.9 },
   ],
 ];
 
@@ -201,35 +206,83 @@ const GREAT_SWINGS: Key[][] = SWORD_SWINGS.map((sw) =>
   sw.map((k) => ({ ...k, g: [k.g[0] * 0.75 + 0.03, k.g[1] + 0.02, k.g[2] * 0.95] as [number, number, number], yaw: (k.yaw ?? 0) * 1.25, lean: (k.lean ?? 0) * 1.2 })),
 );
 
-/** Grip of the stance, the guard, per family (combat), and on the move. */
+/**
+ * Combat stance of each family (owner's reference sheets, «В бою»): the sword raised in both hands
+ * in front of the right shoulder, the blade up and out; the bow upright in the outstretched left
+ * hand at face height, an arrow nocked and drawn to the chin; the staff in the right hand, leaning
+ * out with the crystal up beside the head, the free hand reaching forward.
+ */
 export function stanceFrame(f: Family, walk: number, moving: number): Frame {
   const bob = Math.sin(walk * 2) * 0.012 * moving;
   switch (f) {
     case 'sword':
-      return frame(V(-0.2, 0.98 + bob, 0.3), V(0.2, 0.75, 0.6), V(0.6, 0, 0.4));
+      return frame(V(-0.16, 1.02 + bob, 0.3), V(-0.55, 0.8, 0.22), V(0.7, 0.2, 0.7));
     case 'great':
-      return frame(V(-0.06, 0.95 + bob, 0.32), V(0.25, 0.8, 0.45), V(0.7, 0, 0.3));
+      return frame(V(-0.14, 0.98 + bob, 0.3), V(-0.5, 0.82, 0.25), V(0.7, 0.2, 0.7));
     case 'bow':
-      // level across the front of the belly, limbs left and right (owner's rule), arrow forward
-      return frame(V(0.06, 1.0 + bob, 0.34), V(1, 0.05, 0), V(0, 0, 1));
+      // upright, the arrow along +z at chin height (in front of the face: the head is a big cube)
+      return frame(V(BOW_X, 1.3 + bob, 0.64), V(0.06, 1, 0), V(0, 0, 1));
     case 'staff':
-      // both hands, diagonal across the body, the head up and forward
-      return frame(V(-0.14, 1.02 + bob, 0.3), V(0.35, 0.82, 0.45), V(0, 0, 1));
+      return frame(V(-0.32, 1.0 + bob, 0.22), V(-0.45, 0.88, 0.14), V(0, 0, 1));
     default:
       return frame(V(-0.3, 0.8 + bob, 0.18), V(0, 0.2, 1), V(0, -1, 0));
   }
 }
 
-/** Peace: the staff in hand as a walking stick (swinging with the step). */
-export function staffPeaceFrame(walk: number, moving: number): Frame {
-  const sw = Math.sin(walk) * 0.12 * moving;
-  return frame(V(-0.36, 0.86, 0.1 + sw), V(0, 1, 0.12 + sw * 0.6), V(0, 0, 1));
-}
+/** Sideways place of the bow hand and of the drawing hand in the stance (one line: the arrow). */
+export const BOW_X = -0.05;
+/** The drawing hand's anchor at full draw: under the chin, just in front of the face. */
+export const BOW_ANCHOR = V(BOW_X, 1.3, 0.16);
 
 /**
- * Where the weapon rests on the back, in the frame of the chest (spine bone: origin at its head
- * y = 0.86, axes of the body at rest). Swords and greatswords diagonally in a scabbard, the hilt
- * over the right shoulder; the bow across the back, from the right hip to the left shoulder.
+ * Out of combat («Вне боя»): the weapon held low in the hand at the side — the sword's blade
+ * pointing down and forward, the bow upright beside the left leg, the staff upright with its butt
+ * on the ground — swinging a little with the step.
+ */
+export function peaceFrame(f: Family, walk: number, moving: number): Frame {
+  const sw = Math.sin(walk) * moving;
+  switch (f) {
+    case 'sword':
+      return frame(V(-0.34, 0.72, 0.1 + sw * 0.1), V(0.1, -0.55, 0.83 - sw * 0.2), V(0, 0.8, 0.5));
+    case 'great':
+      return frame(V(-0.35, 0.74, 0.1 + sw * 0.08), V(0.08, -0.45, 0.89 - sw * 0.15), V(0, 0.9, 0.4));
+    case 'bow':
+      return frame(V(0.36, 0.8, 0.08 - sw * 0.1), V(0, 1, 0.04 - sw * 0.12), V(0, 0, 1));
+    case 'staff':
+      return frame(V(-0.36, 0.86, 0.12 + sw * 0.12), V(0, 1, 0.03 + sw * 0.15), V(0, 0, 1));
+    default:
+      return frame(V(-0.34, 0.74, 0.1), V(0, -0.3, 1), V(0, 1, 0));
+  }
+}
+
+/** @deprecated kept for old callers: the staff's relaxed frame. */
+export function staffPeaceFrame(walk: number, moving: number): Frame {
+  return peaceFrame('staff', walk, moving);
+}
+
+/** Body of the combat stance per family: torso turn, lean, and how wide the feet stand. */
+export function stanceBody(f: Family): BodyMotion {
+  switch (f) {
+    case 'sword':
+      return { yaw: 0.25, lean: 0.06, step: 0.9 };
+    case 'great':
+      return { yaw: 0.3, lean: 0.08, step: 1 };
+    case 'bow':
+      // side-on: the left shoulder toward the target
+      return { yaw: -0.75, lean: 0.02, step: 1 };
+    case 'staff':
+      return { yaw: 0.2, lean: 0.05, step: 0.9 };
+    default:
+      return { yaw: 0, lean: 0, step: 0 };
+  }
+}
+
+/** The free (left) hand of the staff: reaching forward, palm open (body frame). */
+export const STAFF_FREE = V(0.22, 1.12, 0.52);
+
+/**
+ * Where the weapon rests on the back (chest frame). Since update 7 weapons stay in the hand
+ * («Вне боя» poses of the references); only the bow's quiver is on the back.
  */
 export function backFrame(f: Family): Frame {
   switch (f) {
@@ -266,6 +319,12 @@ function keyed(keys: Key[], u: number, hitAt: number): WeaponPose {
 }
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 
+/** Swings keep the fighting stance's wide feet (the step of a key only adds to it). */
+function withStep(p: WeaponPose): WeaponPose {
+  p.body.step = Math.min(1.4, 0.8 + p.body.step * 0.6);
+  return p;
+}
+
 /**
  * Melee swing `variant` (0 right→left, 1 left→right, 2 top→bottom, 3 diagonal) at progress u.
  * A combo is consecutive attacks taking the next variant; a skill swing chains two (`combo`).
@@ -274,139 +333,212 @@ export function swingPose(f: 'sword' | 'great', variant: number, u: number, hitA
   const set = f === 'great' ? GREAT_SWINGS : SWORD_SWINGS;
   if (combo) {
     // two strikes in one action: the diagonal, then the backhand (the second on the hit moment)
-    if (u < hitAt * 0.6) return { ...keyed(set[3], u / (hitAt * 0.6), 0.75), twoHands: f === 'great' };
+    if (u < hitAt * 0.6) return withStep({ ...keyed(set[3], u / (hitAt * 0.6), 0.75), twoHands: true });
     const v = keyed(set[1], (u - hitAt * 0.6) / (1 - hitAt * 0.6), (hitAt * 0.4) / (1 - hitAt * 0.6));
-    return { ...v, twoHands: f === 'great' };
+    return withStep({ ...v, twoHands: true });
   }
-  return { ...keyed(set[((variant % 4) + 4) % 4], u, hitAt), twoHands: f === 'great' };
+  return withStep({ ...keyed(set[((variant % 4) + 4) % 4], u, hitAt), twoHands: true });
 }
 
+/** Stance draw of the bow in combat (an arrow nocked, the string partly drawn). */
+export const BOW_STANCE_DRAW = 0.85;
+
 /**
- * Bow shot at progress u (release at hitAt): raise the bow, take an arrow and nock it, draw the
- * string straight back to the chest, aim, release, lower the bow back into the stance.
+ * Bow shot at progress u (release at hitAt): from the stance the string comes to full draw, holds
+ * a moment (aim), is released (the string snaps back, the bow hand gives a little), the drawing
+ * hand goes over the shoulder for a new arrow, nocks it and draws back into the stance.
  */
 export function bowPose(u: number, hitAt: number, walk: number, moving: number): WeaponPose {
-  const low = stanceFrame('bow', walk, moving);
-  const high = frame(V(0.04, 1.27, 0.46), V(1, 0.04, 0), V(0, 0, 1));
+  const st = stanceFrame('bow', walk, moving);
   const r = Math.max(0.05, hitAt);
-  const raise = ease(u / (r * 0.35));
-  let draw = 0;
-  let arrow = false;
-  let onString = false;
+  const body = stanceBody('bow');
   if (u < r) {
-    arrow = u > r * 0.25;
-    onString = u > r * 0.35;
-    // the pull: from the string at rest to full draw, slowing as the bow bends; then held (aim)
-    draw = onString ? ease((u - r * 0.35) / (r * 0.5)) : 0;
-  } else {
-    // released: the string snaps back at once, the arrow is gone
-    draw = 0;
+    const k = ease(u / (r * 0.7));
+    return { frame: st, body: { ...body, lean: body.lean + 0.03 * k }, draw: BOW_STANCE_DRAW + (1 - BOW_STANCE_DRAW) * k, arrow: true, onString: true };
   }
-  const lowerK = u > r ? ease((u - r - (1 - r) * 0.25) / ((1 - r) * 0.75)) : 0;
-  const k = raise * (1 - lowerK);
-  const f = mixFrame(low, high, k);
-  return { frame: f, body: { yaw: 0.15 * k, lean: 0.02 * k, step: 0 }, draw, arrow, onString: u < r ? onString : u < r + 0.06, twoHands: false };
+  const v = (u - r) / Math.max(1e-3, 1 - r);
+  // recoil: the bow hand kicks forward and down a little, then settles
+  const kick = Math.max(0, 1 - v / 0.25);
+  const f = frame(st.g.clone().add(V(0, -0.03 * kick, 0.04 * kick)), st.a, st.e);
+  if (v < 0.18) return { frame: f, body, draw: 0, arrow: false, onString: false, reload: 0 };
+  if (v < 0.6) return { frame: f, body, draw: 0, arrow: v > 0.4, onString: false, reload: ease((v - 0.18) / 0.22) };
+  // nock and draw back into the stance
+  const k = ease((v - 0.6) / 0.4);
+  return { frame: f, body, draw: BOW_STANCE_DRAW * k, arrow: true, onString: true, reload: 1 - k };
 }
 
 /** Bow held at full draw (aiming). */
 export function bowAimPose(k: number, walk: number, moving: number): WeaponPose {
-  const low = stanceFrame('bow', walk, moving);
-  const high = frame(V(0.04, 1.27, 0.46), V(1, 0.04, 0), V(0, 0, 1));
-  return { frame: mixFrame(low, high, ease(k * 1.6)), body: { yaw: 0.15 * k, lean: 0.02, step: 0 }, draw: ease((k - 0.35) / 0.65), arrow: k > 0.15, onString: k > 0.3, twoHands: false };
+  const st = stanceFrame('bow', walk, moving);
+  return { frame: st, body: stanceBody('bow'), draw: BOW_STANCE_DRAW + (1 - BOW_STANCE_DRAW) * ease(k), arrow: true, onString: true };
 }
 
 /**
- * Staff spell at progress u (release at hitAt): gather the magic (staff raised), point the staff
- * at the target, release (flash at the head), back to the stance. `power`: the strong spell —
- * raised high over the head, a lunge into the release, a bigger orb.
+ * Staff spell at progress u (release at hitAt): gather (the staff drawn back and up, the free hand
+ * to the crystal), thrust the crystal at the target with the free hand pushing forward (release:
+ * flash), back to the stance. `power`: the strong spell — raised high over the head first, a lunge
+ * into the release, a bigger orb.
  */
 export function staffPose(u: number, hitAt: number, walk: number, moving: number, power = false): WeaponPose {
   const st = stanceFrame('staff', walk, moving);
-  const prep = power ? frame(V(-0.08, 1.48, 0.12), V(0.05, 1, -0.1), V(0, 0, 1)) : frame(V(-0.16, 1.3, 0.26), V(0.12, 1, 0.12), V(0, 0, 1));
-  const point = frame(V(-0.08, 1.2, 0.52), V(0.05, 0.12, 1), V(0, 1, 0));
+  const sb = stanceBody('staff');
+  const prep = power ? frame(V(-0.22, 1.46, 0.08), V(-0.08, 1, -0.12), V(0, 0, 1)) : frame(V(-0.3, 1.22, 0.06), V(-0.2, 0.96, -0.2), V(0, 0, 1));
+  const point = frame(V(-0.22, 1.16, 0.4), V(-0.06, 0.5, 0.86), V(0, 1, 0));
+  const freePrep = power ? V(0.05, 1.62, 0.18) : V(0.12, 1.3, 0.3);
+  const freePush = V(0.16, 1.2, 0.62);
   const r = Math.max(0.05, hitAt);
   let f: Frame;
   let body: BodyMotion;
-  if (u < r * 0.65) {
-    const k = ease(u / (r * 0.65));
+  let free: THREE.Vector3;
+  if (u < r * 0.6) {
+    const k = ease(u / (r * 0.6));
     f = mixFrame(st, prep, k);
-    body = { yaw: -0.2 * k, lean: (power ? -0.1 : -0.03) * k, step: 0 };
+    free = STAFF_FREE.clone().lerp(freePrep, k);
+    body = { yaw: lerp(sb.yaw, 0.35, k), lean: lerp(sb.lean, power ? -0.12 : -0.04, k), step: sb.step };
   } else if (u < r) {
-    const k = ease((u - r * 0.65) / (r * 0.35));
+    const k = ease((u - r * 0.6) / (r * 0.4));
     f = mixFrame(prep, point, k);
-    body = { yaw: -0.2 + 0.3 * k, lean: (power ? 0.25 : 0.12) * k, step: (power ? 1 : 0.5) * k };
+    free = freePrep.clone().lerp(freePush, k);
+    body = { yaw: lerp(0.35, -0.1, k), lean: lerp(power ? -0.12 : -0.04, power ? 0.25 : 0.14, k), step: 1 };
   } else {
     const k = ease((u - r) / (1 - r));
     f = mixFrame(point, st, k);
-    body = { yaw: 0.1 * (1 - k), lean: (power ? 0.25 : 0.12) * (1 - k), step: (power ? 1 : 0.5) * (1 - k) };
+    free = freePush.clone().lerp(STAFF_FREE, k);
+    body = { yaw: lerp(-0.1, sb.yaw, k), lean: lerp(power ? 0.25 : 0.14, sb.lean, k), step: 1 - (1 - sb.step) * k };
   }
   const orb = u < r ? ease(u / r) * (power ? 1 : 0.6) : 0;
   const flash = u >= r ? Math.max(0, 1 - (u - r) / 0.12) : 0;
-  return { frame: f, body, orb, flash, twoHands: true };
+  return { frame: f, body, orb, flash, twoHands: false, free, freeCurl: u < r * 0.6 ? 0.35 : 0.05 };
 }
 
-/** Staff charged (held): raised, the orb grows with the charge. */
+/** Staff charged (held): drawn back and up, the free hand cupping the growing orb. */
 export function staffChargePose(k: number, walk: number, moving: number): WeaponPose {
   const st = stanceFrame('staff', walk, moving);
-  const prep = frame(V(-0.08, 1.48, 0.12), V(0.05, 1, -0.1), V(0, 0, 1));
-  return { frame: mixFrame(st, prep, ease(k * 2)), body: { yaw: -0.15 * k, lean: -0.08 * k, step: 0 }, orb: 0.3 + 0.7 * k, twoHands: true };
+  const prep = frame(V(-0.22, 1.42, 0.12), V(-0.1, 1, -0.08), V(0, 0, 1));
+  const kk = ease(k * 2);
+  return { frame: mixFrame(st, prep, kk), body: { yaw: 0.3 * kk, lean: -0.06 * k, step: 1 }, orb: 0.3 + 0.7 * k, twoHands: false, free: STAFF_FREE.clone().lerp(V(0.0, 1.5, 0.36), kk), freeCurl: 0.4 };
 }
 
-/** Sword block (held): the blade across in front of the face. */
+/** Sword block (held): the blade across in front of the face, both hands on the hilt. */
 export function blockPose(f: 'sword' | 'great', k: number, walk: number, moving: number): WeaponPose {
   const st = stanceFrame(f, walk, moving);
-  const guard = frame(V(-0.16, 1.32, 0.36), V(0.95, 0.3, 0.05), V(0, 0.3, 1));
-  return { frame: mixFrame(st, guard, ease(k)), body: { yaw: -0.1 * k, lean: 0.05 * k, step: 0.3 * k }, twoHands: f === 'great' || k > 0.5 };
+  const guard = frame(V(-0.2, 1.3, 0.36), V(0.95, 0.3, 0.05), V(0, 0.3, 1));
+  return { frame: mixFrame(st, guard, ease(k)), body: { yaw: 0.1 * (1 - k), lean: 0.05 * k, step: 1 }, twoHands: true };
 }
 
 // ---------------------------------------------------------------- locomotion
 
-/** Leg angles for one frame of locomotion. */
+/** Joint angles of one frame of the gait (body frame; radians). */
 export interface Legs {
-  /** Thigh swing about the axis across the way of travel (rad) and its axis (body frame). */
+  /** Thigh swing about the axis across the way of travel (+ = foot back) and its axis. */
   swingR: number;
   swingL: number;
   axis: THREE.Vector3;
+  /** Knee bend (+ = flexion) and foot pitch relative to level (+ = toes down). */
   kneeR: number;
   kneeL: number;
-  /** Pelvis bob (m) and the lean toward the way of travel. */
-  bob: number;
+  footR: number;
+  footL: number;
+  /** Pelvis turn with the stride (+ = right hip forward), hip roll, sideways sway (m). */
+  hipYaw: number;
+  hipRoll: number;
+  sway: number;
+  /** Extra pelvis height of the run's flight phase (m). */
+  lift: number;
+  /** Arm swing amplitude and elbow bend; 0 walk .. 1 run blend. */
+  armAmp: number;
+  elbow: number;
+  run: number;
+  /** Lean toward the way of travel (x sideways, y forward). */
   lean: THREE.Vector2;
-}
-
-/** Stride (m per step) at a speed: a walk takes shorter steps than a run. */
-export function stride(speed: number): number {
-  return 0.55 + Math.min(1, speed / 6) * 0.45;
-}
-
-/** Leg swing amplitude matching a stride (feet do not slide: the planted foot moves with the ground). */
-export function swingAmp(speed: number): number {
-  const legLen = 0.62;
-  return Math.asin(Math.min(0.9, stride(speed) / 2 / legLen));
+  /** Kept for old callers: the pelvis bob (the model now grounds the feet itself). */
+  bob: number;
 }
 
 /**
- * Locomotion of the legs: `local` is the velocity in the body frame (x left, z forward, m/s),
- * `phase` the step phase (grows by π per stride walked). Walking forward, back, sideways and
- * diagonally all swing the legs along the actual way of travel.
+ * Stride (m per step) at a speed: a walk takes short steps, a run long ones with a flight between
+ * them (cadence about 2 steps a second walking, 3.5 sprinting).
+ */
+export function stride(speed: number): number {
+  if (speed <= 2.5) return 0.42 + speed * 0.12;
+  if (speed <= 5) return 0.72 + (speed - 2.5) * 0.29;
+  return 1.45 + Math.min(1, (speed - 5) / 2.5) * 0.45;
+}
+
+/** Hip to ankle of the model (m). */
+export const LEG_LEN = 0.59;
+
+/**
+ * Thigh swing amplitude at a speed: matched to the stride while walking (the planted foot moves
+ * with the ground), held in a natural range when running (the flight covers the rest).
+ */
+export function swingAmp(speed: number): number {
+  const walk = Math.asin(Math.min(0.9, stride(Math.min(speed, 2.2)) / 2 / LEG_LEN));
+  if (speed <= 2.2) return walk;
+  return walk + Math.min(1, (speed - 2.2) / 5.3) * (0.68 - walk);
+}
+
+/**
+ * The gait: `local` is the velocity in the body frame (x left, z forward, m/s), `phase` the step
+ * phase (grows by π per stride walked). A natural cycle per leg: the swing leg's knee folds
+ * (much more when running), the stance knee gives a little at contact, the heel strikes and the
+ * toes push off; the pelvis turns with the stride and sways over the standing foot; the arms
+ * swing against the legs, the elbows bend more with speed. Walking forward, back, sideways and
+ * diagonally all step along the actual way of travel; everything fades out toward standing.
  */
 export function legs(local: THREE.Vector2, phase: number): Legs {
   const speed = local.length();
   const k = Math.min(1, speed / 1.2);
+  const run = Math.max(0, Math.min(1, (speed - 2.8) / 2.2));
   const axis = new THREE.Vector3(1, 0, 0);
   if (speed > 0.05) axis.set(local.y, 0, -local.x).normalize();
-  // sideways steps are shorter (the legs would cross)
+  // sideways steps are shorter (the legs would cross); backwards steps a little shorter too
   const side = speed > 0.05 ? Math.abs(local.x) / speed : 0;
-  const amp = swingAmp(speed) * k * (1 - side * 0.4);
+  const back = speed > 0.05 && local.y < 0 ? -local.y / speed : 0;
+  const amp = swingAmp(speed) * k * (1 - side * 0.4) * (1 - back * 0.2);
+  const leg = (p: number) => {
+    const s = Math.sin(p);
+    const c = Math.cos(p);
+    // swing phase: cos > 0 (the foot travels forward through the air); stance: cos < 0
+    const swing = -amp * s;
+    const kSwing = (0.55 + run * 1.05) * k;
+    const kStance = (0.1 + run * 0.35) * k;
+    const sw = Math.max(0, Math.cos(p + 0.35));
+    const st = c < 0 ? Math.max(0, Math.sin(2 * (p - Math.PI / 2))) : 0;
+    const knee = 0.04 * k + kSwing * Math.pow(sw, 1.3) + kStance * Math.max(0, st) * (s > 0 ? 1 : 0.4);
+    // feet: heel strike (toes up) as the leg lands in front, push-off (toes down) behind
+    const toeOff = Math.max(0, -s) * Math.max(0, c + 0.2) * (0.45 + run * 0.4);
+    const heel = Math.max(0, s) * Math.max(0, -c) * 0.25;
+    const foot = (toeOff - heel - sw * 0.12) * k;
+    return { swing, knee, foot };
+  };
+  const R = leg(phase);
+  const L = leg(phase + Math.PI);
   const s = Math.sin(phase);
-  const swingR = -amp * s;
-  const swingL = amp * s;
-  // the knee bends while its foot swings forward through the air
-  const kneeR = Math.max(0, Math.cos(phase)) * amp * 1.4 + 0.05 * k;
-  const kneeL = Math.max(0, -Math.cos(phase)) * amp * 1.4 + 0.05 * k;
-  const bob = -Math.abs(Math.cos(phase)) * 0.025 * k;
-  const lean = new THREE.Vector2(local.x, local.y).multiplyScalar(0.02 * Math.min(1, speed / 4));
-  return { swingR, swingL, axis, kneeR, kneeL, bob, lean };
+  const c = Math.cos(phase);
+  const hipYaw = s * (0.1 + run * 0.06) * k * (1 - side);
+  const hipRoll = -c * 0.04 * k * (1 - run * 0.5);
+  const sway = c * (0.018 - run * 0.008) * k * (1 - side);
+  const lift = run * Math.pow(Math.abs(s), 3) * 0.035;
+  const lean = new THREE.Vector2(local.x, local.y).multiplyScalar(0.025 * Math.min(1, speed / 3));
+  return {
+    swingR: R.swing,
+    swingL: L.swing,
+    axis,
+    kneeR: R.knee,
+    kneeL: L.knee,
+    footR: R.foot,
+    footL: L.foot,
+    hipYaw,
+    hipRoll,
+    sway,
+    lift,
+    armAmp: (0.42 + run * 0.5) * k,
+    elbow: 0.25 + run * 1.05 * k,
+    run,
+    lean,
+    bob: 0,
+  };
 }
 
 /** Swing variant of the n-th attack of a combo: the next line each time, back to the first after a pause. */
