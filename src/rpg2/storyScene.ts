@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { npcModel } from '../render/human/npcs';
 import { h } from '../ui/dom';
 import { pxIcon } from '../ui/pixelIcons';
 import type { CombatSystem } from './combat/system';
@@ -101,11 +102,13 @@ export class StoryScene {
     m.position.set(x, y, z);
     g.add(m);
   }
-  private figure(g: THREE.Group, x: number, z: number, cloth: number, name: string) {
+  /** An NPC on the hero's model (src/render/human/npcs.ts), facing the village centre. */
+  private figure(g: THREE.Group, x: number, z: number, id: string, name: string) {
     const y = this.s.ground.top(x, z);
-    this.box(g, 0.5, 0.75, 0.3, 0x3a2f28, x, y + 0.375, z);
-    this.box(g, 0.6, 0.75, 0.35, cloth, x, y + 1.125, z);
-    this.box(g, 0.5, 0.5, 0.5, 0xd9a87c, x, y + 1.75, z);
+    const npc = npcModel(id);
+    npc.root.position.set(x, y, z);
+    npc.root.rotation.y = Math.atan2(50 - x, 50 - z);
+    g.add(npc.root);
     const l = this.s.label(name);
     l.position.set(x, y + 2.4, z);
     g.add(l);
@@ -115,7 +118,7 @@ export class StoryScene {
     const top = (x: number, z: number) => this.s.ground.top(x, z);
     for (const id of ['lada', 'oren']) {
       const sp = NPC_SPOTS.find((n) => n.id === id)!;
-      this.figure(g, sp.x, sp.z, sp.color, npcName(id));
+      this.figure(g, sp.x, sp.z, id, npcName(id));
     }
     // the well of Тихая Долина
     const wy = top(60, 64);

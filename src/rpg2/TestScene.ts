@@ -23,6 +23,7 @@ import { SceneHud } from './ui/hud';
 import { SceneMenus } from './ui/menus';
 import * as kit from './ui/kit';
 import { heroFigure } from './ui/figure';
+import { npcModel } from '../render/human/npcs';
 import { WEAPON_BY_ID } from './combat/data';
 import { pxIcon } from '../ui/pixelIcons';
 import { NORMAL, SKILLS, SPELLS, WEAPONS, abilityName, type WeaponFamily } from './combat/data';
@@ -579,7 +580,10 @@ export class TestScene {
     const hk: 'block' | 'aim' | 'charge' | null = c.blocking ? 'block' : c.aiming ? 'aim' : c.charge !== null ? 'charge' : null;
     this.holdT = hk && p.hold?.kind === hk ? this.holdT + dt : 0;
     p.hold = hk ? { kind: hk, k: hk === 'charge' ? Math.min(1, 0.35 + (c.charge ?? 0)) : Math.min(1, this.holdT / (hk === 'aim' ? 0.4 : 0.15)) } : null;
-    p.attack = a ? ({ weapon: null, t: a.t, dur: a.dur, hitAt: Math.min(1, a.hitAt / a.dur), done: a.t >= a.hitAt, dirX: a.dirX, dirZ: a.dirZ, seq: a.rec } as unknown as typeof p.attack) : null;
+    p.attack = a ? ({ weapon: null, t: a.t, dur: a.dur, hitAt: Math.min(1, a.hitAt / a.dur), done: a.t >= a.hitAt, dirX: a.dirX, dirZ: a.dirZ, seq: a.rec, kind: a.kind } as unknown as typeof p.attack) : null;
+    // the weapon is ready in a fight and while an enemy is selected near the hero
+    const near = sel ? Math.hypot(sel.x - m.x, sel.z - m.z) < 15 && !sel.dummy : false;
+    p.inCombat = hero.inCombat || near;
     this.syncWeapon();
     // D028: a campfire (the cooking stove) within 5 m out of combat: HP / MP regeneration ×5
     const fire = STATION_SPOTS.find((x) => x.id === 'stove')!;
@@ -1525,26 +1529,15 @@ export class TestScene {
     { id: 'mira', x: 46, z: 63 },
   ];
 
-  /** Cubic placeholder figures with name labels; E within 3 m opens the training window. */
+  /** Mentors on the hero's model (src/render/human/npcs.ts); E within 3 m opens the training window. */
   private addMentors() {
     const group = new THREE.Group();
-    const colors: Record<MentorId, number> = { arden: 0x8c3b2a, hira: 0x3d6b32, mira: 0x3a4f8f };
-    const skin = new THREE.MeshLambertMaterial({ color: 0xd9a87c });
-    const legs = new THREE.MeshLambertMaterial({ color: 0x3a2f28 });
     for (const sp of this.mentorSpots) {
       const y = this.site.ground.top(sp.x, sp.z);
-      const cloth = new THREE.MeshLambertMaterial({ color: colors[sp.id] });
-      const parts: [THREE.Material, number, number, number, number][] = [
-        [legs, 0.5, 0.75, 0.3, 0.375],
-        [cloth, 0.6, 0.75, 0.35, 1.125],
-        [skin, 0.5, 0.5, 0.5, 1.75],
-      ];
-      for (const [mat, w, hh, dd, cy] of parts) {
-        const b = new THREE.Mesh(new THREE.BoxGeometry(w, hh, dd), mat);
-        b.position.set(sp.x, y + cy, sp.z);
-        b.rotation.y = Math.PI / 2;
-        group.add(b);
-      }
+      const npc = npcModel(sp.id);
+      npc.root.position.set(sp.x, y, sp.z);
+      npc.root.rotation.y = Math.PI / 2;
+      group.add(npc.root);
       const m = MENTORS[sp.id];
       const label = labelSprite(m.name);
       label.position.set(sp.x, y + 2.4, sp.z);

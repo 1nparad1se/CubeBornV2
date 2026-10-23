@@ -25,7 +25,10 @@ export interface WeaponDef {
 const W = (id: string, name: string, kind: WeaponKind2, damage: number, aps: number, req: number): WeaponDef => {
   const family: WeaponFamily = kind === 'bow' ? 'bow' : kind === 'staff' ? 'staff' : 'sword';
   const attr = family === 'sword' ? 'str' : family === 'bow' ? 'dex' : 'int';
-  const mesh = kind === 'sword' ? 'sword_recruit' : kind === 'greatsword' ? 'sword_guard2h' : kind === 'bow' ? 'bow_hunter' : 'staff_apprentice';
+  // the owner's voxel weapons (src/assets/weapons), a finer one per tier
+  const tier = Number(id.slice(-1)) - 1;
+  const n = (k: number) => String(k).padStart(2, '0');
+  const mesh = kind === 'sword' ? `vox:sword_${n(1 + tier * 2)}` : kind === 'greatsword' ? `vox2h:sword_${n(6 + tier * 2)}` : kind === 'bow' ? `vox:bow_${n(1 + tier * 3)}` : `vox:staff_${n(1 + tier * 3)}`;
   return { id, name, kind, family, damage, aps, attr, req, mesh };
 };
 

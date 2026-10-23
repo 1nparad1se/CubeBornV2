@@ -77,6 +77,8 @@ export class RpgPlayer {
   attack: AttackState | null = null;
   /** RPG test scene: a held action pose (sword block, bow aim, staff charge) with its progress 0..1. */
   hold: { kind: 'block' | 'aim' | 'charge'; k: number } | null = null;
+  /** A driver (the RPG test scene) says the hero is in a fight: the model keeps the weapon ready. */
+  inCombat = false;
   private seq = 0;
   /** Time until the next attack may start. */
   cooldown = 0;

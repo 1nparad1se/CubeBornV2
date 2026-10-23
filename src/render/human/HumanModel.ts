@@ -1,98 +1,122 @@
 import * as THREE from 'three';
 import { item, type Slot, type WeaponKind } from '../../rpg/items';
-import { weaponType, type WeaponType } from '../../rpg/weapons';
-import { PX, SkinAtlas, type Paint } from './skinAtlas';
-import { SKINS, armorPaints, type BodySkin } from './skins';
-import { shieldModel, weaponModel, type WeaponModel } from './itemMeshes';
+import { BONES, BONE_INDEX, PARTS, PART_INDEX, boneHead, boneTail, characterGeometry, characterTexture } from './charAsset';
+import { ARMOR, armorMeshes, type ArmorSetId, type ArmorSlot } from './armorModels';
+import {
+  CombatState,
+  ComboCounter,
+  GRAB_AT,
+  backFrame,
+  basisQuat,
+  blockPose,
+  bowAimPose,
+  bowPose,
+  frame,
+  legs,
+  mixFrame,
+  staffChargePose,
+  staffPeaceFrame,
+  staffPose,
+  stanceFrame,
+  stride,
+  swingPose,
+  type Family,
+  type Frame,
+  type WeaponPose,
+} from './anim';
+import { ITEM_VOX, arrowGeometry, voxWeapon, type VoxWeapon } from './weaponModels';
+import { weaponModel, type WeaponModel } from './itemMeshes';
 
 /** What the model shows this frame (filled from the simulation or by a preview). */
-interface HumanPose {
-  /** Walk cycle phase (radians-ish, grows with distance walked). */
+export interface HumanPose {
+  /** Walk cycle phase of the old model (unused by the legs now: they follow the distance walked). */
   walk: number;
   /** 0 standing .. 1 walking at full speed. */
   moving: number;
   airborne: boolean;
   /** Vertical speed while airborne (+ up). */
   vy: number;
-  /** Basic attack in progress: progress 0..1 and the hit moment (fraction). */
-  attack: { t: number; hitAt: number } | null;
+  /** Basic attack in progress: progress 0..1, the hit moment (fraction), its id and kind. */
+  attack: { t: number; hitAt: number; seq?: number; kind?: 'normal' | 'skill' | 'spell' } | null;
   time: number;
   /** Somersault of the double jump: progress 0..1 (0 = none). */
   flip?: number;
-  /** A held action (RPG test scene): sword block, bow aim, staff charge; `k` 0..1 builds the pose up. */
+  /** A held action: sword block, bow aim, staff charge; `k` 0..1 builds the pose up. */
   hold?: { kind: 'block' | 'aim' | 'charge'; k: number } | null;
+  /**
+   * Velocity in the body's own frame (m/s; x to the model's left, z forward). The legs step along
+   * it whatever way the body faces: forward, back, sideways, diagonally.
+   */
+  move?: { x: number; z: number };
+  /** The fight wants the weapon ready (drawn); without it the weapon is put away after a while. */
+  combat?: boolean;
 }
 
-/**
- * A two-hand hold: the right hand's spot on the handle (`g`, body pixels), the weapon's direction
- * as elevation `el` above the forward horizontal and yaw `yaw` toward the model's left (radians).
- */
-interface Hold {
-  g: THREE.Vector3;
-  el: number;
-  yaw: number;
+/** Variant of the base character (NPCs): colours of its parts, a body build, extra pieces. */
+export interface CharacterLook {
+  /** Multipliers per body part group (linear colour; > 1 brightens). */
+  tint?: Partial<Record<'shirt' | 'trousers' | 'boots' | 'hair' | 'skin' | 'belt', [number, number, number]>>;
+  /** Overall scale (height) and width of the build. */
+  height?: number;
+  width?: number;
+  /** Armour pieces worn as clothes (set and slots). */
+  wear?: { set: ArmorSetId; slots: ArmorSlot[] }[];
 }
 
-const ease = (x: number) => {
-  const c = Math.max(0, Math.min(1, x));
-  return c * c * (3 - 2 * c);
+const GROUPS: Record<string, string[]> = {
+  shirt: ['Torso_Shirt', 'Collar_L', 'Collar_R', 'Collar_Step_L', 'Collar_Step_R', 'Shoulder_Shirt_L', 'Shoulder_Shirt_R', 'Upper_Shirt_Back', 'Sleeve_L', 'Sleeve_R', 'Rolled_Cuff_L', 'Rolled_Cuff_R'],
+  trousers: ['Pants_Leg_L', 'Pants_Leg_R', 'Waist'],
+  boots: ['Boot_Cuff_L', 'Boot_Cuff_R', 'Boot_Foot_L', 'Boot_Foot_R', 'Boot_Shaft_L', 'Boot_Shaft_R'],
+  hair: ['Hair_VoxelShell'],
+  belt: ['Belt', 'Lace_Upper', 'Lace_Lower'],
+  skin: ['Head', 'Neck', 'Neckline', 'Ear_L', 'Ear_R', 'Forearm_L', 'Forearm_R', 'Palm_L', 'Palm_R', 'Thumb_L', 'Thumb_R', 'Finger_1_L', 'Finger_1_R', 'Finger_2_L', 'Finger_2_R', 'Finger_3_L', 'Finger_3_R', 'Finger_4_L', 'Finger_4_R'],
 };
-const DEG = Math.PI / 180;
-const hold = (x: number, y: number, z: number, el: number, yaw: number): Hold => ({ g: new THREE.Vector3(x, y, z), el: el * DEG, yaw: yaw * DEG });
-/** a + (b - a) * k for holds (into `out`). */
-function mixHold(out: Hold, a: Hold, b: Hold, k: number): Hold {
-  out.g.lerpVectors(a.g, b.g, k);
-  out.el = a.el + (b.el - a.el) * k;
-  out.yaw = a.yaw + (b.yaw - a.yaw) * k;
-  return out;
+
+/** Family of a weapon by its equipped id. */
+function familyOf(id: string | null): { family: Family | null; kind: WeaponKind | null; vox: VoxWeapon | null } {
+  if (!id) return { family: null, kind: null, vox: null };
+  const v = /^vox(2h)?:(.+)$/.exec(id);
+  const mapped = v ? { id: v[2], great: !!v[1] } : ITEM_VOX[id];
+  const kind = item(id)?.weapon?.kind ?? null;
+  if (mapped) {
+    const vox = voxWeapon(mapped.id, mapped.great);
+    if (vox) {
+      const family: Family = vox.kind === 'sword' ? (mapped.great ? 'great' : 'sword') : vox.kind;
+      return { family, kind, vox };
+    }
+  }
+  if (!kind) return { family: null, kind: null, vox: null };
+  const family: Family = kind === 'sword1h' ? 'sword' : kind === 'sword2h' ? 'great' : kind === 'bow' ? 'bow' : kind === 'staff1h' || kind === 'staff2h' ? 'staff' : 'other';
+  return { family, kind, vox: null };
 }
-
-/** Shoulder pivots (body pixels) and the reach from a shoulder to the middle of the fist. */
-const SHOULDER_R = new THREE.Vector3(-6, 22, 0);
-const SHOULDER_L = new THREE.Vector3(6, 22, 0);
-const ARM_REACH = 9;
-/** Height of the body's middle (blocks): the double-jump somersault turns around it. */
-const FLIP_CENTER = 17 * PX;
-
-/**
- * Two-hand holds per weapon (idle, run, and the attack's key poses). Pixels in the body frame:
- * +Z forward, +X the model's left, y up from the feet. The left hand finds its own spot on the
- * handle (WEAPON_TYPES leftHand range), so a hold only places the right hand and the direction.
- */
-const HOLDS: Partial<Record<WeaponKind, Record<'idle' | 'run' | 'a' | 'b', Hold>>> = {
-  // guard stance, blade up and forward; the attack raises it over the head (a) and chops (b)
-  sword2h: { idle: hold(0.5, 16.5, 5.5, 58, -12), run: hold(0.5, 16, 6, 36, -24), a: hold(0.5, 26.5, 2.5, 140, -4), b: hold(0.5, 14, 8, -28, 0) },
-  // shaft level at the hip, head forward; drawn back (a), then thrust (b)
-  spear: { idle: hold(-1.5, 15, 4.5, 8, 6), run: hold(-1.5, 15.5, 4.5, 18, 8), a: hold(-2.5, 16, 1.5, 4, 4), b: hold(-0.5, 16.5, 8.5, 2, 0) },
-  // staff upright in front; raised high (a), then swept forward to send the orb (b)
-  staff2h: { idle: hold(-2.5, 14.5, 4.5, 78, 10), run: hold(-2, 15, 5, 55, 15), a: hold(-1, 24, 4, 95, 4), b: hold(0, 19, 8.5, 15, 0) },
-};
-const _hold = { g: new THREE.Vector3(), el: 0, yaw: 0 };
-const _hold2 = { g: new THREE.Vector3(), el: 0, yaw: 0 };
-const _d = new THREE.Vector3();
-const _x = new THREE.Vector3();
-const _z = new THREE.Vector3();
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
 const _v3 = new THREE.Vector3();
-const _sL = new THREE.Vector3();
-const _sR = new THREE.Vector3();
-const _g = new THREE.Vector3();
-const _h = new THREE.Vector3();
-const _a = new THREE.Vector3();
-const _n = new THREE.Vector3();
-const _q = new THREE.Quaternion();
-const _m = new THREE.Matrix4();
-const BOW_LEVEL_SCALE = 1.35;
+const _q1 = new THREE.Quaternion();
+const _q2 = new THREE.Quaternion();
+const _m1 = new THREE.Matrix4();
+const _x = new THREE.Vector3(1, 0, 0);
+const _y = new THREE.Vector3(0, 1, 0);
+const _z = new THREE.Vector3(0, 0, 1);
+const ease = (x: number) => {
+  const c = Math.max(0, Math.min(1, x));
+  return c * c * (3 - 2 * c);
+};
 
-type Part = 'head' | 'torso' | 'armR' | 'armL' | 'legR' | 'legL';
+/** Point in the hand's own frame where the handle passes through the closed fist. */
+const GRIP_IN_HAND = (side: 1 | -1) => new THREE.Vector3(side * 0.012, -0.062, 0);
+/** Height of the body's middle: the double-jump somersault turns around it. */
+const FLIP_CENTER = 0.95;
 
 /**
- * The cubic (Minecraft-style) human: head 8×8×8, torso 8×12×4, arms and legs 4×12×4 pixels,
- * one pixel = PX blocks. Built from textured boxes only (no rounding, no voxel detail). Armor
- * pieces are slightly inflated boxes on the matching parts, the weapon sits in the right hand,
- * a shield on the left forearm. Faces +Z; feet at y = 0.
+ * The character (owner's model, Character.blend): a skinned mesh on a 27-bone skeleton. Every
+ * frame the pose is computed procedurally (src/render/human/anim.ts): the legs walk along the
+ * real way of travel (eight directions relative to the facing), the upper body follows the weapon
+ * — the stance, the swings, the shot, the spell — and the arms reach the weapon's grips by
+ * two-bone IK, so the weapon is always in the hands (never floating or through the palm). The
+ * weapon is drawn from the back and put away there with the hand carrying it; the staff stays in
+ * the hand. Faces +z, feet at y = 0.
  */
 export class HumanModel {
   readonly root = new THREE.Group();
@@ -100,58 +124,165 @@ export class HumanModel {
   readonly body = new THREE.Group();
   /** Between root and body: turns the whole figure for the double-jump somersault. */
   private tumble = new THREE.Group();
-  private parts = {} as Record<Part, THREE.Group>;
-  private atlas: SkinAtlas;
-  private mat: THREE.MeshLambertMaterial;
-  private geos: THREE.BufferGeometry[] = [];
-  /** Armor meshes per slot (each piece has its own atlas). */
-  private armor: Partial<Record<Slot, { meshes: THREE.Mesh[]; atlas: SkinAtlas; mat: THREE.Material; geos: THREE.BufferGeometry[] }>> = {};
+  private mesh: THREE.SkinnedMesh;
+  private geo: THREE.BufferGeometry;
+  private bones: THREE.Bone[] = [];
+  private b = {} as Record<string, THREE.Bone>;
+  private matShow: THREE.MeshLambertMaterial;
+  private matHide: THREE.Material;
+  private hidden = new Set<string>();
+  private hideKey: string | null = null;
+  /** Armour meshes per slot (riding on bones). */
+  private armor: Partial<Record<Slot, THREE.Mesh[]>> = {};
+  private worn: THREE.Mesh[] = [];
   private equipIds: Partial<Record<Slot, string | null>> = {};
-  private weapon: WeaponModel | null = null;
+  private family: Family | null = null;
   private weaponKind: WeaponKind | null = null;
-  private wtype: WeaponType | null = null;
-  private shield: { root: THREE.Group; dispose(): void } | null = null;
-  private holderR = new THREE.Group();
-  private holderL = new THREE.Group();
-  private shieldMount = new THREE.Group();
+  /** The weapon: its grip frame object (in the body frame) and the visible model inside. */
+  private weaponRoot = new THREE.Group();
+  private weaponObj: THREE.Object3D | null = null;
+  private vox: VoxWeapon | null = null;
+  private oldWeapon: WeaponModel | null = null;
+  private weaponMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+  /** Scabbard (swords) and quiver (bow) on the back. */
+  private backGear = new THREE.Group();
+  private string: THREE.Mesh[] = [];
+  private arrow: THREE.Mesh;
+  private orb: THREE.Mesh;
+  private orbMat = new THREE.MeshBasicMaterial({ color: 0x8ad8ff, transparent: true, opacity: 0.85, depthWrite: false });
+  readonly combat = new CombatState();
+  private combo = new ComboCounter();
+  private phase = 0;
+  private lastTime = -1;
+  /** Smoothed weapon frame and body motion (blending between poses). */
+  private wf: Frame = frame(new THREE.Vector3(-0.3, 0.8, 0.1), new THREE.Vector3(0, 1, 0));
+  private wfInit = false;
+  private bodyM = { yaw: 0, lean: 0, step: 0 };
+  private restU: Record<'L' | 'R', THREE.Vector3>;
+  private restF: Record<'L' | 'R', THREE.Vector3>;
+  private len: Record<'U' | 'F', number>;
+  private look: CharacterLook;
 
-  constructor(skinId = 'human', private shadows = true) {
-    const skin: BodySkin = SKINS[skinId] ?? SKINS.human;
-    this.atlas = new SkinAtlas(128);
-    this.mat = this.atlas.material();
+  constructor(_skinId = 'human', private shadows = true, look: CharacterLook = {}) {
+    this.look = look;
     this.root.add(this.tumble);
     this.tumble.add(this.body);
-    const mk = (name: Part, pivot: [number, number, number]) => {
-      const g = new THREE.Group();
-      g.position.set(pivot[0] * PX, pivot[1] * PX, pivot[2] * PX);
-      this.body.add(g);
-      this.parts[name] = g;
-      return g;
-    };
-    const box = (parent: THREE.Group, w: number, h: number, d: number, paint: Paint, at: [number, number, number]) => {
-      const geo = this.atlas.box(w, h, d, paint);
-      this.geos.push(geo);
-      const m = new THREE.Mesh(geo, this.mat);
-      m.position.set(at[0] * PX, at[1] * PX, at[2] * PX);
-      m.castShadow = shadows;
-      parent.add(m);
-      return m;
-    };
-    // pivots: legs at the hips, torso at the hips, head at the neck, arms at the shoulders
-    box(mk('legR', [-2, 12, 0]), 4, 12, 4, skin.legR, [0, -6, 0]);
-    box(mk('legL', [2, 12, 0]), 4, 12, 4, skin.legL, [0, -6, 0]);
-    box(mk('torso', [0, 12, 0]), 8, 12, 4, skin.torso, [0, 6, 0]);
-    box(mk('head', [0, 24, 0]), 8, 8, 8, skin.head, [0, 4, 0]);
-    box(mk('armR', [-6, 22, 0]), 4, 12, 4, skin.armR, [0, -4, 0]);
-    box(mk('armL', [6, 22, 0]), 4, 12, 4, skin.armL, [0, -4, 0]);
-    // hands: the item holders sit at the bottom of the arms
-    this.holderR.position.set(0, -9 * PX, 0);
-    this.parts.armR.add(this.holderR);
-    this.holderL.position.set(0, -9 * PX, 0);
-    this.parts.armL.add(this.holderL);
-    // the shield straps to the outside of the left forearm
-    this.shieldMount.position.set(2.9 * PX, -6 * PX, 0);
-    this.parts.armL.add(this.shieldMount);
+    // ---------------------------------------------------------------- skeleton
+    for (const bd of BONES) {
+      const bone = new THREE.Bone();
+      bone.name = bd.name;
+      const h = new THREE.Vector3(...bd.head);
+      if (bd.parent) {
+        const p = new THREE.Vector3(...BONES[BONE_INDEX[bd.parent]].head);
+        bone.position.copy(h.sub(p));
+        this.b[bd.parent].add(bone);
+      } else bone.position.copy(h);
+      this.bones.push(bone);
+      this.b[bd.name] = bone;
+    }
+    this.geo = characterGeometry().clone();
+    this.applyLook();
+    this.matShow = new THREE.MeshLambertMaterial({ map: characterTexture(), vertexColors: true });
+    this.matHide = new THREE.MeshBasicMaterial({ visible: false });
+    this.mesh = new THREE.SkinnedMesh(this.geo, [this.matShow, this.matHide]);
+    this.mesh.add(this.bones[0]);
+    this.mesh.updateMatrixWorld(true);
+    this.mesh.bind(new THREE.Skeleton(this.bones));
+    this.mesh.castShadow = shadows;
+    this.mesh.frustumCulled = false;
+    this.body.add(this.mesh);
+    this.regroup();
+    const s = look.height ?? 1;
+    this.body.scale.set(s * (look.width ?? 1), s, s * (look.width ?? 1));
+    // arm data for the IK
+    const dir = (a: string, b: string) => boneHead(b).sub(boneHead(a)).normalize();
+    this.restU = { L: dir('upper_arm.L', 'forearm.L'), R: dir('upper_arm.R', 'forearm.R') };
+    this.restF = { L: dir('forearm.L', 'hand.L'), R: dir('forearm.R', 'hand.R') };
+    this.len = { U: boneHead('upper_arm.L').distanceTo(boneHead('forearm.L')), F: boneHead('forearm.L').distanceTo(boneHead('hand.L')) };
+    // ---------------------------------------------------------------- weapon pieces
+    this.body.add(this.weaponRoot);
+    this.b.spine.add(this.backGear);
+    this.arrow = new THREE.Mesh(arrowGeometry(), this.weaponMat);
+    this.arrow.visible = false;
+    this.body.add(this.arrow);
+    const sg = new THREE.BoxGeometry(0.012, 1, 0.012);
+    sg.translate(0, 0.5, 0);
+    for (let i = 0; i < 2; i++) {
+      const m = new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ color: 0xe8e0c8 }));
+      m.visible = false;
+      this.string.push(m);
+      this.body.add(m);
+    }
+    this.orb = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.16), this.orbMat);
+    this.orb.visible = false;
+    this.body.add(this.orb);
+    for (const w of look.wear ?? []) for (const slot of w.slots) this.wear(w.set, slot);
+  }
+
+  // ---------------------------------------------------------------- looks
+  /** Per-vertex colour of every part from the look's tints (NPC variants). */
+  private applyLook() {
+    const part = this.geo.getAttribute('aPart') as THREE.BufferAttribute;
+    const col = new Float32Array(part.count * 3).fill(1);
+    const tint = this.look.tint ?? {};
+    for (const [g, names] of Object.entries(GROUPS)) {
+      const t = (tint as Record<string, [number, number, number]>)[g];
+      if (!t) continue;
+      const ids = new Set(names.map((n) => PART_INDEX[n]));
+      for (let i = 0; i < part.count; i++)
+        if (ids.has(part.getX(i))) {
+          col[i * 3] = t[0];
+          col[i * 3 + 1] = t[1];
+          col[i * 3 + 2] = t[2];
+        }
+    }
+    this.geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  }
+
+  /** Draw groups: runs of visible parts share one draw, hidden parts are skipped. */
+  private regroup() {
+    const key = [...this.hidden].sort().join(',');
+    if (key === this.hideKey && this.geo.groups.length) return;
+    this.hideKey = key;
+    const base = characterGeometry().groups;
+    this.geo.clearGroups();
+    let start = -1;
+    let count = 0;
+    let cur = -1;
+    base.forEach((g, i) => {
+      const m = this.hidden.has(PARTS[i].name) ? 1 : 0;
+      if (m === cur && start + count === g.start) count += g.count;
+      else {
+        if (cur >= 0) this.geo.addGroup(start, count, cur);
+        start = g.start;
+        count = g.count;
+        cur = m;
+      }
+    });
+    if (cur >= 0) this.geo.addGroup(start, count, cur);
+  }
+
+  /** Puts on an armour piece (the body parts under it are hidden). */
+  private wear(set: ArmorSetId, slot: ArmorSlot): THREE.Mesh[] {
+    const out: THREE.Mesh[] = [];
+    for (const { bone, mesh } of armorMeshes(set, slot, this.shadows)) {
+      this.b[bone].add(mesh);
+      out.push(mesh);
+    }
+    for (const h of ARMOR[set][slot].hides) this.hidden.add(h);
+    this.regroup();
+    this.worn.push(...out);
+    return out;
+  }
+
+  private updateHidden() {
+    this.hidden.clear();
+    for (const w of this.look.wear ?? []) for (const s of w.slots) for (const h of ARMOR[w.set][s].hides) this.hidden.add(h);
+    for (const s of ['head', 'hands', 'feet', 'body'] as Slot[]) {
+      const set = item(this.equipIds[s])?.armorSet as ArmorSetId | undefined;
+      if (set && ARMOR[set]) for (const h of ARMOR[set][s as ArmorSlot].hides) this.hidden.add(h);
+    }
+    this.regroup();
   }
 
   // ---------------------------------------------------------------- equipment
@@ -160,495 +291,486 @@ export class HumanModel {
     for (const s of ['head', 'hands', 'feet', 'body'] as Slot[]) {
       if (this.equipIds[s] === equip[s]) continue;
       this.equipIds[s] = equip[s];
-      this.clearArmor(s);
-      const def = item(equip[s]);
-      if (def?.armorSet) this.buildArmor(s, def.armorSet);
+      for (const m of this.armor[s] ?? []) m.removeFromParent();
+      delete this.armor[s];
+      const set = item(equip[s])?.armorSet as ArmorSetId | undefined;
+      if (set && ARMOR[set]) {
+        const ms: THREE.Mesh[] = [];
+        for (const { bone, mesh } of armorMeshes(set, s as ArmorSlot, this.shadows)) {
+          this.b[bone].add(mesh);
+          ms.push(mesh);
+        }
+        this.armor[s] = ms;
+      }
+      this.updateHidden();
     }
     if (this.equipIds.main !== equip.main) {
       this.equipIds.main = equip.main;
-      this.weapon?.dispose();
-      if (this.weapon) this.weapon.root.removeFromParent();
-      this.weapon = null;
-      this.weaponKind = null;
-      this.wtype = null;
-      const w = item(equip.main)?.weapon;
-      if (w) {
-        this.weapon = weaponModel(w.kind);
-        this.weaponKind = w.kind;
-        this.wtype = weaponType(w.kind);
-        this.mountWeapon();
-      }
+      this.setWeapon(equip.main);
     }
-    if (this.equipIds.off !== equip.off) {
-      this.equipIds.off = equip.off;
-      if (this.shield) {
-        this.shield.root.removeFromParent();
-        this.shield.dispose();
-        this.shield = null;
-      }
-      if (equip.off) {
-        this.shield = shieldModel();
-        // flat against the forearm, face outward (+x), top toward the hand
-        this.shield.root.rotation.set(0, Math.PI / 2, 0);
-        this.shieldMount.add(this.shield.root);
-      }
-    }
-    if (this.shadows) this.root.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).castShadow = true) : null));
   }
 
   get weaponType(): WeaponKind | null {
     return this.weaponKind;
   }
 
-  /** Lays the weapon into the hand(s): grip at the hand, business end forward/up. */
-  private mountWeapon() {
-    const w = this.weapon;
-    if (!w) return;
-    const k = this.weaponKind;
-    const r = w.root;
-    r.position.set(0, 0, 0);
-    r.rotation.set(0, 0, 0);
-    if (k === 'bow' || this.wtype?.grip === 'two') {
-      // the bow (level across the front, limbs left and right) and two-hand weapons live in the
-      // body frame: the pose places them every frame and closes the hands on their grips
-      this.body.add(r);
-      return;
-    }
-    if (k === 'crossbow') {
-      r.rotation.set(Math.PI / 2, 0, 0);
-      r.position.set(0.5 * PX, 0, 0);
-      this.holderR.add(r);
-      return;
-    }
-    // diagonal items: +Y of the item points forward out of the fist (arm hangs along -Y)
-    r.rotation.set(Math.PI / 2, 0, 0);
-    this.holderR.add(r);
-  }
-
-  private buildArmor(slot: Slot, set: string) {
-    const P = armorPaints(set);
-    const atlas = new SkinAtlas(64);
-    const mat = atlas.material();
-    const geos: THREE.BufferGeometry[] = [];
-    const meshes: THREE.Mesh[] = [];
-    const add = (part: Part, w: number, h: number, d: number, paint: Paint, inflate: number, at: [number, number, number]) => {
-      const geo = atlas.box(w, h, d, paint, inflate);
-      geos.push(geo);
-      const m = new THREE.Mesh(geo, mat);
-      m.position.set(at[0] * PX, at[1] * PX, at[2] * PX);
+  private setWeapon(id: string | null) {
+    if (this.weaponObj) this.weaponObj.removeFromParent();
+    this.oldWeapon?.dispose();
+    this.oldWeapon = null;
+    this.weaponObj = null;
+    this.backGear.clear();
+    const f = familyOf(id);
+    this.family = f.family;
+    this.weaponKind = f.kind;
+    this.vox = f.vox;
+    this.combat.family = f.family;
+    // a new weapon starts put away (or in the hand for the staff), then the state takes over
+    this.combat.phase = 'peace';
+    this.combat.t = 0;
+    this.wfInit = false;
+    if (!f.family) return;
+    if (f.vox) {
+      const m = new THREE.Mesh(f.vox.geometry, this.weaponMat);
       m.castShadow = this.shadows;
-      this.parts[part].add(m);
-      meshes.push(m);
-    };
-    const heavy = set === 'guard';
-    if (slot === 'head') add('head', 8, 8, 8, P.helmet, heavy ? 0.85 : 0.65, [0, 4, 0]);
-    if (slot === 'body') {
-      add('torso', 8, 10, 4, P.torso, heavy ? 0.7 : 0.55, [0, 7, 0]);
-      // shoulders: the upper part of each arm (above the gloves)
-      add('armR', 4, 6, 4, P.shoulder, heavy ? 0.75 : 0.6, [0, -1, 0]);
-      add('armL', 4, 6, 4, P.shoulder, heavy ? 0.75 : 0.6, [0, -1, 0]);
+      this.weaponObj = m;
+    } else if (f.kind) {
+      this.oldWeapon = weaponModel(f.kind);
+      this.weaponObj = this.oldWeapon.root;
     }
-    if (slot === 'hands') {
-      add('armR', 4, 5, 4, P.glove, 0.4, [0, -7.5, 0]);
-      add('armL', 4, 5, 4, P.glove, 0.4, [0, -7.5, 0]);
-    }
-    if (slot === 'feet') {
-      add('legR', 4, 5, 4, P.boot, 0.4, [0, -9.5, 0]);
-      add('legL', 4, 5, 4, P.boot, 0.4, [0, -9.5, 0]);
-    }
-    this.armor[slot] = { meshes, atlas, mat, geos };
+    if (this.weaponObj) this.weaponRoot.add(this.weaponObj);
+    this.buildBackGear();
   }
 
-  private clearArmor(slot: Slot) {
-    const a = this.armor[slot];
-    if (!a) return;
-    for (const m of a.meshes) m.removeFromParent();
-    a.geos.forEach((g) => g.dispose());
-    a.mat.dispose();
-    a.atlas.dispose();
-    delete this.armor[slot];
+  /** The scabbard of a sword and the quiver of the bow, on the back. */
+  private buildBackGear() {
+    const f = this.family;
+    const leather = new THREE.MeshLambertMaterial({ color: 0x5a3820 });
+    const brass = new THREE.MeshLambertMaterial({ color: 0xb08a40 });
+    const spine = boneHead('spine');
+    if ((f === 'sword' || f === 'great') && this.vox) {
+      const bf = backFrame(f);
+      // the scabbard runs down from just under the guard along the blade
+      const guard = 0.12;
+      const len = this.vox.length - 0.2 - guard;
+      const w = f === 'great' ? 0.13 : 0.1;
+      const g = new THREE.BoxGeometry(w, len, 0.06);
+      g.translate(0, guard + len / 2, 0);
+      const sc = new THREE.Mesh(g, leather);
+      const q = basisQuat(bf);
+      sc.quaternion.copy(q);
+      sc.position.copy(bf.g);
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.02, 0.05, 0.075), brass);
+      cap.position.set(0, guard + 0.02, 0);
+      sc.add(cap);
+      // a strap across the chest holds it
+      const strap = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.52, 0.32), leather);
+      strap.position.set(0.0, 0.18, -0.02);
+      strap.rotation.z = -0.75;
+      strap.scale.set(1, 1, 1.02);
+      this.backGear.add(sc);
+      void spine;
+    }
+    if (f === 'bow') {
+      const qv = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.46, 0.1), leather);
+      qv.position.set(0.12, 0.2, -0.2);
+      qv.rotation.z = -0.35;
+      for (let i = 0; i < 4; i++) {
+        const fl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.1, 0.03), new THREE.MeshLambertMaterial({ color: i % 2 ? 0xe8e2d4 : 0xc84a3a }));
+        fl.position.set(-0.03 + i * 0.02, 0.27, 0);
+        qv.add(fl);
+      }
+      this.backGear.add(qv);
+    }
+    if (this.shadows) this.backGear.traverse((o) => ((o as THREE.Mesh).isMesh ? ((o as THREE.Mesh).castShadow = true) : null));
   }
 
   // ---------------------------------------------------------------- animation
-  /** Sets every joint for this frame (pure function of the pose: no hidden animation state). */
+  /** Sets every joint for this frame. */
   pose(p: HumanPose) {
-    const P = this.parts;
-    for (const k of Object.keys(P) as Part[]) P[k].rotation.set(0, 0, 0);
-    P.torso.position.set(0, 12 * PX, 0);
-    this.body.position.set(0, 0, 0);
-    this.body.rotation.set(0, 0, 0);
-    const k = this.weaponKind;
-    const grip = this.wtype?.grip ?? null;
-    const sw = Math.sin(p.walk);
-    const mv = p.moving;
-    // walk: legs and arms swing in opposition (Minecraft gait)
-    const legSwing = sw * 0.75 * mv;
-    P.legR.rotation.x = legSwing;
-    P.legL.rotation.x = -legSwing;
-    let armR = -sw * 0.6 * mv;
-    let armL = sw * 0.6 * mv;
-    // idle breathing: arms drift out a little
-    const br = Math.sin(p.time * 1.6) * 0.03;
-    P.armR.rotation.z = -0.04 - br;
-    P.armL.rotation.z = 0.04 + br;
-    // holding stance per weapon type (two-hand weapons are posed by holdTwoHanded below)
-    if (grip === 'one') armR = this.oneHandStance(k, sw, mv, br);
-    else if (k) armR = armR * 0.5 - 0.3;
-    if (k === 'bow') armR = -sw * 0.4 * mv;
-    if (k === 'crossbow') {
-      armR = -1.1;
-      armL = -1.1;
-      P.armL.rotation.y = 0.5;
-    }
-    if (this.shield) armL = armL * 0.5 - 0.2;
-    // jump: legs tuck a little, free arms lift outward
+    const dt = this.lastTime < 0 ? 1 / 60 : Math.max(0, Math.min(0.1, p.time - this.lastTime));
+    this.lastTime = p.time;
+    const fam = this.family;
+    const busy = !!p.attack || !!p.hold;
+    this.combat.update(dt, !!p.combat, busy);
+    const variant = this.combo.update(dt, p.attack ? p.attack.seq ?? 0 : null);
+    // ------------------------------------------------ locomotion phase from the distance walked
+    const mv = p.move ?? { x: 0, z: p.moving * 3.5 };
+    const local = new THREE.Vector2(mv.x, mv.z);
+    const speed = p.airborne ? 0 : local.length();
+    this.phase += (dt * speed * Math.PI) / stride(speed);
+    const L = legs(local, this.phase);
+    // ------------------------------------------------ reset the skeleton
+    for (const b of this.bones) b.quaternion.identity();
+    this.b.root.position.set(...BONES[0].head);
+    this.b.pelvis.position.set(0, BONES[BONE_INDEX.pelvis].head[1] - BONES[0].head[1], 0);
+    this.tumble.rotation.set(0, 0, 0);
+    this.tumble.position.set(0, 0, 0);
+    // ------------------------------------------------ weapon pose (target of this frame)
+    const want = this.weaponPose(p, fam, variant);
+    const rate = p.attack || p.hold ? 26 : 10;
+    const k = 1 - Math.exp(-rate * dt);
+    if (!this.wfInit && want) {
+      this.wf = { g: want.frame.g.clone(), a: want.frame.a.clone(), e: want.frame.e.clone() };
+      this.wfInit = true;
+    } else if (want) mixFrame(this.wf, want.frame, k, this.wf);
+    const bm = want?.body ?? { yaw: 0, lean: 0, step: 0 };
+    this.bodyM.yaw += (bm.yaw - this.bodyM.yaw) * k;
+    this.bodyM.lean += (bm.lean - this.bodyM.lean) * k;
+    this.bodyM.step += (bm.step - this.bodyM.step) * k;
+    // ------------------------------------------------ body (FK)
+    const runLean = Math.min(1, speed / 6) * 0.12;
+    this.b.pelvis.position.y += L.bob;
+    this.rot(this.b.pelvis, _y, this.bodyM.yaw * 0.35);
+    this.rot(this.b.spine, _y, this.bodyM.yaw * 0.65);
+    this.rot(this.b.spine, _x, this.bodyM.lean + runLean * Math.sign(local.y || 1) + L.lean.y * 0.5);
+    this.rot(this.b.spine, _z, -L.lean.x * 0.5);
+    // the head keeps looking ahead (at the target) while the torso turns
+    this.rot(this.b.neck, _y, -this.bodyM.yaw * 0.8);
+    this.rot(this.b.neck, _x, -this.bodyM.lean * 0.6);
+    // ------------------------------------------------ legs
+    const step = this.bodyM.step * (speed < 0.5 ? 1 : 0.3);
+    this.legFK('R', L.swingR + step * 0.28, L.axis, L.kneeR + step * 0.15);
+    this.legFK('L', L.swingL - step * 0.45, L.axis, L.kneeL + step * 0.35);
     if (p.airborne) {
-      const up = Math.max(-1, Math.min(1, p.vy / 4));
-      P.legR.rotation.x = -0.35 + up * 0.15;
-      P.legL.rotation.x = 0.2 - up * 0.1;
-      P.armR.rotation.z -= 0.35;
-      P.armL.rotation.z += 0.35;
+      const up = Math.max(-1, Math.min(1, p.vy / 5));
+      this.legFK('R', -0.35 + up * 0.2, _x, 0.7 - up * 0.2);
+      this.legFK('L', 0.15 - up * 0.1, _x, 0.35);
     }
-    P.armR.rotation.x = armR;
-    P.armL.rotation.x = armL;
-    P.head.rotation.x = 0;
-    if (this.weapon && k === 'crossbow') this.weapon.setState('loaded');
-    if (this.weapon && k === 'bow' && !p.attack) {
-      // carried level in front of the belly, limbs left and right, gripped by the left hand
-      const bob = Math.abs(Math.cos(p.walk)) * 0.5 * mv;
-      const g = _g.set(1, 15.5 + bob, 6.5);
-      this.aimArm(P.armL, _sL.set(6, 22, 0), g, 1);
-      this.placeBow(g, 0);
-      this.weapon.setDraw(null, false, 0);
+    if (p.flip && p.flip > 0) {
+      const a = -ease(p.flip) * Math.PI * 2;
+      this.tumble.position.set(0, FLIP_CENTER - Math.cos(a) * FLIP_CENTER, Math.sin(a) * FLIP_CENTER);
+      this.tumble.rotation.x = a;
+      this.legFK('R', -1.0, _x, 1.6);
+      this.legFK('L', -1.0, _x, 1.6);
     }
-    if (p.hold && !p.attack && this.holdPose(p.hold.kind, p.hold.k, grip === 'two')) {
-      /* the held pose replaces the stance */
-    } else if (grip === 'two') this.twoHandPose(p, br);
-    else if (p.attack) this.attackPose(p.attack.t, p.attack.hitAt);
-    this.flipPose(p.flip ?? 0, grip === 'two');
+    this.body.updateMatrixWorld(true);
+    // ------------------------------------------------ arms and the weapon
+    this.armsAndWeapon(p, want, L, speed);
   }
 
-  /**
-   * Idle and run stance of one-hand weapons: the sword in a low guard at rest and raised, blade
-   * forward, on the run; the staff held upright like a walking staff at rest and slanted forward
-   * on the run. Returns the right arm's swing; tilts the weapon in the hand.
-   */
-  private oneHandStance(k: WeaponKind | null, sw: number, mv: number, br: number): number {
-    const r = this.weapon?.root;
-    if (k === 'staff1h') {
-      if (r) {
-        r.rotation.set(0.15 + 0.75 * mv, 0, 0);
-        r.position.set(0, 0, 2.4 * PX);
-      }
-      return -0.12 - br * 2 + (-0.18 - sw * 0.3) * mv;
-    }
-    // sword (and anything else held in one hand)
-    if (r) {
-      r.rotation.set(Math.PI / 2 + 0.42 - 0.6 * mv, 0, 0);
-      r.position.set(0, 0, 0);
-    }
-    return -0.28 - br * 2 + (-0.24 - sw * 0.25) * mv;
+  /** Rotates a bone about an axis given in the body frame (composed onto its local rotation). */
+  private rot(b: THREE.Bone, axis: THREE.Vector3, ang: number) {
+    if (!ang) return;
+    b.quaternion.multiply(_q1.setFromAxisAngle(axis, ang));
   }
 
-  /**
-   * Two-hand weapons (two-handed sword, spear, staff): idle, run and attack are holds (HOLDS)
-   * blended over time; holdTwoHanded then lays the weapon along the hold and closes both hands on
-   * the handle, so the left hand never floats free of it.
-   */
-  private twoHandPose(p: HumanPose, br: number) {
-    const k = this.weaponKind!;
-    const H = HOLDS[k];
-    if (!H) return;
-    const P = this.parts;
-    const mv = p.moving;
-    // stance: idle blended into the run, with a bob of the step and a breath at rest
-    const base = mixHold(_hold, H.idle, H.run, mv);
-    base.g.y += Math.abs(Math.cos(p.walk)) * 0.7 * mv + br * 8 * (1 - mv);
-    let h = base;
+  private legFK(side: 'L' | 'R', swing: number, axis: THREE.Vector3, knee: number) {
+    const th = this.b['thigh.' + side];
+    const sh = this.b['shin.' + side];
+    const ft = this.b['foot.' + side];
+    th.quaternion.setFromAxisAngle(axis, swing);
+    sh.quaternion.setFromAxisAngle(_x, knee);
+    // the foot stays roughly level with the ground
+    ft.quaternion.setFromAxisAngle(_x, -knee * 0.55 - (axis.x * swing) * 0.4);
+  }
+
+  /** The weapon pose wanted this frame (null without a weapon). */
+  private weaponPose(p: HumanPose, fam: Family | null, variant: number): WeaponPose | null {
+    if (!fam) return null;
+    const walk = this.phase;
+    const mov = Math.min(1, (p.move ? Math.hypot(p.move.x, p.move.z) : p.moving * 3.5) / 3.5);
     const a = p.attack;
+    const hitAt = a?.hitAt ?? 0.5;
+    // held actions first (they last as long as the key)
+    if (p.hold && !a) {
+      if (p.hold.kind === 'aim' && fam === 'bow') return bowAimPose(p.hold.k, walk, mov);
+      if (p.hold.kind === 'charge' && fam === 'staff') return staffChargePose(p.hold.k, walk, mov);
+      if (p.hold.kind === 'block' && (fam === 'sword' || fam === 'great')) return blockPose(fam, p.hold.k, walk, mov);
+    }
     if (a) {
-      const t = a.t;
-      const hitAt = a.hitAt;
-      const wu = Math.min(1, t / Math.max(0.01, hitAt));
-      const ft = t <= hitAt ? 0 : Math.min(1, (t - hitAt) / Math.max(0.01, 1 - hitAt));
-      // wind up into pose a, strike into pose b right at the hit moment, hold, then recover
-      const up = ease(wu / 0.7);
-      const strike = ease((wu - 0.7) / 0.3);
-      const rec = t <= hitAt ? 0 : ease((ft - 0.2) / 0.8);
-      if (t <= hitAt) h = mixHold(_hold2, mixHold(_hold2, base, H.a, up), H.b, strike);
-      else h = mixHold(_hold2, H.b, base, rec);
-      const into = t <= hitAt ? strike : 1 - rec;
-      const back = t <= hitAt ? up * (1 - strike) : 0;
-      if (k === 'sword2h') {
-        this.body.rotation.x = -back * 0.08 + into * 0.18;
-        P.legR.rotation.x += -into * 0.3;
-        P.legL.rotation.x += into * 0.3;
-      } else if (k === 'spear') {
-        // the whole body steps into the thrust
-        this.body.position.z = (into * 3 - back * 1.5) * PX;
-        this.body.rotation.y = back * 0.2;
-        P.legR.rotation.x += -into * 0.35;
-        P.legL.rotation.x += into * 0.25;
-      } else {
-        this.body.rotation.x = -back * 0.06 + into * 0.12;
-        P.head.rotation.x = -back * 0.15;
-      }
+      if (fam === 'sword' || fam === 'great') return swingPose(fam, variant, a.t, hitAt, a.kind === 'skill');
+      if (fam === 'bow') return bowPose(a.t, hitAt, walk, mov);
+      if (fam === 'staff') return staffPose(a.t, hitAt, walk, mov, a.kind === 'spell' || a.kind === 'skill');
+      // other weapons: a thrust from the stance
+      const st = stanceFrame('other', walk, mov);
+      const k = Math.sin(Math.min(1, a.t / Math.max(0.05, hitAt)) * Math.PI * 0.5) * (a.t < hitAt ? 1 : 1 - (a.t - hitAt) / (1 - hitAt));
+      return { frame: frame(st.g.clone().add(new THREE.Vector3(0.05, 0.15, 0.3).multiplyScalar(k)), st.a, st.e), body: { yaw: 0.2 * k, lean: 0.15 * k, step: k } };
     }
-    this.holdTwoHanded(h);
+    const st = stanceFrame(fam, walk, mov);
+    if (fam === 'staff') {
+      // the staff stays in the hand: lowered as a walking stick in peace, raised in the fight
+      const peace = staffPeaceFrame(walk, mov);
+      return { frame: mixFrame(peace, st, ease(this.combat.ready)), body: { yaw: 0, lean: 0, step: 0 }, twoHands: this.combat.ready > 0.5 };
+    }
+    return { frame: st, body: { yaw: 0, lean: 0, step: 0 }, twoHands: fam === 'great' };
   }
 
-  /**
-   * Lays a two-hand weapon along hold `h` and puts both hands on it: the right hand reaches as
-   * far as it can toward the hold point and grips there; the left hand slides along the handle
-   * (within the weapon type's range, as close to its preferred spot as the arm allows).
-   */
-  private holdTwoHanded(h: Hold) {
-    const P = this.parts;
-    const r = this.weapon?.root;
-    const lh = this.wtype?.leftHand;
-    if (!r || !lh) return;
-    const dir = _d.set(Math.cos(h.el) * Math.sin(h.yaw), Math.sin(h.el), Math.cos(h.el) * Math.cos(h.yaw));
-    const hr = _h.subVectors(h.g, SHOULDER_R).setLength(ARM_REACH).add(SHOULDER_R);
-    // points of the handle line an arm's length from the left shoulder: |hr + dir s - S| = reach
-    const rel = _v1.subVectors(hr, SHOULDER_L);
-    const b = dir.dot(rel);
-    const disc = b * b - (rel.lengthSq() - ARM_REACH * ARM_REACH);
-    let s = Math.max(lh.min, Math.min(lh.max, -b));
-    if (disc >= 0) {
-      const q = Math.sqrt(disc);
-      let best = Infinity;
-      for (const c of [-b - q, -b + q]) {
-        const cc = Math.max(lh.min, Math.min(lh.max, c));
-        // in range first, then nearest the preferred spot
-        const cost = Math.abs(cc - c) * 10 + Math.abs(cc - lh.pref);
-        if (cost < best) {
-          best = cost;
-          s = cc;
-        }
-      }
-    }
-    const hl = _n.copy(hr).addScaledVector(dir, s);
-    this.aimArm(P.armR, SHOULDER_R, hr, 1);
-    this.aimArm(P.armL, SHOULDER_L, hl, 1);
-    // the weapon: grip in the right hand, along `dir`, the flat of the blade to the sides
-    const x = _x.set(1, 0, 0).addScaledVector(dir, -dir.x);
-    if (x.lengthSq() < 1e-4) x.set(0, 0, 1).addScaledVector(dir, -dir.z);
-    x.normalize();
-    const z = _z.crossVectors(x, dir);
-    r.quaternion.setFromRotationMatrix(_m.makeBasis(x, dir, z));
-    r.position.copy(hr).multiplyScalar(PX);
-    r.scale.setScalar(1);
+  /** Back frame of the family, in the body frame (follows the chest). */
+  private backInBody(fam: Family): Frame {
+    const bf = backFrame(fam);
+    const spine = this.b.spine;
+    _m1.copy(this.body.matrixWorld).invert().multiply(spine.matrixWorld);
+    const q = _q2.setFromRotationMatrix(_m1);
+    return { g: bf.g.clone().applyMatrix4(_m1), a: bf.a.clone().applyQuaternion(q), e: bf.e.clone().applyQuaternion(q) };
   }
 
-  /**
-   * Double jump: one smooth forward somersault around the middle of the body, knees tucked to
-   * the chest (and free arms hugging them) at its height. `t` 0..1, 0 = none.
-   */
-  private flipPose(t: number, twoHands: boolean) {
-    const tb = this.tumble;
-    if (t <= 0 || t >= 1) {
-      tb.rotation.set(0, 0, 0);
-      tb.position.set(0, 0, 0);
+  /** A bone's position in the body frame. */
+  private posOf(b: THREE.Object3D, out: THREE.Vector3) {
+    _m1.copy(this.body.matrixWorld).invert().multiply(b.matrixWorld);
+    return out.setFromMatrixPosition(_m1);
+  }
+  /** A bone's rotation in the body frame. */
+  private quatOf(b: THREE.Object3D, out: THREE.Quaternion) {
+    _m1.copy(this.body.matrixWorld).invert().multiply(b.matrixWorld);
+    return out.setFromRotationMatrix(_m1);
+  }
+
+  private armsAndWeapon(p: HumanPose, want: WeaponPose | null, L: ReturnType<typeof legs>, speed: number) {
+    const fam = this.family;
+    const swingK = Math.min(1, speed / 1.2) * 0.45;
+    const armSwing = (side: 'L' | 'R') => {
+      const s = (side === 'R' ? 1 : -1) * Math.sin(this.phase) * swingK;
+      const u = this.b['upper_arm.' + side];
+      // free arms swing against the legs, a little out from the body
+      u.quaternion.setFromAxisAngle(L.axis, s).multiply(_q1.setFromAxisAngle(_z, (side === 'R' ? -1 : 1) * 0.06));
+      this.b['forearm.' + side].quaternion.setFromAxisAngle(_x, -0.22 - Math.abs(s) * 0.3);
+      if (p.airborne) u.quaternion.multiply(_q1.setFromAxisAngle(_z, (side === 'R' ? -1 : 1) * 0.5));
+    };
+    this.arrow.visible = false;
+    this.orb.visible = false;
+    for (const s of this.string) s.visible = false;
+    this.curl('R', 0.25);
+    this.curl('L', 0.25);
+    if (!fam || !want || !this.weaponObj) {
+      armSwing('R');
+      armSwing('L');
+      if (this.weaponObj) this.weaponObj.visible = false;
       return;
     }
-    const a = ease(t) * Math.PI * 2;
-    tb.rotation.set(a, 0, 0);
-    tb.position.set(0, FLIP_CENTER * (1 - Math.cos(a)), -FLIP_CENTER * Math.sin(a));
-    const tuck = Math.sin(Math.PI * t);
-    const P = this.parts;
-    P.legR.rotation.x = P.legR.rotation.x * (1 - tuck) - 1.25 * tuck;
-    P.legL.rotation.x = P.legL.rotation.x * (1 - tuck) - 1.1 * tuck;
-    P.head.rotation.x += 0.35 * tuck;
-    if (!twoHands && this.weaponKind !== 'bow') {
-      P.armR.rotation.x = P.armR.rotation.x * (1 - tuck) - 0.9 * tuck;
-      P.armL.rotation.x = P.armL.rotation.x * (1 - tuck) - 0.9 * tuck;
-      P.armR.rotation.z *= 1 - tuck;
-      P.armL.rotation.z *= 1 - tuck;
-    }
-  }
-
-  /**
-   * Points an arm (pivot at the shoulder `from`, body space, pixels) at `to`, blended from its
-   * current rotation by `w`. The hand's +Z (the bow's up) is kept toward world up.
-   */
-  private aimArm(arm: THREE.Group, from: THREE.Vector3, to: THREE.Vector3, w: number) {
-    const y = _v1.subVectors(from, to).normalize(); // the arm hangs along its local -Y
-    const z = _v2.set(0, 1, 0).addScaledVector(y, -y.y).normalize();
-    const x = _v3.crossVectors(y, z);
-    _q.setFromRotationMatrix(_m.makeBasis(x, y, z));
-    arm.quaternion.slerp(_q, w);
-  }
-
-  /** Lays the bow level (limbs along body ±X, arrow forward +Z) with its grip at `grip` (pixels). */
-  private placeBow(grip: THREE.Vector3, tilt: number) {
-    const r = this.weapon!.root;
-    r.position.copy(grip).multiplyScalar(PX);
-    // bow up (+Y) → body -X, forward stays +Z; `tilt` lifts the front a little
-    r.rotation.set(-tilt, 0, Math.PI / 2, 'XYZ');
-    // held level it is drawn a size up so the limbs reach well past the shoulders
-    r.scale.setScalar(BOW_LEVEL_SCALE);
-  }
-
-  /**
-   * The bow shot, held like a crossbow of the old sagas: square to the target, the bow level
-   * across the front of the chest (limbs out like wings), the left hand on the grip, the right
-   * hand drawing the string straight back to the sternum; release at the hit moment, recover.
-   * Body frame = facing frame (+Z toward the target), pixels.
-   */
-  private bowPose(t: number, hitAt: number) {
-    const P = this.parts;
-    const ease = (x: number) => { const c = Math.max(0, Math.min(1, x)); return c * c * (3 - 2 * c); };
-    const wu = Math.min(1, t / Math.max(0.01, hitAt));
-    const ft = t <= hitAt ? 0 : Math.min(1, (t - hitAt) / Math.max(0.01, 1 - hitAt));
-    const drawing = t <= hitAt;
-    // raise during the first quarter, hold, lower after the release
-    const s = drawing ? ease(wu / 0.25) : 1 - ease((ft - 0.3) / 0.7);
-    const draw = drawing ? ease((wu - 0.25) / 0.75) : 0;
-    const flick = drawing ? 0 : ease(ft / 0.25);
-    P.legL.rotation.x += -0.12 * s;
-    P.legR.rotation.x += 0.1 * s;
-    P.head.rotation.x = 0.08 * s;
-    // the grip: from the carry (belly) up to shoulder height, an arm's length ahead
-    const grip = _g.set(1, 15.5, 6.5).lerp(_a.set(1, 20, 9.5), s);
-    this.aimArm(P.armL, _sL.set(6, 22, 0), grip, 1);
-    this.placeBow(grip, 0);
-    const r = this.weapon?.root;
-    if (!r) return;
-    // the nock in the bow's space: on the arrow line, pulled straight back by `draw`
-    this.root.updateMatrixWorld(true);
-    const nocked = drawing && wu > 0.12;
-    const back = 4.8 + 2.7 * draw; // pixels behind the grip (string at rest ≈ 4.7)
-    const nockBody = _n.set(grip.x - 0.5, grip.y + 0.9, grip.z - back);
-    // the right hand pinches the nock (after the release it flicks back and out)
-    const hand = _h.copy(nockBody);
-    if (!drawing) hand.set(grip.x - 2 - 3 * flick, grip.y + 0.5, grip.z - 4.6 - 2.5 * flick);
-    const wR = drawing ? Math.min(1, wu / 0.15) : s;
-    this.aimArm(P.armR, _sR.set(-6, 22, 0), hand, wR);
-    const nock = this.body.localToWorld(nockBody.multiplyScalar(PX));
-    r.worldToLocal(nock);
-    this.weapon!.setDraw(nocked ? nock : null, nocked, draw);
-  }
-
-  /**
-   * Held action poses, kept while the action lasts (cubic, no new parts):
-   * - block: the sword raised across the front at head height, blade level toward the left,
-   *   the free arm braced forward;
-   * - aim: the bow level across the chest, string drawn straight back to the chest (the draw of
-   *   the shot, held at full draw);
-   * - charge: the staff brought upright before the face (one hand) or raised high (two hands),
-   *   the body leaning back a little as the charge grows.
-   * Returns false when the held weapon has no such pose.
-   */
-  private holdPose(kind: 'block' | 'aim' | 'charge', k: number, twoHands: boolean): boolean {
-    const P = this.parts;
-    const r = this.weapon?.root;
-    const wk = this.weaponKind;
-    const e = ease(k);
-    if (kind === 'aim' && wk === 'bow') {
-      this.bowPose((0.25 + 0.75 * e) * 0.999, 1);
-      return true;
-    }
-    if (kind === 'block' && wk !== 'bow' && !twoHands) {
-      // right fist before the face, blade level across toward the model's left
-      const fist = _g.set(-1, 25, 7);
-      this.aimArm(P.armR, SHOULDER_R, fist, e);
-      if (r) {
-        r.position.set(0, 0, 0);
-        // blade straight out of the fist, then tipped so it lies level across the front
-        r.rotation.set(Math.PI / 2, 0, 0);
-        r.quaternion.premultiply(_q.setFromAxisAngle(_x.set(1, 0, 0), (Math.PI / 2) * e));
-      }
-      P.armL.rotation.x = -0.9 * e;
-      P.armL.rotation.z = 0.25 * e;
-      this.body.rotation.y = 0.12 * e;
-      P.legR.rotation.x += 0.15 * e;
-      P.legL.rotation.x -= 0.2 * e;
-      return true;
-    }
-    if (kind === 'charge') {
-      if (twoHands && wk === 'staff2h') {
-        const H = HOLDS.staff2h!;
-        this.holdTwoHanded(mixHold(_hold2, H.idle, H.a, e));
-        this.body.rotation.x = -0.08 * e;
-        P.head.rotation.x = -0.12 * e;
-        return true;
-      }
-      if (!twoHands) {
-        // staff upright before the face, the arm forward; the free hand open toward it
-        if (r) {
-          r.position.set(0, 0, 0);
-          r.rotation.set(0.15 + 1.2 * e, 0, 0);
+    this.weaponObj.visible = true;
+    const cs = this.combat;
+    const mainSide: 'L' | 'R' = fam === 'bow' ? 'L' : 'R';
+    const offSide: 'L' | 'R' = mainSide === 'L' ? 'R' : 'L';
+    const hasBack = fam === 'sword' || fam === 'great' || fam === 'bow';
+    // where the weapon is: on the back (peace), carried (drawing / sheathing), in the hands
+    let wf: Frame = this.wf;
+    let handOn = true;
+    let reach = 0;
+    if (hasBack && cs.phase !== 'combat') {
+      const back = this.backInBody(fam);
+      if (cs.phase === 'peace') {
+        wf = back;
+        handOn = false;
+      } else {
+        // the draw: the hand reaches the grip on the back (weapon still mounted), takes it, and
+        // brings the weapon over the shoulder into the stance; the sheathe is the same backwards
+        const t = cs.phase === 'drawing' ? cs.t : 1 - cs.t;
+        if (t < GRAB_AT) {
+          wf = back;
+          handOn = false;
+          reach = ease(t / GRAB_AT);
+        } else {
+          const k = ease((t - GRAB_AT) / (1 - GRAB_AT));
+          const m = mixFrame(back, this.wf, k);
+          // the arc lifts the weapon up and out, clear of the head and the shoulder
+          const lift = Math.sin(k * Math.PI);
+          m.g.add(_v1.set(mainSide === 'R' ? -0.18 : 0.18, 0.22, 0.12).multiplyScalar(lift));
+          wf = m;
         }
-        P.armR.rotation.x = -0.3 - 1.05 * e;
-        P.armR.rotation.z = 0.2 * e;
-        P.armL.rotation.x = -0.25 - 0.95 * e;
-        P.armL.rotation.z = -0.35 * e;
-        this.body.rotation.x = -0.06 * e;
-        return true;
       }
     }
-    return false;
+    // the weapon's grip frame
+    const q = basisQuat(wf);
+    this.weaponRoot.position.copy(wf.g);
+    this.weaponRoot.quaternion.copy(q);
+    // ------------------------------------------------ the main hand
+    if (handOn || reach > 0) {
+      const target = this.handFrameOnGrip(mainSide, wf, fam === 'bow');
+      if (!handOn) {
+        // reaching for the weapon on the back: from the swing pose toward the grip
+        armSwing(mainSide);
+        this.body.updateMatrixWorld(true);
+        const hand = this.b['hand.' + mainSide];
+        const from = this.posOf(hand, _v2.set(0, 0, 0)).clone();
+        const fromQ = this.quatOf(hand, _q2).clone();
+        target.pos.lerpVectors(from, target.pos, reach);
+        target.rot.copy(fromQ.slerp(target.rot, reach));
+      }
+      const got = this.ik(mainSide, target.pos, target.rot);
+      this.curl(mainSide, 1.1);
+      if (handOn && got > 0.002) {
+        // out of reach: the weapon follows the hand (never floats away from it)
+        const hand = this.b['hand.' + mainSide];
+        const wpos = this.posOf(hand, _v2);
+        const hq = this.quatOf(hand, _q2);
+        const grip = GRIP_IN_HAND(mainSide === 'L' ? 1 : -1).applyQuaternion(hq).add(wpos);
+        this.weaponRoot.position.copy(grip);
+      }
+    } else armSwing(mainSide);
+    // ------------------------------------------------ the other hand
+    const gp = this.weaponRoot.position;
+    const ga = _v3.set(0, 1, 0).applyQuaternion(this.weaponRoot.quaternion);
+    const ge = new THREE.Vector3(0, 0, 1).applyQuaternion(this.weaponRoot.quaternion);
+    if (fam === 'bow' && handOn) {
+      this.bowString(want, gp, ga, ge, offSide);
+    } else if (handOn && want.twoHands) {
+      // second hand on the handle, below the first (greatsword) or above it (staff)
+      const off = fam === 'staff' ? 0.26 : -0.13;
+      const f2 = { g: gp.clone().addScaledVector(ga, off), a: ga.clone(), e: ge.clone() };
+      const t2 = this.handFrameOnGrip(offSide, f2, false);
+      this.ik(offSide, t2.pos, t2.rot);
+      this.curl(offSide, 1.1);
+    } else armSwing(offSide);
+    // ------------------------------------------------ magic
+    if (fam === 'staff' && this.vox) {
+      const orb = want.orb ?? 0;
+      const flash = want.flash ?? 0;
+      const tip = gp.clone().addScaledVector(ga, this.vox.tip.y - 0.06);
+      if (orb > 0.02 || flash > 0.02) {
+        this.orb.visible = true;
+        this.orb.position.copy(tip);
+        const s = 0.25 + orb * 0.9 + flash * 1.6;
+        this.orb.scale.setScalar(s);
+        this.orb.rotation.set(p.time * 3, p.time * 4, 0);
+        this.orbMat.opacity = 0.55 + orb * 0.35 + flash * 0.3;
+      }
+    }
   }
 
-  /** Basic attack motion of the held weapon (t = progress 0..1 of one attack). */
-  private attackPose(t: number, hitAt: number) {
-    const P = this.parts;
-    const k = this.weaponKind;
-    // windup 0..1 until the hit, follow-through 0..1 after it
-    const wu = Math.min(1, t / Math.max(0.01, hitAt));
-    const ft = t <= hitAt ? 0 : Math.min(1, (t - hitAt) / Math.max(0.01, 1 - hitAt));
-    const ease = (x: number) => x * x * (3 - 2 * x);
-    const strike = t <= hitAt ? ease(wu) : 1 - ease(ft);
-    const r = this.weapon?.root;
-    switch (k) {
-      case null:
-      case 'sword1h': {
-        // the blade comes level out of the stance for the cut and goes back after it
-        if (r) r.rotation.x = Math.PI / 2 + (r.rotation.x - Math.PI / 2) * (t <= hitAt ? 1 - Math.min(1, wu * 3) : ft);
-        // raise up and back, then a fast diagonal cut down across the body
-        const up = t <= hitAt ? ease(wu) : 0;
-        const down = t <= hitAt ? 0 : 1 - ease(ft);
-        P.armR.rotation.x = -0.3 - up * 2.1 - down * 0.9 + (t > hitAt ? 0 : 0);
-        P.armR.rotation.z = -0.04 - up * 0.5 + down * 0.35;
-        P.armR.rotation.y = down * 0.5;
-        this.body.rotation.y = -up * 0.25 + down * 0.3;
-        if (t > hitAt && ft < 0.25) P.armR.rotation.x = -1.4 + ft * 2;
-        break;
-      }
-      case 'staff1h': {
-        // point the staff forward and release the spark
-        if (r) {
-          r.rotation.x += (Math.PI / 2 - r.rotation.x) * strike;
-          r.position.z *= 1 - strike;
-        }
-        P.armR.rotation.x = -0.3 - strike * 1.15;
-        P.armR.rotation.z = -0.04 + strike * 0.12;
-        this.body.rotation.y = -strike * 0.1;
-        break;
-      }
-      case 'bow':
-        this.bowPose(t, hitAt);
-        break;
-      case 'crossbow': {
-        // a quick aim and shot, then a long reload: the crossbow tips down and the string is spanned
-        const reload = t > hitAt ? ft : 0;
-        const tip = Math.sin(Math.min(1, reload) * Math.PI);
-        P.armR.rotation.x = -Math.PI / 2 + tip * 0.9 + (t <= hitAt ? 0 : 0);
-        P.armL.rotation.x = -Math.PI / 2 + tip * 1.2;
-        P.armL.rotation.y = 0.55 - tip * 0.2;
-        if (t > hitAt && ft < 0.08) this.body.rotation.x = -0.06;
-        if (this.weapon) this.weapon.setState(t <= hitAt || reload > 0.8 ? 'loaded' : 'empty');
-        break;
-      }
+  /**
+   * Where the hand must be (wrist position and rotation, body frame) to hold a grip frame: the
+   * handle runs through the fist from the little finger to the thumb (hand +z along the handle),
+   * the knuckles toward the edge (the bow: toward the arrow's way).
+   */
+  private handFrameOnGrip(side: 'L' | 'R', f: Frame, bow: boolean) {
+    const z = f.a.clone();
+    const y = f.e.clone().negate();
+    if (bow) y.copy(f.e).negate();
+    const x = new THREE.Vector3().crossVectors(y, z).normalize();
+    y.crossVectors(z, x).normalize();
+    const rot = new THREE.Quaternion().setFromRotationMatrix(new THREE.Matrix4().makeBasis(x, y, z));
+    const pos = f.g.clone().sub(GRIP_IN_HAND(side === 'L' ? 1 : -1).applyQuaternion(rot));
+    return { pos, rot };
+  }
+
+  /** Bow: the string from the limb tips to the nock (drawn by the right hand), the arrow on it. */
+  private bowString(want: WeaponPose, gp: THREE.Vector3, ga: THREE.Vector3, ge: THREE.Vector3, side: 'L' | 'R') {
+    const v = this.vox!;
+    const q = this.weaponRoot.quaternion;
+    const top = v.tip.clone().applyQuaternion(q).add(gp);
+    const bot = v.tipLow!.clone().applyQuaternion(q).add(gp);
+    const rest = top.clone().add(bot).multiplyScalar(0.5);
+    const draw = want.draw ?? 0;
+    // full draw brings the nock straight back to the chest, under the chin
+    const anchor = new THREE.Vector3(-0.03, 1.3, 0.1);
+    const full = Math.max(rest.clone().sub(gp).dot(ge) * -1 + 0.05, gp.clone().sub(anchor).dot(ge));
+    const depth0 = -rest.clone().sub(gp).dot(ge);
+    const nock = gp.clone().addScaledVector(ge, -(depth0 + (full - depth0) * draw));
+    nock.y += (rest.y - nock.y) * (1 - draw);
+    if (want.onString) {
+      // the right hand holds the string at the nock, fingers on it, the forearm in line with the arrow
+      const f = { g: nock.clone().addScaledVector(ge, -0.02), a: ga.clone().negate(), e: ge.clone() };
+      const t = this.handFrameOnGrip(side, f, false);
+      this.ik(side, t.pos, t.rot, new THREE.Vector3(side === 'R' ? -1 : 1, 0.15, -0.5));
+      this.curl(side, 0.7);
+    } else if (want.arrow) {
+      // taking an arrow from the quiver over the shoulder
+      const f = { g: new THREE.Vector3(-0.12, 1.45, -0.1), a: new THREE.Vector3(0, 1, 0), e: new THREE.Vector3(0, 0, 1) };
+      const t = this.handFrameOnGrip(side, f, false);
+      this.ik(side, t.pos, t.rot);
+      this.curl(side, 0.9);
+    } else {
+      const u = this.b['upper_arm.' + side];
+      u.quaternion.setFromAxisAngle(_x, -0.25);
+      this.b['forearm.' + side].quaternion.setFromAxisAngle(_x, -0.5);
     }
+    for (const [i, a] of [top, bot].entries()) {
+      const s = this.string[i];
+      s.visible = true;
+      s.position.copy(a);
+      const d = nock.clone().sub(a);
+      s.scale.set(1, d.length(), 1);
+      s.quaternion.setFromUnitVectors(_y, d.normalize());
+    }
+    if (want.arrow && want.onString) {
+      this.arrow.visible = true;
+      this.arrow.position.copy(nock);
+      this.arrow.quaternion.setFromUnitVectors(_z, ge);
+    }
+  }
+
+  /** Fingers close around a handle (0 open .. ~1.2 fist). */
+  private curl(side: 'L' | 'R', k: number) {
+    const s = side === 'L' ? -1 : 1;
+    for (let i = 1; i <= 4; i++) this.b[`finger_${i}.${side}`].quaternion.setFromAxisAngle(_z, s * k);
+    this.b['thumb.' + side].quaternion.setFromAxisAngle(_x, -k * 0.4);
+  }
+
+  /**
+   * Two-bone IK of an arm: the wrist to `pos` and the hand turned to `rot` (body frame), the
+   * elbow bending toward `pole` (out, down and back by default). Returns how far the wrist
+   * stayed from the target (0 when reached).
+   */
+  private ik(side: 'L' | 'R', pos: THREE.Vector3, rot: THREE.Quaternion, pole?: THREE.Vector3): number {
+    const sgn = side === 'L' ? 1 : -1;
+    const upper = this.b['upper_arm.' + side];
+    const fore = this.b['forearm.' + side];
+    const hand = this.b['hand.' + side];
+    upper.quaternion.identity();
+    fore.quaternion.identity();
+    hand.quaternion.identity();
+    this.body.updateMatrixWorld(true);
+    const S = this.posOf(upper, new THREE.Vector3());
+    const parentQ = this.quatOf(upper.parent!, new THREE.Quaternion());
+    const L1 = this.len.U;
+    const L2 = this.len.F;
+    const toT = pos.clone().sub(S);
+    const dRaw = toT.length();
+    const d = Math.max(Math.abs(L1 - L2) + 1e-3, Math.min(L1 + L2 - 1e-4, dRaw));
+    const n = toT.normalize();
+    const P = (pole ?? new THREE.Vector3(sgn * 0.55, -0.45, -0.7)).clone().normalize();
+    const m = P.clone().addScaledVector(n, -n.dot(P));
+    if (m.lengthSq() < 1e-6) m.set(0, -1, 0).addScaledVector(n, -n.y);
+    m.normalize();
+    const cosA = (L1 * L1 + d * d - L2 * L2) / (2 * L1 * d);
+    const sinA = Math.sqrt(Math.max(0, 1 - cosA * cosA));
+    const E = S.clone().addScaledVector(n, L1 * cosA).addScaledVector(m, L1 * sinA);
+    const W = S.clone().addScaledVector(n, d);
+    const dirU = E.clone().sub(S).normalize();
+    const dirF = W.clone().sub(E).normalize();
+    // the bend plane: the forearm folds toward m (at rest that is forward, about -x)
+    const bend = new THREE.Vector3().crossVectors(dirU, m).normalize();
+    const qU = this.align(this.restU[side], dirU, bend);
+    const qF = this.align(this.restF[side], dirF, bend);
+    // body-frame rotations to the bones' local ones (rest rotations are identity)
+    upper.quaternion.copy(parentQ.clone().invert().multiply(qU));
+    fore.quaternion.copy(qU.clone().invert().multiply(qF));
+    hand.quaternion.copy(qF.clone().invert().multiply(rot));
+    return Math.max(0, dRaw - d);
+  }
+
+  /** Rotation taking the rest direction `rest` to `dir`, the rest bend axis (-x) to `bend`. */
+  private align(rest: THREE.Vector3, dir: THREE.Vector3, bend: THREE.Vector3): THREE.Quaternion {
+    const yr = rest.clone().normalize();
+    const xr = new THREE.Vector3(-1, 0, 0).addScaledVector(yr, yr.x).normalize();
+    const zr = new THREE.Vector3().crossVectors(xr, yr);
+    const yd = dir.clone().normalize();
+    const xd = bend.clone().addScaledVector(yd, -bend.dot(yd)).normalize();
+    const zd = new THREE.Vector3().crossVectors(xd, yd);
+    const Br = new THREE.Matrix4().makeBasis(xr, yr, zr);
+    const Bd = new THREE.Matrix4().makeBasis(xd, yd, zd);
+    return new THREE.Quaternion().setFromRotationMatrix(Bd.multiply(Br.transpose()));
+  }
+
+  /** World position of the weapon's business end (staff head, blade tip) for effects. */
+  weaponTip(out: THREE.Vector3): THREE.Vector3 | null {
+    if (!this.weaponObj || !this.vox) return null;
+    out.set(0, this.vox.tip.y, 0);
+    return this.weaponRoot.localToWorld(out);
   }
 
   dispose() {
-    for (const s of Object.keys(this.armor) as Slot[]) this.clearArmor(s);
-    this.weapon?.dispose();
-    this.shield?.dispose();
-    this.geos.forEach((g) => g.dispose());
-    this.mat.dispose();
-    this.atlas.dispose();
+    this.geo.dispose();
+    this.matShow.dispose();
+    this.matHide.dispose();
+    this.orbMat.dispose();
+    this.weaponMat.dispose();
+    this.oldWeapon?.dispose();
+    this.arrow.geometry.dispose();
+    for (const s of this.string) (s.material as THREE.Material).dispose();
+    for (const m of [...this.worn, ...Object.values(this.armor).flat()]) m?.removeFromParent();
   }
 }
+
+void boneTail;

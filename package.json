@@ -9,7 +9,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host",
     "typecheck": "tsc --noEmit",
-    "test": "tsx tools/tests/equipment.ts && tsx tools/tests/weapons.ts && tsx tools/tests/world.ts && tsx tools/tests/save.ts && tsx tools/tests/clock.ts && tsx tools/tests/wild.ts && tsx tools/tests/render.ts && tsx tools/tests/rpg2.ts && tsx tools/tests/rpg2combat.ts && tsx tools/tests/rpg2growth.ts && tsx tools/tests/rpg2economy.ts && tsx tools/tests/rpg2story.ts && tsx tools/tests/rpg2saves.ts"
+    "test": "tsx tools/tests/equipment.ts && tsx tools/tests/weapons.ts && tsx tools/tests/world.ts && tsx tools/tests/save.ts && tsx tools/tests/clock.ts && tsx tools/tests/wild.ts && tsx tools/tests/render.ts && tsx tools/tests/human.ts && tsx tools/tests/rpg2.ts && tsx tools/tests/rpg2combat.ts && tsx tools/tests/rpg2growth.ts && tsx tools/tests/rpg2economy.ts && tsx tools/tests/rpg2story.ts && tsx tools/tests/rpg2saves.ts"
   },
   "dependencies": {
     "@fontsource/russo-one": "^5.3.0",

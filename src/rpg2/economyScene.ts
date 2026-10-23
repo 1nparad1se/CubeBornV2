@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { npcModel } from '../render/human/npcs';
 import { h } from '../ui/dom';
 import type { CombatSystem } from './combat/system';
 import { enemyDef, type EnemyState } from './combat/enemy';
@@ -85,19 +86,20 @@ export class EconomyScene {
     g.add(m);
     return m;
   }
-  private figure(g: THREE.Group, x: number, z: number, cloth: number, name: string) {
+  /** An NPC on the hero's model (src/render/human/npcs.ts), facing the village centre. */
+  private figure(g: THREE.Group, x: number, z: number, id: string, name: string) {
     const y = this.s.ground.top(x, z);
-    this.box(g, 0.5, 0.75, 0.3, 0x3a2f28, x, y + 0.375, z);
-    this.box(g, 0.6, 0.75, 0.35, cloth, x, y + 1.125, z);
-    this.box(g, 0.5, 0.5, 0.5, 0xd9a87c, x, y + 1.75, z);
+    const npc = npcModel(id);
+    npc.root.position.set(x, y, z);
+    npc.root.rotation.y = Math.atan2(50 - x, 50 - z);
+    g.add(npc.root);
     const l = this.s.label(name);
     l.position.set(x, y + 2.4, z);
     g.add(l);
   }
   private build() {
     const g = new THREE.Group();
-    const colors: Record<MerchantId, number> = { smith: 0x5a5a62, alchemist: 0x3a4f8f, cook: 0xb07a3a, hunter: 0x5b4a2a, supplier: 0x6b6b3a };
-    for (const m of MERCHANT_SPOTS) this.figure(g, m.x, m.z, colors[m.id], `${MERCHANTS[m.id].name} · ${MERCHANTS[m.id].role}`);
+    for (const m of MERCHANT_SPOTS) this.figure(g, m.x, m.z, m.id, `${MERCHANTS[m.id].name} · ${MERCHANTS[m.id].role}`);
     const stColor: Record<Station, number> = { forge: 0x4a4a4a, alchemy: 0x6a4a8a, stove: 0x8a4a2a };
     for (const st of STATION_SPOTS) {
       const y = this.s.ground.top(st.x, st.z);

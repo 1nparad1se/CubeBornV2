@@ -47,6 +47,8 @@ export class RpgEntities {
   private mark: THREE.Mesh;
   private markMat = new THREE.MeshBasicMaterial({ color: 0xe8ffd0, transparent: true, opacity: 0.9, depthWrite: false });
   private markLife = 0;
+  /** Seconds the weapon stays ready after the last sign of a fight. */
+  private combatT = 0;
 
   constructor(private world: World, shadows: boolean) {
     this.hero = new HumanModel(RACE_BY_ID[world.raceId]?.skin ?? 'human', shadows);
@@ -86,15 +88,25 @@ export class RpgEntities {
     h.root.rotation.y = this.yaw;
     const speed = Math.hypot(p.vx, p.vz);
     const a = p.attack;
+    // the velocity in the body's own frame: the legs step along it while the body faces its way
+    // (at the target in a fight), so the hero walks sideways or backwards when needed
+    const c = Math.cos(this.yaw);
+    const s = Math.sin(this.yaw);
+    const move = { x: p.vx * c - p.vz * s, z: p.vx * s + p.vz * c };
+    // the weapon is ready while fighting and put away a few seconds after
+    const fighting = !!a || !!p.hold || w.autoAttack || !!p.inCombat;
+    this.combatT = fighting ? 5 : Math.max(0, this.combatT - dt);
     h.pose({
       walk: p.anim,
       moving: Math.min(1, speed / Math.max(1, w.stats.moveSpeed)),
       airborne: p.airborne,
       vy: p.jumpV,
-      attack: a ? { t: Math.min(1, a.t / a.dur), hitAt: a.hitAt } : null,
+      attack: a ? { t: Math.min(1, a.t / a.dur), hitAt: a.hitAt, seq: a.seq, kind: (a as { kind?: 'normal' | 'skill' | 'spell' }).kind } : null,
       hold: p.hold,
       time: w.time,
       flip: p.airJumpT >= 0 ? p.airJumpT / JUMP.flipTime : 0,
+      move,
+      combat: this.combatT > 0,
     });
     // dummies wobble when hit
     w.dummies.forEach((dm, i) => this.dummies[i].wobble(dm.wobble, dm.wobX, dm.wobZ, w.time));
