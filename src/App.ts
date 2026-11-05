@@ -18,6 +18,8 @@ import { generateWild } from './world/wild';
 import { SPAWN, TEST_MAP, buildTestMap } from './rpg/testMap';
 import { cloneGear, type Gear } from './rpg/equipment';
 import type { Terrain } from './game/Terrain';
+import { BuildingHud } from './ui/BuildingHud';
+import { addStack } from './game/blocks/BlockGame';
 
 const VERSION = 'v6.0.0';
 
@@ -69,6 +71,9 @@ export class App implements MenuApi {
   private renderer: Renderer;
   private input: Input;
   private hud: Hud;
+  private buildingHud:BuildingHud;
+  private buildSaveKey='';
+  private buildSaveT=0;
   private inventory: Inventory;
   private worldMap: WorldMap;
   private menus: Menus;
@@ -108,13 +113,15 @@ export class App implements MenuApi {
     this.view.appendChild(this.postVignette);
     this.input = new Input(this.view, s.keybinds);
     this.input.onPause = () => this.handleEscape();
-    this.input.onZoom = (dir) => this.stepZoom(dir);
+    this.input.onZoom = (dir) => this.world?.building.enabled ? this.world.building.cycle(dir) : this.stepZoom(dir);
+    this.input.onBuild = () => this.toggleBuilding();
     this.input.onJump = () => {
       if (this.world && this.mode === 'run' && !this.paused) this.world.player.requestJump();
     };
     this.input.onInventory = () => this.toggleInventory();
     this.input.onMap = () => this.toggleMap();
     this.hud = new Hud(root);
+    this.buildingHud=new BuildingHud(root,()=>this.toggleBuilding());
     this.hud.minimap.yaw = this.renderer.rig.yaw;
     this.hud.setVisible(false);
     this.hud.onInventory = () => this.toggleInventory();
@@ -235,10 +242,16 @@ export class App implements MenuApi {
         this.toggleMap(false);
         return;
       }
+      if(this.world?.building.enabled){this.toggleBuilding();return;}
       this.togglePause();
       return;
     }
     if (this.mode === 'menu' && this.menus.canGoBack) this.menus.back();
+  }
+
+  private toggleBuilding(){
+    if(this.mode!=='run'||!this.world||this.paused||this.inventory.isOpen||this.worldMap.isOpen||!this.blockChangesValid)return;
+    this.world.building.toggle();this.steerHeld=false;this.input.setEnabled(false);this.input.setEnabled(true);
   }
 
   // ------------------------------------------------------------------ inventory
@@ -332,6 +345,7 @@ export class App implements MenuApi {
   /** The open world, generated once on the first entry (the same world every time). */
   private wild: WorldSite | null = null;
   private loading = false;
+  private blockChangesValid = true;
 
   play(charId: string) {
     const p = this.profile;
@@ -361,6 +375,15 @@ export class App implements MenuApi {
     const fx = new ProxyFx();
     const s = p.data.settings;
     const world = new World(fx, this.clock, ch.race, cloneGear(ch.gear), this.wild);
+    this.blockChangesValid = ch.blockChanges === undefined || world.blocks.load(ch.blockChanges);
+    if (!this.blockChangesValid) {
+      this.toast('Изменения мира повреждены: сохранённые данные оставлены без изменений', '#ffb0a0');
+    }
+    world.building.loadDrops(ch.blockDrops);
+    if(!ch.buildingStarted){for(const id of ['tool:pickaxe','tool:axe','tool:shovel','tool:hoe'])addStack(world.gear,id,1);ch.buildingStarted=true;world.gear.active=world.gear.bag.indexOf('tool:pickaxe');}
+    const pos=ch.position;
+    if(pos&&pos.x>=1&&pos.z>=1&&pos.x<world.terrain.size-1&&pos.z<world.terrain.size-1&&pos.y>=0&&pos.y<256&&world.blocks.canStand(pos.x,pos.z,pos.y)){world.player.x=pos.x;world.player.y=pos.y;world.player.z=pos.z;}
+    this.buildSaveKey='';this.buildSaveT=0;
     this.world = world;
     this.runChar = ch.id;
     this.charTime = 0;
@@ -385,6 +408,9 @@ export class App implements MenuApi {
     const w = this.world;
     const ch = this.currentChar();
     if (!w || !ch) return false;
+    if (this.blockChangesValid) ch.blockChanges = w.blocks.serialize();
+    ch.blockDrops=w.building.drops.map(d=>({...d}));
+    ch.position={x:w.player.x,y:w.player.y,z:w.player.z};
     ch.gear = cloneGear(w.gear);
     ch.playTime += Math.round(w.time - this.charTime);
     this.charTime = Math.round(w.time);
@@ -463,6 +489,11 @@ export class App implements MenuApi {
     const rig = this.renderer.rig;
     const vw = this.view.clientWidth || 1;
     const vh = this.view.clientHeight || 1;
+    if(w.building.enabled){
+      c.attackHeld=false;c.clickMove=null;this.steerHeld=false;
+      if(active){const hit=inp.mx>=0?this.renderer.pickBlock(inp.mx,inp.my,vw,vh):null;w.building.input(hit,inp.lmb,inp.rmbPressed,dt);}else w.building.cancel();
+      inp.rmbPressed=inp.lmbPressed=false;inp.dragX=inp.dragY=0;return;
+    }
     let hover = null;
     let ground: [number, number] | null = null;
     if (inp.mx >= 0) {
@@ -535,11 +566,11 @@ export class App implements MenuApi {
     const w = this.world;
     if (w && this.mode === 'run') {
       this.input.update();
-      const active = !this.paused && !this.modals.isOpen;
+      const active = !this.paused && !this.modals.isOpen && !this.inventory.isOpen && !this.worldMap.isOpen;
       this.readMouse(w, active, realDt);
       // no keyboard walking: the hero walks by mouse orders only
       w.ctl.moveX = w.ctl.moveZ = 0;
-      const sim = !this.paused && !this.modals.isOpen;
+      const sim = active;
       if (sim) {
         this.clock.advance(realDt);
         const steps = Math.max(1, Math.ceil(dt / (1 / 60)));
@@ -549,13 +580,18 @@ export class App implements MenuApi {
           this.autosaveT = AUTOSAVE;
           this.saveChar();
         }
+        this.buildSaveT+=dt;
+        const buildKey=`${w.blocks.revision}:${w.building.revision}`;
+        if(buildKey!==this.buildSaveKey&&this.buildSaveT>.5){this.buildSaveT=0;if(this.saveChar())this.buildSaveKey=buildKey;else this.toast('Не удалось сохранить: проверьте доступное место в браузере','#ffb088');}
       }
       this.renderer.frame(sim ? dt : 0);
       const ch = this.currentChar();
       this.hud.update(w, realDt, ch?.name ?? '', ch?.level ?? 1);
       this.worldMap.draw(w);
+      this.buildingHud.update(w,!this.paused&&!this.inventory.isOpen&&!this.worldMap.isOpen);
       audio.setAmbience(!this.paused, 0.5, 0, w.dayNight.period === 'night', realDt);
     } else {
+      this.buildingHud.update(null,false);
       audio.setAmbience(false, 0, 0, false, realDt);
       this.renderer.frame(realDt);
     }

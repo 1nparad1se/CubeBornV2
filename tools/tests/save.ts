@@ -1,5 +1,5 @@
 /** Save v8: old saves keep only settings, old heroes and world data are dropped, a backup is kept. Run: npx tsx tools/tests/save.ts */
-import { BACKUP_KEY, VERSION, loadSave, migrate, writeSave, type SaveStorage } from '../../src/meta/Save';
+import { BACKUP_KEY, VERSION, V8_BACKUP_KEY, loadSave, migrate, writeSave, type SaveStorage } from '../../src/meta/Save';
 import { newChar } from '../../src/meta/Characters';
 
 let fails = 0;
@@ -23,14 +23,14 @@ const old = {
 const raw = JSON.stringify(old);
 const st = mem({ 'cubeborn.save.v1': raw });
 const d = loadSave(st);
-ok(d.version === VERSION && VERSION === 8, 'save version is 8');
+ok(d.version === VERSION && VERSION === 9, 'save version is 9');
 ok(d.chars.length === 0 && d.activeChar === null, 'old class heroes are dropped');
 ok(!('bestiary' in d), 'bestiary (old creatures) is gone');
 ok(d.settings.master === 0.4 && d.settings.shadows === 'low', 'settings are kept');
 ok(!('enemyHealthBars' in d.settings) && !('skillQ' in d.settings.keybinds) && d.settings.keybinds.jump[0] === 'Space', 'old settings of removed systems dropped, key bindings reset');
 ok(st.m.get(BACKUP_KEY) === raw, 'the original save is backed up under ' + BACKUP_KEY);
 const stored = JSON.parse(st.m.get('cubeborn.save.v1')!);
-ok(stored.version === 8 && stored.chars.length === 0 && !JSON.stringify(stored).includes('berserker') && !JSON.stringify(stored).includes('cpos'), 'the stored save is rewritten: nothing old can come back');
+ok(stored.version === 9 && stored.chars.length === 0 && !JSON.stringify(stored).includes('berserker') && !JSON.stringify(stored).includes('cpos'), 'the stored save is rewritten: nothing old can come back');
 // a second load does not overwrite the backup
 st.m.set('cubeborn.save.v1', JSON.stringify({ ...old, version: 6 }));
 loadSave(st);
@@ -38,10 +38,19 @@ ok(st.m.get(BACKUP_KEY) === raw, 'the backup is written once and never overwritt
 // v8 characters survive a round trip
 const c = newChar('Ратибор', 'human');
 const s2 = mem();
-writeSave({ version: 8, settings: d.settings, chars: [c], activeChar: c.id }, s2);
+writeSave({ version: VERSION, settings: d.settings, chars: [c], activeChar: c.id }, s2);
 const back = loadSave(s2);
 ok(back.chars.length === 1 && back.chars[0].race === 'human' && back.chars[0].gear.bag.filter(Boolean).length === 20, 'a new human with the 20 starter items loads back');
 ok(!s2.m.has(BACKUP_KEY), 'a current save is not backed up');
+const v8 = JSON.stringify({version:8,settings:{...d.settings,keybinds:{...d.settings.keybinds,attack:['KeyQ']}},chars:[c],activeChar:c.id});
+const migratedStore=mem({'cubeborn.save.v1':v8});
+const migrated=loadSave(migratedStore);
+ok(migrated.chars[0]?.id===c.id && migrated.settings.keybinds.attack[0]==='KeyQ', 'v8 migration preserves characters and custom keys');
+ok(migratedStore.m.get(V8_BACKUP_KEY)===v8, 'v8 save is backed up separately');
+const changes={version:1 as const,edits:[{x:5,y:3,z:8,id:null}]};
+migrated.chars[0].blockChanges=changes;
+writeSave(migrated,migratedStore);
+ok(JSON.stringify(loadSave(migratedStore).chars[0].blockChanges)===JSON.stringify(changes),'block changes survive save round trip');
 // a v8 save holding an old-style class hero (no race) drops it
 const mixed = migrate({ version: 8, settings: {}, chars: [{ id: 'x', name: 'Old', cls: 'paladin' }, c] });
 ok(mixed.chars.length === 1 && mixed.chars[0].id === c.id, 'characters without a playable race are dropped');

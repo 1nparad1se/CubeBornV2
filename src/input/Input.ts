@@ -21,6 +21,7 @@ export class Input {
   onInventory: (() => void) | null = null;
   onMap: (() => void) | null = null;
   onJump: (() => void) | null = null;
+  onBuild: (()=>void)|null=null;
   /** While set, the next key press is captured for rebinding instead of played. */
   capture: ((code: string) => void) | null = null;
   /** Mouse: position in the game view (px), buttons, and one-shot presses consumed by the client. */
@@ -57,6 +58,7 @@ export class Input {
         return;
       }
       if (this.enabled) {
+        if(this.is('build',e.code)){e.preventDefault();this.onBuild?.();return;}
         if (this.is('zoomIn', e.code)) this.onZoom?.(-1);
         else if (this.is('zoomOut', e.code)) this.onZoom?.(1);
         if (this.is('jump', e.code)) {

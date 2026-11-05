@@ -20,6 +20,7 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Pass, FullScreenQuad } from 'three/examples/jsm/postprocessing/Pass.js';
 import { AmbientFx } from './AmbientFx';
 import { TreeRenderer } from './TreeRenderer';
+import { VoxelRenderer } from './VoxelRenderer';
 
 import type { Settings } from '../meta/Save';
 
@@ -191,6 +192,8 @@ const MCD = {
 
 /** Owns the WebGL context and draws either the in-run world or the menu diorama. */
 export class Renderer {
+  private voxels:VoxelRenderer|null=null;
+  pickBlock(mx:number,my:number,width:number,height:number){return this.voxels?.pick(this.rig.camera,mx,my,width,height)??null;}
   readonly gl: THREE.WebGLRenderer;
   readonly overlay: Overlay;
   readonly rig: CameraRig;
@@ -435,6 +438,7 @@ export class Renderer {
     this.run = run;
     GROUND.fn = (x, z) => run.terrain.groundY(x, z);
     this.buildWorld(run.terrain, run.map);
+    this.voxels=new VoxelRenderer(run);this.scene.add(this.voxels.group);
     this.applyFar();
     this.entities = new RpgEntities(run, this.s.shadows !== 'off');
     this.scene.add(this.entities.group);
@@ -493,6 +497,7 @@ export class Renderer {
   }
 
   endRun() {
+    if(this.voxels){this.voxels.group.removeFromParent();this.voxels.dispose();this.voxels=null;}
     if (this.entities) {
       this.scene.remove(this.entities.group);
       this.entities.dispose();
@@ -672,6 +677,8 @@ export class Renderer {
     // trees between the camera and the hero fade to see-through
     this.trees?.occlude(this.rig.camera.position, this.heroAt.set(p.x, p.y, p.z), 1.8, dt);
     // and so does the ground (a hill, a cliff, a rock face) where it hides them
+    this.voxels?.update();
+    this.world?.hideVoxelGround(run.blocks.renderChunks,run.blocks.columns);
     this.world?.occlude(this.groundOcc(run.terrain, p, dt), this.rig.camera, this.heroMid.set(p.x, p.y + 0.9, p.z));
     const cam = this.rig.camera;
     const px = (this.h * this.gl.getPixelRatio()) / (2 * Math.tan((cam.fov * Math.PI) / 360));

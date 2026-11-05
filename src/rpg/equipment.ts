@@ -5,6 +5,9 @@ import { RACE_BY_ID, type RaceDef } from './races';
 export interface Gear {
   equip: Record<Slot, string | null>;
   bag: (string | null)[];
+  amounts?: number[];
+  wear?: number[];
+  active?: number;
 }
 
 function emptyEquip(): Record<Slot, string | null> {
@@ -18,7 +21,7 @@ export function newGear(items: string[]): Gear {
 }
 
 export function cloneGear(g: Gear): Gear {
-  return { equip: { ...g.equip }, bag: [...g.bag] };
+  return { ...g, equip: { ...g.equip }, bag: [...g.bag], ...(g.amounts?{amounts:[...g.amounts]}:{}), ...(g.wear?{wear:[...g.wear]}:{}) };
 }
 
 /** Slot an item goes to. */
@@ -46,6 +49,7 @@ export function equipFromBag(g: Gear, from: number): EquipResult {
   const id = g.bag[from];
   const def = item(id);
   if (!id || !def) return { ok: false, error: 'Пустая ячейка' };
+  if (def.block || def.tool) { const out=cloneGear(g);out.active=from;return {ok:true,gear:out}; }
   const out = cloneGear(g);
   const slot = slotOf(def);
   out.bag[from] = null;
@@ -93,6 +97,9 @@ export function equipToSlot(g: Gear, from: number, slot: Slot): EquipResult {
 export function moveInBag(g: Gear, a: number, b: number): Gear {
   const out = cloneGear(g);
   [out.bag[a], out.bag[b]] = [out.bag[b], out.bag[a]];
+  if(out.amounts) [out.amounts[a],out.amounts[b]]=[out.amounts[b],out.amounts[a]];
+  if(out.wear) [out.wear[a],out.wear[b]]=[out.wear[b],out.wear[a]];
+  if(out.active===a)out.active=b;else if(out.active===b)out.active=a;
   return out;
 }
 
@@ -118,6 +125,10 @@ export function gearProblem(g: Gear): string | null {
 export function fixGear(raw: any, fallback: Gear): Gear {
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.bag) || !raw.equip) return fallback;
   const g: Gear = { equip: emptyEquip(), bag: new Array(BAG_SIZE).fill(null) };
+  g.amounts=Array.from({length:BAG_SIZE},(_,i)=>Math.max(1,Math.min(64,Math.floor(Number(raw.amounts?.[i])||1))));
+  g.wear=Array.from({length:BAG_SIZE},(_,i)=>Math.max(0,Math.min(250,Math.floor(Number(raw.wear?.[i])??250)||0)));
+  if(!raw.wear)g.wear.fill(250);
+  g.active=Number.isInteger(raw.active)&&raw.active>=0&&raw.active<BAG_SIZE?raw.active:0;
   const spill: string[] = [];
   raw.bag.slice(0, BAG_SIZE).forEach((id: unknown, i: number) => {
     if (typeof id === 'string' && ITEM_BY_ID[id]) g.bag[i] = id;

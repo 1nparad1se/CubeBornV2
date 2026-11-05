@@ -1,4 +1,6 @@
 import { item } from '../rpg/items';
+import { makeGroundAtlas } from '../render/Textures';
+import { WILD_MAP } from '../world/wild';
 import { SPR_BOW, SPR_SPEAR, SPR_STAFF1H, SPR_STAFF2H, SPR_SWORD, SPR_SWORD2H, SPR_XBOW, armorIcon, shieldFace, spriteCanvas, type Sprite } from '../render/human/sprites';
 
 /** Pixel sprite shown for an item in the inventory (the same pixel art as its 3D model). */
@@ -34,8 +36,12 @@ export function itemIcon(id: string, scale = 3, size = 40): HTMLElement {
   const key = id + ':' + scale;
   let url = cache.get(key);
   if (!url) {
+    const def=item(id);
+    if(def?.block||def?.tool){const c=document.createElement('canvas');c.width=c.height=32;const g=c.getContext('2d')!;g.imageSmoothingEnabled=false;if(def.block){const tex=makeGroundAtlas([def.block],{[def.block]:WILD_MAP.palette.tiles[def.block]??[0x9a7954]},WILD_MAP.palette.blocks??{});g.drawImage(tex.image,0,0,16,16,3,3,26,26);tex.dispose();}else{g.fillStyle='#987345';g.fillRect(14,9,4,21);g.fillStyle='#b8c9cb';if(def.tool?.kind==='pickaxe'){g.fillRect(4,5,25,5);g.fillRect(25,9,4,5);}else if(def.tool?.kind==='axe')g.fillRect(16,3,13,14);else if(def.tool?.kind==='shovel')g.fillRect(10,2,12,13);else g.fillRect(14,4,15,6);}url=c.toDataURL();}
+    else {
     const s = itemSprite(id);
     url = s ? spriteCanvas(s, scale).toDataURL() : '';
+    }
     cache.set(key, url);
   }
   const img = document.createElement('img');

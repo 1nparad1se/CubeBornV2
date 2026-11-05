@@ -4,6 +4,7 @@ import { SLOTS, SLOT_NAME, item, type ItemDef, type Slot } from '../rpg/items';
 import { computeStats, equipFromBag, equipToSlot, moveInBag, unequip, type EquipResult, type Gear } from '../rpg/equipment';
 import { RACE_BY_ID } from '../rpg/races';
 import { weaponType } from '../rpg/weapons';
+import { countAt } from '../game/blocks/BlockGame';
 
 const pct = (v: number) => `${v > 0 ? '+' : ''}${Math.round(v * 100)}%`;
 
@@ -153,11 +154,11 @@ export class Inventory {
     }
     clear(this.bag);
     g.bag.forEach((id, i) => {
-      this.bag.append(
-        this.cell(id, '', '', { 'data-bag': String(i) }, () => {
+      const c=this.cell(id, i===g.active?'.build-selected':'', '', { 'data-bag': String(i) }, () => {
           if (id) this.apply(equipFromBag(g, i));
-        }),
-      );
+        });
+      const def=item(id);if(def?.block||def?.tool)c.append(h('b.block-amount',def.tool?`${g.wear?.[i]??250}`:String(countAt(g,i))));
+      this.bag.append(c);
     });
     this.renderStats();
   }

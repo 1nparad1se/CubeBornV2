@@ -10,14 +10,15 @@ export type DisplayMode = 'windowed' | 'fullscreen' | 'borderless';
 
 /** Rebindable actions; each holds up to two KeyboardEvent.code values. */
 /** Rebindable actions (walking has no keys: the hero walks where the left mouse button points). */
-export type BindAction = 'jump' | 'attack' | 'inventory' | 'map' | 'pause' | 'zoomIn' | 'zoomOut';
+export type BindAction = 'jump' | 'attack' | 'build' | 'inventory' | 'map' | 'pause' | 'zoomIn' | 'zoomOut';
 
 export type Keybinds = Record<BindAction, string[]>;
 
 export function defaultKeybinds(): Keybinds {
   return {
     jump: ['Space'],
-    attack: ['KeyF'],
+    attack: ['KeyR'],
+    build: ['KeyF'],
     inventory: ['KeyI', 'Tab'],
     map: ['KeyM'],
     pause: ['Escape', 'KeyP'],
@@ -93,7 +94,8 @@ const KEY = 'cubeborn.save.v1';
  * The older pre-v7 backup key stays untouched.
  */
 export const BACKUP_KEY = 'cubeborn.save.backup.v7';
-export const VERSION = 8;
+export const VERSION = 9;
+export const V8_BACKUP_KEY = 'cubeborn.save.backup.v8';
 
 export function defaultSettings(): Settings {
   const lang: Lang = (navigator.language || 'ru').toLowerCase().startsWith('ru') ? 'ru' : 'en';
@@ -142,15 +144,16 @@ export function migrate(raw: any): SaveData {
     Object.assign(rs, { quality: q }, QUALITY_PRESETS[q as 'low' | 'medium' | 'high']);
     if (typeof rs.screenShake === 'boolean') rs.screenShake = rs.screenShake ? 1 : 0;
   }
-  if (oldVersion < VERSION) delete rs.keybinds;
+  if (oldVersion < 8) delete rs.keybinds;
   const binds: Record<string, unknown> = { ...(rs.keybinds || {}) };
   const kb = defaultKeybinds();
   for (const k of Object.keys(kb) as BindAction[]) if (Array.isArray(binds[k])) kb[k] = (binds[k] as unknown[]).filter((c): c is string => typeof c === 'string');
   // the inventory moved from I / B to I / Tab: untouched old defaults follow (a custom choice stays)
   if (kb.inventory.length === 2 && kb.inventory[0] === 'KeyI' && kb.inventory[1] === 'KeyB' && !Object.values(kb).some((l) => l.includes('Tab'))) kb.inventory = ['KeyI', 'Tab'];
   const settings: Settings = { ...d.settings, ...rs, keybinds: kb };
+  if(!binds.build && kb.attack.length===1 && kb.attack[0]==='KeyF')kb.attack=['KeyR'];
   for (const k of Object.keys(settings) as (keyof Settings)[]) if (!(k in d.settings)) delete settings[k];
-  const chars = oldVersion < VERSION || !Array.isArray(raw.chars) ? [] : (raw.chars.map(fixChar).filter(Boolean) as CharSave[]);
+  const chars = oldVersion < 8 || !Array.isArray(raw.chars) ? [] : (raw.chars.map(fixChar).filter(Boolean) as CharSave[]);
   return {
     version: VERSION,
     settings,
@@ -181,7 +184,8 @@ export function loadSave(st: SaveStorage = store()): SaveData {
     s = st.getItem(KEY);
     if (!s) return defaultSave();
     const raw = JSON.parse(s);
-    if (needsBackup(raw) && st.getItem(BACKUP_KEY) === null) st.setItem(BACKUP_KEY, s);
+    const backupKey = raw?.version === 8 ? V8_BACKUP_KEY : BACKUP_KEY;
+    if (needsBackup(raw) && st.getItem(backupKey) === null) st.setItem(backupKey, s);
     const data = migrate(raw);
     // the migrated save replaces the old one at once, so nothing old can come back on a later load
     if (needsBackup(raw)) st.setItem(KEY, JSON.stringify(data));

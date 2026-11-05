@@ -16,7 +16,7 @@ const must = (r: ReturnType<typeof equipFromBag>): Gear => {
 
 let g = newGear(STARTER_ITEMS);
 const all = sorted(g);
-ok(STARTER_ITEMS.length === 20 && ITEMS.length === 20, 'starter bag holds 20 items (7 weapons, shield, 12 armor pieces)');
+ok(STARTER_ITEMS.length === 20 && STARTER_ITEMS.every(id => ITEMS.some(i => i.id === id)), 'starter bag holds 20 RPG items; construction items are separate');
 ok(g.bag.length === BAG_SIZE && allItems(g).length === 20, 'all starter items are in the bag, nothing equipped');
 
 // one-handed sword + shield

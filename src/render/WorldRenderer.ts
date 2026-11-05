@@ -1051,6 +1051,19 @@ diffuseColor.rgb *= 0.78 + 0.22 * vH;`,
     this.uniforms.uSurge.value = surge;
   }
 
+  /** Replacement chunks use true volume geometry; remove only foliage on edited columns. */
+  hideVoxelGround(chunks:Set<string>,columns:Set<string>){
+    const m=new THREE.Matrix4();
+    for(const child of this.group.children){
+      const at=child.userData.ground as [number,number]|undefined;
+      if(at && chunks.has(`${Math.floor((at[0]+this.ox)/32)},${Math.floor((at[1]+this.oz)/32)}`))child.visible=false;
+      const mesh=child as THREE.InstancedMesh;
+      if(!mesh.isInstancedMesh||!mesh.geometry.getAttribute('aSprite')||mesh.userData.voxelColumns===columns.size)continue;
+      for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,m);const x=Math.floor(m.elements[12]+this.ox),z=Math.floor(m.elements[14]+this.oz);if(columns.has(`${x},${z}`)){m.makeScale(0,0,0);mesh.setMatrixAt(i,m);}}
+      mesh.instanceMatrix.needsUpdate=true;mesh.userData.voxelColumns=columns.size;
+    }
+  }
+
   /**
    * Feeds the hero to the grass: the spot where it stands pushes the blades aside, and the last
    * few spots it left keep them bent while they fade (TRAIL_FADE), so the grass springs back

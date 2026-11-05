@@ -1,6 +1,8 @@
 import { fixGear, newGear, type Gear } from '../rpg/equipment';
 import { STARTER_ITEMS } from '../rpg/items';
 import { RACE_BY_ID } from '../rpg/races';
+import type { BlockChanges } from '../game/blocks/BlockWorld';
+import type { DroppedBlock } from '../game/blocks/BlockGame';
 
 /**
  * A created character: race, name, level and experience (progression comes later), the gear
@@ -18,6 +20,11 @@ export interface CharSave {
   /** Seconds played. */
   playTime: number;
   lastPlayed: number;
+  /** Sparse edits of the wild world, absent on characters created before v9. */
+  blockChanges?: BlockChanges;
+  blockDrops?: DroppedBlock[];
+  buildingStarted?: boolean;
+  position?: {x:number;y:number;z:number};
 }
 
 export const MAX_CHARS = 12;
@@ -51,5 +58,9 @@ export function fixChar(raw: any): CharSave | null {
     created: num(raw.created, d.created),
     playTime: Math.max(0, num(raw.playTime, 0)),
     lastPlayed: num(raw.lastPlayed, num(raw.created, d.created)),
+    ...(raw.blockChanges !== undefined ? { blockChanges: raw.blockChanges } : {}),
+    ...(Array.isArray(raw.blockDrops)?{blockDrops:raw.blockDrops}:{}),
+    buildingStarted:raw.buildingStarted===true,
+    ...(raw.position&&[raw.position.x,raw.position.y,raw.position.z].every(Number.isFinite)?{position:{x:raw.position.x,y:raw.position.y,z:raw.position.z}}:{}),
   };
 }

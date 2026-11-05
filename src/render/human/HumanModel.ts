@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { buildItem } from './buildItem';
 import { item, type Slot, type WeaponKind } from '../../rpg/items';
 import { weaponType, type WeaponType } from '../../rpg/weapons';
 import { PX, SkinAtlas, type Paint } from './skinAtlas';
@@ -110,6 +111,10 @@ export class HumanModel {
   private wtype: WeaponType | null = null;
   private shield: { root: THREE.Group; dispose(): void } | null = null;
   private holderR = new THREE.Group();
+  private buildHeld:ReturnType<typeof buildItem>|null=null;
+  private buildId:string|null=null;
+  setBuildItem(id:string|null){if(id===this.buildId)return;this.buildId=id;this.buildHeld?.root.removeFromParent();this.buildHeld?.dispose();this.buildHeld=id?buildItem(id):null;if(this.buildHeld)this.holderR.add(this.buildHeld.root);}
+  buildPose(working:boolean,time:number,aimY:number){this.parts.armR.rotation.x=-.65+Math.max(-.7,Math.min(.7,aimY*.2))-(working?(Math.sin(time*13)+1)*.55:0);this.parts.head.rotation.x=-Math.max(-.5,Math.min(.5,aimY*.12));}
   private holderL = new THREE.Group();
   private shieldMount = new THREE.Group();
 
@@ -581,6 +586,7 @@ export class HumanModel {
   dispose() {
     for (const s of Object.keys(this.armor) as Slot[]) this.clearArmor(s);
     this.weapon?.dispose();
+    this.buildHeld?.dispose();
     this.shield?.dispose();
     this.geos.forEach((g) => g.dispose());
     this.mat.dispose();

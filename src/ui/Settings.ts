@@ -48,6 +48,7 @@ const SUB_KEYS = ['shadows', 'effects', 'particles', 'viewDistance', 'antiAliasi
 const BIND_LABEL: Record<BindAction, [string, string]> = {
   jump: ['Прыжок', 'Jump'],
   attack: ['Базовая атака (по цели)', 'Basic attack'],
+  build: ['Добыча и строительство', 'Mining and building'],
   inventory: ['Инвентарь и снаряжение', 'Inventory'],
   map: ['Карта мира', 'World map'],
   pause: ['Пауза', 'Pause'],
@@ -57,7 +58,7 @@ const BIND_LABEL: Record<BindAction, [string, string]> = {
 const bindLabel = (a: BindAction) => tr(...BIND_LABEL[a]);
 const BIND_GROUPS: [string, string, BindAction[]][] = [
   ['Передвижение (ходьба — ЛКМ)', 'Movement (walk: left click)', ['jump']],
-  ['Бой', 'Combat', ['attack']],
+    ['Бой и строительство', 'Combat and building', ['attack','build']],
   ['Экраны и камера', 'Screens and camera', ['inventory', 'map', 'pause', 'zoomIn', 'zoomOut']],
 ];
 /** Actions that need a key (warned about when left without one). */

@@ -4,6 +4,7 @@ import { SLOPE } from '../game/Terrain';
 import type { WeaponStats } from './items';
 import { weaponType } from './weapons';
 import type { World } from './World';
+import { blockPath } from '../game/blocks/BlockPath';
 
 /**
  * Minecraft-like jump from the ground (standing or moving), plus one more jump in the air (a
@@ -86,7 +87,7 @@ export class RpgPlayer {
   }
 
   get ground(): number {
-    return this.w.terrain.groundY(this.x, this.z);
+    return this.w.blocks.floorAt(this.x, this.z,this.y+.55);
   }
 
   /**
@@ -94,13 +95,12 @@ export class RpgPlayer {
    * not above the feet by more than `tol` (so the hero stands on the edge of a block instead of
    * sliding off it, and never snaps onto a block it is only touching from the side).
    */
-  support(tol: number): number {
-    const t = this.w.terrain;
+  support(tol: number, feet=this.y): number {
     const r = this.radius * 0.7;
     let best = -Infinity;
     for (const [dx, dz] of [[0, 0], [r, r], [-r, r], [r, -r], [-r, -r]]) {
-      const g = t.groundY(this.x + dx, this.z + dz);
-      if (g <= this.y + tol && g > best) best = g;
+      const g = this.w.blocks.floorAt(this.x + dx, this.z + dz,feet+tol);
+      if (g <= feet + tol && g > best) best = g;
     }
     return best === -Infinity ? this.ground : best;
   }
@@ -235,7 +235,7 @@ export class RpgPlayer {
     for (const side of [0, -0.8, 0.8]) {
       const sx = this.x + fx * ahead - fz * this.radius * side;
       const sz = this.z + fz * ahead + fx * this.radius * side;
-      top = Math.max(top, this.w.terrain.groundY(sx, sz));
+      top = Math.max(top, this.w.blocks.floorAt(sx, sz,this.y+SLOPE.doubleJump));
     }
     const rise = top - this.y;
     if (this.jumpPhase === 'ground' && rise > SLOPE.lip + 0.01 && rise <= SLOPE.doubleJump) {
@@ -270,7 +270,7 @@ export class RpgPlayer {
     this.stuckRetry = true;
     const tx = this.path[this.path.length - 2];
     const tz = this.path[this.path.length - 1];
-    this.path = findPath(this.w.terrain, this.x, this.z, tx, tz);
+    this.path = this.w.blocks.columns.size ? blockPath(this.w.blocks,this.x,this.z,this.y,tx,tz) : findPath(this.w.terrain, this.x, this.z, tx, tz);
     this.pathI = 0;
   }
 
@@ -293,7 +293,7 @@ export class RpgPlayer {
       this.path.length = 0;
       return;
     }
-    this.path = clearLine(t, this.x, this.z, tx, tz) ? [tx, tz] : findPath(t, this.x, this.z, tx, tz);
+    this.path = this.w.blocks.columns.size ? blockPath(this.w.blocks,this.x,this.z,this.y,tx,tz) : clearLine(t, this.x, this.z, tx, tz) ? [tx, tz] : findPath(t, this.x, this.z, tx, tz);
     this.pathI = 0;
     this.stuckT = 0;
     this.stuckRetry = false;
@@ -348,10 +348,12 @@ export class RpgPlayer {
           this.w.fx.burst(this.x, this.y - g + 0.1, this.z, 0xe8f0f8, 6, 1.6, 0.1, 0.3, 'smoke');
           this.w.fx.sound('jump', 0.42);
         }
+        const previousY=this.y;
         const t = this.jumpT;
         this.y = this.airY0 + this.airV0 * t - 0.5 * GRAVITY * t * t;
         this.jumpV = this.airV0 - GRAVITY * t;
-        const s = this.support(0.02);
+        if(this.jumpV>0 && !this.w.blocks.canStand(this.x,this.z,this.y,this.radius*.8)) { this.y=previousY;this.takeOff(0); }
+        const s = this.support(0.02,previousY);
         if (this.jumpV <= 0 && this.y <= s) {
           this.y = s;
           this.land();
@@ -414,6 +416,11 @@ export class RpgPlayer {
     // in the air the body may only enter ground at or below the feet: a 1-block ledge is cleared
     // once the jump lifts the feet above it (no clipping into the side of an obstacle)
     const okAir = (x: number, z: number) => {
+      if(this.w.blocks.changedAt(x,z)||this.w.blocks.changedAt(this.x,this.z)){
+        if(t.blocksLocal(Math.floor(x-t.ox),Math.floor(z-t.oz)))return false;
+        const g=this.w.blocks.floorAt(x,z,feet+(air?.02:SLOPE.lip));
+        return g<=feet+(air?.02:SLOPE.lip) && this.w.blocks.canStand(x,z,Math.max(feet,g),.02);
+      }
       if (!air) return t.canWalk(this.x, this.z, x, z, feet, false);
       if (t.blocksLocal(Math.floor(x - t.ox), Math.floor(z - t.oz))) return false;
       return t.groundY(x, z) <= feet + 0.02;

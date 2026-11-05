@@ -3,6 +3,7 @@
  * numbers here are the whole balance (see docs/rpg/README.md for the tables).
  */
 
+import { BLOCKS, type ToolDefinition } from '../game/blocks/BlockRegistry';
 export type Slot = 'main' | 'off' | 'head' | 'hands' | 'feet' | 'body';
 export const SLOTS: Slot[] = ['main', 'off', 'head', 'hands', 'feet', 'body'];
 export const SLOT_NAME: Record<Slot, string> = {
@@ -51,6 +52,8 @@ export interface ItemStats {
 export type ArmorSet = 'apprentice' | 'scout' | 'guard';
 
 export interface ItemDef {
+  block?: string;
+  tool?: ToolDefinition;
   id: string;
   name: string;
   /** Short type line («Одноручный меч»). */
@@ -160,6 +163,10 @@ export const ITEMS: ItemDef[] = [
   { id: 'guard_cuirass', name: 'Кираса стражника', type: 'Доспех', desc: 'Комплект стражника.', slot: 'body', armorSet: 'guard', armorClass: 'Тяжёлая', stats: { physDef: 12, moveSpeed: -0.03 } },
 ];
 
+const originalItems=ITEMS.map(i=>i.id);
+for(const b of BLOCKS) ITEMS.push({id:'block:'+b.id,name:b.name,type:'Блок',desc:'Выберите в сумке, затем F и ПКМ — поставить.',slot:'main',stats:{},block:b.id});
+for(const [kind,name] of [['pickaxe','Кирка'],['axe','Топор'],['shovel','Лопата'],['hoe','Мотыга']] as const)
+  ITEMS.push({id:'tool:'+kind,name:name+' (железная)',type:'Инструмент',desc:'Выберите в сумке. F — добыча, удержание ЛКМ — работать.',slot:'main',stats:{},tool:{kind,tier:3,speed:2.5,durability:250}});
 export const ITEM_BY_ID: Record<string, ItemDef> = Object.fromEntries(ITEMS.map((i) => [i.id, i]));
 
 export function item(id: string | null | undefined): ItemDef | null {
@@ -167,10 +174,10 @@ export function item(id: string | null | undefined): ItemDef | null {
 }
 
 /** Every new character starts with one of each item in the bag. */
-export const STARTER_ITEMS: string[] = ITEMS.map((i) => i.id);
+export const STARTER_ITEMS: string[] = originalItems;
 
 /** Bag size (grid 6 × 4). */
-export const BAG_SIZE = 24;
+export const BAG_SIZE = 48;
 
 export const ARMOR_SETS: { id: ArmorSet; name: string; cls: string; items: string[] }[] = [
   { id: 'apprentice', name: 'Комплект ученика', cls: 'Магическая', items: ['app_hood', 'app_gloves', 'app_boots', 'app_robe'] },

@@ -9,6 +9,8 @@ import type { WeaponStats } from './items';
 import { RpgPlayer } from './Player';
 import { DUMMIES, SPAWN, TEST_MAP, buildTestMap } from './testMap';
 import type { TreeList } from '../world/trees';
+import { BlockWorld } from '../game/blocks/BlockWorld';
+import { BlockGame } from '../game/blocks/BlockGame';
 
 /** Where a world is played: the map, its ground, the spawn point, the dummies and the trees. */
 export interface WorldSite {
@@ -98,6 +100,9 @@ interface WorldEvents extends Record<string, unknown> {
 export class World {
   readonly map: MapDef;
   readonly terrain: Terrain;
+  /** Sparse block changes over the existing terrain; rendering and collision integration is pending. */
+  readonly blocks: BlockWorld;
+  readonly building: BlockGame;
   /** The world's trees (none on the training meadow). */
   readonly trees: TreeList | null;
   readonly events = new EventBus<WorldEvents>();
@@ -123,10 +128,12 @@ export class World {
   ) {
     this.map = site.map;
     this.terrain = site.terrain;
+    this.blocks = new BlockWorld(this.terrain);
     this.trees = site.trees ?? null;
     this.dummies = site.dummies.map((d) => new Dummy(d.id, d.name, d.x, d.z));
     this.stats = computeStats(raceId, gear);
     this.player = new RpgPlayer(this, site.spawn.x, site.spawn.z);
+    this.building = new BlockGame(this);
     this.dayNight = new DayNight(this, clock);
   }
 
@@ -171,6 +178,7 @@ export class World {
     if (this.target && !this.dummies.includes(this.target)) this.select(null);
     this.dayNight.update();
     this.player.update(dt);
+    this.building.update(dt);
     this.updateProjectiles(dt);
     for (const d of this.dummies) {
       d.wobble = Math.max(0, d.wobble - dt * 2.2);

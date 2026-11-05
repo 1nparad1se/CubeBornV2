@@ -70,10 +70,12 @@ export class RpgEntities {
   update(dt: number) {
     const w = this.world;
     const p = w.player;
-    const key = JSON.stringify(w.gear.equip);
+    const build=w.building.enabled;
+    const equip=build?{...w.gear.equip,main:null,off:null}:w.gear.equip;
+    const key = JSON.stringify(equip);
     if (key !== this.equipKey) {
       this.equipKey = key;
-      this.hero.setEquip(w.gear.equip);
+      this.hero.setEquip(equip);
     }
     // facing turns smoothly toward the player's direction
     const want = Math.atan2(p.fx, p.fz);
@@ -95,6 +97,8 @@ export class RpgEntities {
       time: w.time,
       flip: p.airJumpT >= 0 ? p.airJumpT / JUMP.flipTime : 0,
     });
+    h.setBuildItem(build?w.gear.bag[w.building.active]??null:null);
+    if(build)h.buildPose(w.building.swinging||w.building.placePulse>0,w.time,(w.building.hit?.pos.y??p.y+1)-p.y-1);
     // dummies wobble when hit
     w.dummies.forEach((dm, i) => this.dummies[i].wobble(dm.wobble, dm.wobX, dm.wobZ, w.time));
     // target marker: yellow when selected, red and faster while the auto attack is on
